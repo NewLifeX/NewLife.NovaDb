@@ -110,4 +110,153 @@ public class DataCodecTests
         Assert.Equal(8, _codec.GetEncodedLength(DateTime.Now, DataType.DateTime));
         Assert.Equal(4, _codec.GetEncodedLength(null, DataType.String));
     }
+
+    [Fact]
+    public void TestEncodeDecodeEmptyString()
+    {
+        var value = "";
+        var encoded = _codec.Encode(value, DataType.String);
+        var decoded = _codec.Decode(encoded, 0, DataType.String);
+
+        Assert.Equal(value, decoded);
+        Assert.Equal(4, encoded.Length); // 长度前缀 4 字节 + 0 字节数据
+    }
+
+    [Fact]
+    public void TestEncodeDecodeEmptyByteArray()
+    {
+        var value = Array.Empty<Byte>();
+        var encoded = _codec.Encode(value, DataType.Binary);
+        var decoded = (Byte[])_codec.Decode(encoded, 0, DataType.Binary)!;
+
+        Assert.Equal(value, decoded);
+        Assert.Equal(4, encoded.Length); // 长度前缀 4 字节 + 0 字节数据
+    }
+
+    [Fact]
+    public void TestEncodeDecodeUnicodeString()
+    {
+        var value = "你好，NovaDb！🚀";
+        var encoded = _codec.Encode(value, DataType.String);
+        var decoded = _codec.Decode(encoded, 0, DataType.String);
+
+        Assert.Equal(value, decoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeMinMaxInt32()
+    {
+        var minEncoded = _codec.Encode(Int32.MinValue, DataType.Int32);
+        var minDecoded = _codec.Decode(minEncoded, 0, DataType.Int32);
+        Assert.Equal(Int32.MinValue, minDecoded);
+
+        var maxEncoded = _codec.Encode(Int32.MaxValue, DataType.Int32);
+        var maxDecoded = _codec.Decode(maxEncoded, 0, DataType.Int32);
+        Assert.Equal(Int32.MaxValue, maxDecoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeMinMaxInt64()
+    {
+        var minEncoded = _codec.Encode(Int64.MinValue, DataType.Int64);
+        var minDecoded = _codec.Decode(minEncoded, 0, DataType.Int64);
+        Assert.Equal(Int64.MinValue, minDecoded);
+
+        var maxEncoded = _codec.Encode(Int64.MaxValue, DataType.Int64);
+        var maxDecoded = _codec.Decode(maxEncoded, 0, DataType.Int64);
+        Assert.Equal(Int64.MaxValue, maxDecoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeMinMaxDouble()
+    {
+        var minEncoded = _codec.Encode(Double.MinValue, DataType.Double);
+        var minDecoded = _codec.Decode(minEncoded, 0, DataType.Double);
+        Assert.Equal(Double.MinValue, minDecoded);
+
+        var maxEncoded = _codec.Encode(Double.MaxValue, DataType.Double);
+        var maxDecoded = _codec.Decode(maxEncoded, 0, DataType.Double);
+        Assert.Equal(Double.MaxValue, maxDecoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeMinMaxDecimal()
+    {
+        var minEncoded = _codec.Encode(Decimal.MinValue, DataType.Decimal);
+        var minDecoded = _codec.Decode(minEncoded, 0, DataType.Decimal);
+        Assert.Equal(Decimal.MinValue, minDecoded);
+
+        var maxEncoded = _codec.Encode(Decimal.MaxValue, DataType.Decimal);
+        var maxDecoded = _codec.Decode(maxEncoded, 0, DataType.Decimal);
+        Assert.Equal(Decimal.MaxValue, maxDecoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeMinMaxDateTime()
+    {
+        var minEncoded = _codec.Encode(DateTime.MinValue, DataType.DateTime);
+        var minDecoded = _codec.Decode(minEncoded, 0, DataType.DateTime);
+        Assert.Equal(DateTime.MinValue, minDecoded);
+
+        var maxEncoded = _codec.Encode(DateTime.MaxValue, DataType.DateTime);
+        var maxDecoded = _codec.Decode(maxEncoded, 0, DataType.DateTime);
+        Assert.Equal(DateTime.MaxValue, maxDecoded);
+    }
+
+    [Fact]
+    public void TestDecodeWithOffset()
+    {
+        // 构造一个包含多个值的缓冲区
+        var value1 = 12345;
+        var value2 = 67890;
+        var encoded1 = _codec.Encode(value1, DataType.Int32);
+        var encoded2 = _codec.Encode(value2, DataType.Int32);
+
+        var buffer = new Byte[encoded1.Length + encoded2.Length];
+        Buffer.BlockCopy(encoded1, 0, buffer, 0, encoded1.Length);
+        Buffer.BlockCopy(encoded2, 0, buffer, encoded1.Length, encoded2.Length);
+
+        // 从不同偏移解码
+        var decoded1 = _codec.Decode(buffer, 0, DataType.Int32);
+        var decoded2 = _codec.Decode(buffer, encoded1.Length, DataType.Int32);
+
+        Assert.Equal(value1, decoded1);
+        Assert.Equal(value2, decoded2);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeNullForAllTypes()
+    {
+        // 测试所有支持 NULL 的类型
+        var types = new[] { DataType.String, DataType.Binary };
+        foreach (var type in types)
+        {
+            var encoded = _codec.Encode(null, type);
+            var decoded = _codec.Decode(encoded, 0, type);
+            Assert.Null(decoded);
+        }
+    }
+
+    [Fact]
+    public void TestEncodeUnsupportedType()
+    {
+        // 测试不支持的类型
+        var ex = Assert.Throws<NotSupportedException>(() => _codec.Encode(123, (DataType)255));
+        Assert.Contains("Unsupported data type", ex.Message);
+    }
+
+    [Fact]
+    public void TestDecodeUnsupportedType()
+    {
+        var buffer = new Byte[4];
+        var ex = Assert.Throws<NotSupportedException>(() => _codec.Decode(buffer, 0, (DataType)255));
+        Assert.Contains("Unsupported data type", ex.Message);
+    }
+
+    [Fact]
+    public void TestGetEncodedLengthUnsupportedType()
+    {
+        var ex = Assert.Throws<NotSupportedException>(() => _codec.GetEncodedLength(123, (DataType)255));
+        Assert.Contains("Unsupported data type", ex.Message);
+    }
 }

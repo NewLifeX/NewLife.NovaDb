@@ -64,6 +64,13 @@ public static class DataTypeExtensions
     /// <returns>数据类型</returns>
     public static DataType FromClrType(Type type)
     {
+        if (type == null)
+            throw new ArgumentNullException(nameof(type));
+
+        // 处理可空类型
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
+            type = Nullable.GetUnderlyingType(type)!;
+
         if (type == typeof(Boolean)) return DataType.Boolean;
         if (type == typeof(Int32)) return DataType.Int32;
         if (type == typeof(Int64)) return DataType.Int64;

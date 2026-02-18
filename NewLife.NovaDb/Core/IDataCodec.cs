@@ -33,23 +33,31 @@ public class DefaultDataCodec : IDataCodec
     public Byte[] Encode(Object? value, DataType dataType)
     {
         if (value == null)
-        {
-            // NULL 值标记为长度 -1
             return BitConverter.GetBytes(-1);
-        }
 
-        return dataType switch
+        try
         {
-            DataType.Boolean => BitConverter.GetBytes((Boolean)value),
-            DataType.Int32 => BitConverter.GetBytes((Int32)value),
-            DataType.Int64 => BitConverter.GetBytes((Int64)value),
-            DataType.Double => BitConverter.GetBytes((Double)value),
-            DataType.Decimal => EncodeDecimal((Decimal)value),
-            DataType.String => EncodeString((String)value),
-            DataType.Binary => EncodeByteArray((Byte[])value),
-            DataType.DateTime => BitConverter.GetBytes(((DateTime)value).Ticks),
-            _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
-        };
+            return dataType switch
+            {
+                DataType.Boolean => BitConverter.GetBytes((Boolean)value),
+                DataType.Int32 => BitConverter.GetBytes((Int32)value),
+                DataType.Int64 => BitConverter.GetBytes((Int64)value),
+                DataType.Double => BitConverter.GetBytes((Double)value),
+                DataType.Decimal => EncodeDecimal((Decimal)value),
+                DataType.String => EncodeString((String)value),
+                DataType.Binary => EncodeByteArray((Byte[])value),
+                DataType.DateTime => BitConverter.GetBytes(((DateTime)value).Ticks),
+                _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
+            };
+        }
+        catch (InvalidCastException ex)
+        {
+            throw new NovaException(
+                ErrorCode.InvalidArgument,
+                $"Cannot encode value of type {value.GetType().Name} as {dataType}",
+                ex
+            );
+        }
     }
 
     /// <summary>从二进制解码值</summary>
@@ -59,28 +67,51 @@ public class DefaultDataCodec : IDataCodec
     /// <returns>解码后的值</returns>
     public Object? Decode(Byte[] buffer, Int32 offset, DataType dataType)
     {
-        // 检查是否为 NULL
-        if (buffer.Length >= offset + 4)
+        if (buffer == null)
+            throw new ArgumentNullException(nameof(buffer));
+        if (offset < 0)
+            throw new ArgumentOutOfRangeException(nameof(offset), "Offset cannot be negative");
+        if (offset >= buffer.Length)
+            throw new ArgumentOutOfRangeException(nameof(offset), "Offset exceeds buffer length");
+
+        // 检查 NULL 标记（String/Binary 类型使用 -1 长度表示 NULL）
+        if (dataType is DataType.String or DataType.Binary)
         {
+            if (buffer.Length < offset + 4)
+                throw new ArgumentException("Buffer too short to read length prefix");
+
             var length = BitConverter.ToInt32(buffer, offset);
             if (length == -1)
-            {
                 return null;
-            }
         }
 
-        return dataType switch
+        try
         {
-            DataType.Boolean => BitConverter.ToBoolean(buffer, offset),
-            DataType.Int32 => BitConverter.ToInt32(buffer, offset),
-            DataType.Int64 => BitConverter.ToInt64(buffer, offset),
-            DataType.Double => BitConverter.ToDouble(buffer, offset),
-            DataType.Decimal => DecodeDecimal(buffer, offset),
-            DataType.String => DecodeString(buffer, offset),
-            DataType.Binary => DecodeByteArray(buffer, offset),
-            DataType.DateTime => new DateTime(BitConverter.ToInt64(buffer, offset)),
-            _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
-        };
+            return dataType switch
+            {
+                DataType.Boolean => DecodeBoolean(buffer, offset),
+                DataType.Int32 => DecodeInt32(buffer, offset),
+                DataType.Int64 => DecodeInt64(buffer, offset),
+                DataType.Double => DecodeDouble(buffer, offset),
+                DataType.Decimal => DecodeDecimal(buffer, offset),
+                DataType.String => DecodeString(buffer, offset),
+                DataType.Binary => DecodeByteArray(buffer, offset),
+                DataType.DateTime => DecodeDateTime(buffer, offset),
+                _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
+            };
+        }
+        catch (ArgumentException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not NotSupportedException)
+        {
+            throw new NovaException(
+                ErrorCode.ParseFailed,
+                $"Failed to decode {dataType} at offset {offset}",
+                ex
+            );
+        }
     }
 
     /// <summary>获取编码后的长度</summary>
@@ -116,8 +147,45 @@ public class DefaultDataCodec : IDataCodec
         return buffer;
     }
 
+    private Boolean DecodeBoolean(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 1)
+            throw new ArgumentException($"Buffer too short to read Boolean (need {offset + 1} bytes, got {buffer.Length})");
+        return BitConverter.ToBoolean(buffer, offset);
+    }
+
+    private Int32 DecodeInt32(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 4)
+            throw new ArgumentException($"Buffer too short to read Int32 (need {offset + 4} bytes, got {buffer.Length})");
+        return BitConverter.ToInt32(buffer, offset);
+    }
+
+    private Int64 DecodeInt64(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 8)
+            throw new ArgumentException($"Buffer too short to read Int64 (need {offset + 8} bytes, got {buffer.Length})");
+        return BitConverter.ToInt64(buffer, offset);
+    }
+
+    private Double DecodeDouble(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 8)
+            throw new ArgumentException($"Buffer too short to read Double (need {offset + 8} bytes, got {buffer.Length})");
+        return BitConverter.ToDouble(buffer, offset);
+    }
+
+    private DateTime DecodeDateTime(Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 8)
+            throw new ArgumentException($"Buffer too short to read DateTime (need {offset + 8} bytes, got {buffer.Length})");
+        return new DateTime(BitConverter.ToInt64(buffer, offset));
+    }
+
     private Decimal DecodeDecimal(Byte[] buffer, Int32 offset)
     {
+        if (buffer.Length < offset + 16)
+            throw new ArgumentException($"Buffer too short to read Decimal (need {offset + 16} bytes, got {buffer.Length})");
         var bits = new Int32[4];
         Buffer.BlockCopy(buffer, offset, bits, 0, 16);
         return new Decimal(bits);
@@ -148,7 +216,15 @@ public class DefaultDataCodec : IDataCodec
 
     private Byte[] DecodeByteArray(Byte[] buffer, Int32 offset)
     {
+        if (buffer.Length < offset + 4)
+            throw new ArgumentException($"Buffer too short to read ByteArray length (need {offset + 4} bytes, got {buffer.Length})");
+
         var length = BitConverter.ToInt32(buffer, offset);
+        if (length < 0)
+            throw new ArgumentException($"Invalid byte array length: {length}");
+        if (buffer.Length < offset + 4 + length)
+            throw new ArgumentException($"Buffer too short to read ByteArray (need {offset + 4 + length} bytes, got {buffer.Length})");
+
         var result = new Byte[length];
         Buffer.BlockCopy(buffer, offset + 4, result, 0, length);
         return result;
