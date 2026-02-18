@@ -35,6 +35,9 @@ public class DbOptions
 
     /// <summary>时序数据默认 TTL（秒），0 表示永不过期</summary>
     public Int64 FluxDefaultTtlSeconds { get; set; } = 0;
+
+    /// <summary>KV 默认 TTL（未显式指定时使用）</summary>
+    public TimeSpan DefaultKvTtl { get; set; } = TimeSpan.FromHours(24);
 }
 
 /// <summary>WAL 持久化模式</summary>

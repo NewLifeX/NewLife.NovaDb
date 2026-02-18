@@ -9,6 +9,7 @@ public class KvStore
     private readonly Dictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
     private readonly Object _lock = new();
     private readonly DbOptions? _options;
+    private readonly TimeSpan _defaultTtl;
 
     /// <summary>非过期键的数量</summary>
     public Int32 Count
@@ -33,15 +34,19 @@ public class KvStore
     public KvStore(DbOptions? options = null)
     {
         _options = options;
+        _defaultTtl = options?.DefaultKvTtl ?? TimeSpan.Zero;
     }
 
     /// <summary>设置键值对</summary>
     /// <param name="key">键</param>
     /// <param name="value">值</param>
-    /// <param name="ttl">过期时间，null 表示永不过期</param>
+    /// <param name="ttl">过期时间，null 表示使用默认 TTL（无默认则永不过期）</param>
     public void Set(String key, Byte[]? value, TimeSpan? ttl = null)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+
+        // 未显式指定 TTL 时使用默认值
+        var effectiveTtl = ttl ?? (_defaultTtl > TimeSpan.Zero ? _defaultTtl : (TimeSpan?)null);
 
         lock (_lock)
         {
@@ -49,7 +54,7 @@ public class KvStore
             if (_data.TryGetValue(key, out var existing))
             {
                 existing.Value = value;
-                existing.ExpiresAt = ttl.HasValue ? now.Add(ttl.Value) : null;
+                existing.ExpiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : null;
                 existing.ModifiedAt = now;
             }
             else
@@ -58,7 +63,7 @@ public class KvStore
                 {
                     Key = key,
                     Value = value,
-                    ExpiresAt = ttl.HasValue ? now.Add(ttl.Value) : null,
+                    ExpiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : null,
                     CreatedAt = now,
                     ModifiedAt = now,
                 };
@@ -145,6 +150,86 @@ public class KvStore
         if (bytes == null) return null;
 
         return Encoding.UTF8.GetString(bytes);
+    }
+
+    /// <summary>仅当 key 不存在时添加，返回是否成功（分布式锁场景）</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">值</param>
+    /// <param name="ttl">过期时间</param>
+    /// <returns>添加成功返回 true，key 已存在返回 false</returns>
+    public Boolean Add(String key, Byte[] value, TimeSpan ttl)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+
+        lock (_lock)
+        {
+            if (_data.TryGetValue(key, out var entry) && !entry.IsExpired())
+                return false;
+
+            var now = DateTime.UtcNow;
+            _data[key] = new KvEntry
+            {
+                Key = key,
+                Value = value,
+                ExpiresAt = now.Add(ttl),
+                CreatedAt = now,
+                ModifiedAt = now,
+            };
+            return true;
+        }
+    }
+
+    /// <summary>仅当 key 不存在时添加字符串值</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">字符串值</param>
+    /// <param name="ttl">过期时间</param>
+    /// <returns>添加成功返回 true，key 已存在返回 false</returns>
+    public Boolean AddString(String key, String value, TimeSpan ttl)
+    {
+        if (value == null) throw new ArgumentNullException(nameof(value));
+
+        return Add(key, Encoding.UTF8.GetBytes(value), ttl);
+    }
+
+    /// <summary>原子递增操作，key 不存在时初始化为 delta</summary>
+    /// <param name="key">键</param>
+    /// <param name="delta">递增量</param>
+    /// <param name="ttl">过期时间（可选，仅在 key 不存在时使用默认 TTL）</param>
+    /// <returns>递增后的值</returns>
+    public Int64 Inc(String key, Int64 delta = 1, TimeSpan? ttl = null)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+
+        lock (_lock)
+        {
+            var now = DateTime.UtcNow;
+            Int64 newValue;
+
+            if (_data.TryGetValue(key, out var entry) && !entry.IsExpired())
+            {
+                // key 存在且未过期，解析当前值并递增
+                var current = entry.Value != null ? Int64.Parse(Encoding.UTF8.GetString(entry.Value)) : 0;
+                newValue = current + delta;
+                entry.Value = Encoding.UTF8.GetBytes(newValue.ToString());
+                entry.ModifiedAt = now;
+            }
+            else
+            {
+                // key 不存在或已过期，初始化为 delta
+                newValue = delta;
+                var effectiveTtl = ttl ?? (_defaultTtl > TimeSpan.Zero ? _defaultTtl : (TimeSpan?)null);
+                _data[key] = new KvEntry
+                {
+                    Key = key,
+                    Value = Encoding.UTF8.GetBytes(newValue.ToString()),
+                    ExpiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : null,
+                    CreatedAt = now,
+                    ModifiedAt = now,
+                };
+            }
+
+            return newValue;
+        }
     }
 
     /// <summary>获取键的过期时间</summary>

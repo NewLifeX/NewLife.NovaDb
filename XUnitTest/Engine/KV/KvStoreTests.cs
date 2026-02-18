@@ -1,6 +1,7 @@
 using System;
 using System.Text;
 using System.Threading;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.KV;
 using Xunit;
 
@@ -210,5 +211,136 @@ public class KvStoreTests
         var result = store.Get("key1");
         Assert.Null(result);
         Assert.Equal(1, store.Count);
+    }
+
+    [Fact(DisplayName = "测试 Add 成功添加不存在的键")]
+    public void TestAddSuccessWhenKeyNotExists()
+    {
+        var store = new KvStore();
+        var value = Encoding.UTF8.GetBytes("hello");
+
+        Assert.True(store.Add("key1", value, TimeSpan.FromHours(1)));
+        Assert.Equal(value, store.Get("key1"));
+    }
+
+    [Fact(DisplayName = "测试 Add 已存在键时返回失败")]
+    public void TestAddFailsWhenKeyExists()
+    {
+        var store = new KvStore();
+        store.Set("key1", Encoding.UTF8.GetBytes("old"));
+
+        Assert.False(store.Add("key1", Encoding.UTF8.GetBytes("new"), TimeSpan.FromHours(1)));
+
+        // 值不应被覆盖
+        Assert.Equal("old", store.GetString("key1"));
+    }
+
+    [Fact(DisplayName = "测试 Add 过期键可重新添加")]
+    public void TestAddSuccessWhenKeyExpired()
+    {
+        var store = new KvStore();
+        store.Set("key1", Encoding.UTF8.GetBytes("old"), TimeSpan.FromMilliseconds(10));
+
+        Thread.Sleep(50);
+
+        Assert.True(store.Add("key1", Encoding.UTF8.GetBytes("new"), TimeSpan.FromHours(1)));
+        Assert.Equal("new", store.GetString("key1"));
+    }
+
+    [Fact(DisplayName = "测试 AddString 便捷方法")]
+    public void TestAddString()
+    {
+        var store = new KvStore();
+
+        Assert.True(store.AddString("key1", "hello", TimeSpan.FromHours(1)));
+        Assert.Equal("hello", store.GetString("key1"));
+
+        Assert.False(store.AddString("key1", "world", TimeSpan.FromHours(1)));
+        Assert.Equal("hello", store.GetString("key1"));
+    }
+
+    [Fact(DisplayName = "测试 Inc 递增已有值")]
+    public void TestIncExistingValue()
+    {
+        var store = new KvStore();
+        store.SetString("counter", "10");
+
+        var result = store.Inc("counter");
+        Assert.Equal(11, result);
+        Assert.Equal("11", store.GetString("counter"));
+    }
+
+    [Fact(DisplayName = "测试 Inc 初始化新键")]
+    public void TestIncNewKey()
+    {
+        var store = new KvStore();
+
+        var result = store.Inc("counter");
+        Assert.Equal(1, result);
+        Assert.Equal("1", store.GetString("counter"));
+    }
+
+    [Fact(DisplayName = "测试 Inc 自定义递增量")]
+    public void TestIncCustomDelta()
+    {
+        var store = new KvStore();
+
+        var result = store.Inc("counter", 5);
+        Assert.Equal(5, result);
+
+        result = store.Inc("counter", 10);
+        Assert.Equal(15, result);
+        Assert.Equal("15", store.GetString("counter"));
+    }
+
+    [Fact(DisplayName = "测试 Inc 过期键重新初始化")]
+    public void TestIncExpiredKey()
+    {
+        var store = new KvStore();
+        store.SetString("counter", "100", TimeSpan.FromMilliseconds(10));
+
+        Thread.Sleep(50);
+
+        var result = store.Inc("counter", 5);
+        Assert.Equal(5, result);
+    }
+
+    [Fact(DisplayName = "测试 Inc 负数递减")]
+    public void TestIncNegativeDelta()
+    {
+        var store = new KvStore();
+        store.SetString("counter", "10");
+
+        var result = store.Inc("counter", -3);
+        Assert.Equal(7, result);
+        Assert.Equal("7", store.GetString("counter"));
+    }
+
+    [Fact(DisplayName = "测试默认 TTL 在未指定时应用")]
+    public void TestDefaultTtlApplied()
+    {
+        var options = new DbOptions { DefaultKvTtl = TimeSpan.FromHours(2) };
+        var store = new KvStore(options);
+
+        store.Set("key1", Encoding.UTF8.GetBytes("value"));
+
+        var expiration = store.GetExpiration("key1");
+        Assert.NotNull(expiration);
+        Assert.True(expiration.Value > DateTime.UtcNow);
+        Assert.True(expiration.Value < DateTime.UtcNow.AddHours(3));
+    }
+
+    [Fact(DisplayName = "测试显式 TTL 优先于默认 TTL")]
+    public void TestExplicitTtlOverridesDefault()
+    {
+        var options = new DbOptions { DefaultKvTtl = TimeSpan.FromHours(24) };
+        var store = new KvStore(options);
+
+        store.Set("key1", Encoding.UTF8.GetBytes("value"), TimeSpan.FromMinutes(5));
+
+        var expiration = store.GetExpiration("key1");
+        Assert.NotNull(expiration);
+        // 应在 5 分钟左右过期，而非 24 小时
+        Assert.True(expiration.Value < DateTime.UtcNow.AddMinutes(6));
     }
 }
