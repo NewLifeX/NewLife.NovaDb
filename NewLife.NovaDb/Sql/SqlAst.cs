@@ -263,7 +263,11 @@ public enum SqlExpressionType
     /// <summary>参数引用</summary>
     Parameter,
     /// <summary>IS NULL / IS NOT NULL</summary>
-    IsNull
+    IsNull,
+    /// <summary>CASE WHEN 条件表达式</summary>
+    CaseWhen,
+    /// <summary>CAST 类型转换</summary>
+    CastExpr
 }
 
 /// <summary>SQL 表达式基类</summary>
@@ -326,6 +330,8 @@ public enum BinaryOperator
     Multiply,
     /// <summary>除</summary>
     Divide,
+    /// <summary>取模</summary>
+    Modulo,
     /// <summary>LIKE</summary>
     Like
 }
@@ -411,6 +417,32 @@ public class IsNullExpression : SqlExpression
 
     /// <summary>是否为 IS NOT NULL</summary>
     public Boolean IsNot { get; set; }
+}
+
+/// <summary>CASE WHEN ... THEN ... ELSE ... END 表达式</summary>
+public class CaseExpression : SqlExpression
+{
+    /// <summary>表达式类型</summary>
+    public override SqlExpressionType ExprType => SqlExpressionType.CaseWhen;
+
+    /// <summary>WHEN/THEN 子句列表</summary>
+    public List<(SqlExpression When, SqlExpression Then)> WhenClauses { get; set; } = [];
+
+    /// <summary>ELSE 表达式</summary>
+    public SqlExpression? ElseExpression { get; set; }
+}
+
+/// <summary>CAST(expr AS type) 表达式</summary>
+public class CastExpression : SqlExpression
+{
+    /// <summary>表达式类型</summary>
+    public override SqlExpressionType ExprType => SqlExpressionType.CastExpr;
+
+    /// <summary>操作数</summary>
+    public SqlExpression Operand { get; set; } = null!;
+
+    /// <summary>目标类型名称</summary>
+    public String TargetTypeName { get; set; } = String.Empty;
 }
 
 #endregion

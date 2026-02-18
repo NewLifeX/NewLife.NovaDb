@@ -94,6 +94,26 @@ public enum SqlTokenType
     Right,
     /// <summary>INNER</summary>
     Inner,
+    /// <summary>CASE</summary>
+    Case,
+    /// <summary>WHEN</summary>
+    When,
+    /// <summary>THEN</summary>
+    Then,
+    /// <summary>ELSE</summary>
+    Else,
+    /// <summary>END</summary>
+    End,
+    /// <summary>CAST</summary>
+    Cast,
+    /// <summary>STRING_AGG</summary>
+    StringAgg,
+    /// <summary>GROUP_CONCAT</summary>
+    GroupConcat,
+    /// <summary>STDDEV</summary>
+    Stddev,
+    /// <summary>VARIANCE</summary>
+    Variance,
 
     // 标识符与字面量
     /// <summary>标识符</summary>
@@ -130,6 +150,8 @@ public enum SqlTokenType
     Star,
     /// <summary>除号 /</summary>
     Slash,
+    /// <summary>取模 %</summary>
+    Percent,
     /// <summary>左括号 (</summary>
     LeftParen,
     /// <summary>右括号 )</summary>

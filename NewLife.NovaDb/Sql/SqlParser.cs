@@ -449,7 +449,8 @@ public class SqlParser
 
         // 检查聚合函数
         var funcType = Peek().Type;
-        if (funcType is SqlTokenType.Count or SqlTokenType.Sum or SqlTokenType.Avg or SqlTokenType.Min or SqlTokenType.Max)
+        if (funcType is SqlTokenType.Count or SqlTokenType.Sum or SqlTokenType.Avg or SqlTokenType.Min or SqlTokenType.Max
+            or SqlTokenType.StringAgg or SqlTokenType.GroupConcat or SqlTokenType.Stddev or SqlTokenType.Variance)
         {
             col.Expression = ParseFunction();
         }
@@ -644,9 +645,16 @@ public class SqlParser
     {
         var left = ParseUnary();
 
-        while (Peek().Type is SqlTokenType.Star or SqlTokenType.Slash)
+        while (Peek().Type is SqlTokenType.Star or SqlTokenType.Slash or SqlTokenType.Percent)
         {
-            var op = Advance().Type == SqlTokenType.Star ? BinaryOperator.Multiply : BinaryOperator.Divide;
+            var tok = Advance();
+            var op = tok.Type switch
+            {
+                SqlTokenType.Star => BinaryOperator.Multiply,
+                SqlTokenType.Slash => BinaryOperator.Divide,
+                SqlTokenType.Percent => BinaryOperator.Modulo,
+                _ => throw SyntaxError($"Unexpected operator: {tok.Value}")
+            };
             var right = ParseUnary();
             left = new BinaryExpression { Left = left, Operator = op, Right = right };
         }
@@ -717,20 +725,61 @@ public class SqlParser
                 Expect(SqlTokenType.RightParen);
                 return expr;
 
+            // CASE WHEN 表达式
+            case SqlTokenType.Case:
+                return ParseCaseExpression();
+
+            // CAST(expr AS type) 表达式
+            case SqlTokenType.Cast:
+                return ParseCastExpression();
+
             // 聚合函数
             case SqlTokenType.Count:
             case SqlTokenType.Sum:
             case SqlTokenType.Avg:
             case SqlTokenType.Min:
             case SqlTokenType.Max:
+            case SqlTokenType.StringAgg:
+            case SqlTokenType.GroupConcat:
+            case SqlTokenType.Stddev:
+            case SqlTokenType.Variance:
                 return ParseFunction();
 
             case SqlTokenType.Star:
                 Advance();
                 return new ColumnRefExpression { ColumnName = "*" };
 
+            // LEFT/RIGHT 关键字后跟 ( 时作为函数调用
+            case SqlTokenType.Left:
+            case SqlTokenType.Right:
+                if (_pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == SqlTokenType.LeftParen)
+                {
+                    Advance();
+                    return ParseScalarFunction(token.Value);
+                }
+                throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
+
+            // IF 关键字后跟 ( 时作为 IF() 函数
+            case SqlTokenType.If:
+                if (_pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == SqlTokenType.LeftParen)
+                {
+                    Advance();
+                    return ParseScalarFunction(token.Value);
+                }
+                throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
+
             case SqlTokenType.Identifier:
                 Advance();
+                // CURRENT_TIMESTAMP 无括号时返回 NOW()
+                if (String.Equals(token.Value, "CURRENT_TIMESTAMP", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new FunctionExpression { FunctionName = "CURRENT_TIMESTAMP", IsAggregate = false };
+                }
+                // 标识符后跟 ( 时作为标量函数调用
+                if (Peek().Type == SqlTokenType.LeftParen)
+                {
+                    return ParseScalarFunction(token.Value);
+                }
                 // 检查表名前缀 table.column
                 if (Peek().Type == SqlTokenType.Dot)
                 {
@@ -745,6 +794,74 @@ public class SqlParser
         }
     }
 
+    /// <summary>解析标量函数调用</summary>
+    /// <param name="functionName">函数名</param>
+    /// <returns>函数表达式</returns>
+    private FunctionExpression ParseScalarFunction(String functionName)
+    {
+        Expect(SqlTokenType.LeftParen);
+
+        var func = new FunctionExpression
+        {
+            FunctionName = functionName.ToUpper(),
+            IsAggregate = false
+        };
+
+        if (Peek().Type != SqlTokenType.RightParen)
+        {
+            do
+            {
+                func.Arguments.Add(ParseExpression());
+            }
+            while (TryConsume(SqlTokenType.Comma));
+        }
+
+        Expect(SqlTokenType.RightParen);
+        return func;
+    }
+
+    /// <summary>解析 CASE WHEN ... THEN ... ELSE ... END 表达式</summary>
+    /// <returns>CASE 表达式</returns>
+    private CaseExpression ParseCaseExpression()
+    {
+        Expect(SqlTokenType.Case);
+        var caseExpr = new CaseExpression();
+
+        while (Peek().Type == SqlTokenType.When)
+        {
+            Advance();
+            var whenExpr = ParseExpression();
+            Expect(SqlTokenType.Then);
+            var thenExpr = ParseExpression();
+            caseExpr.WhenClauses.Add((whenExpr, thenExpr));
+        }
+
+        if (Peek().Type == SqlTokenType.Else)
+        {
+            Advance();
+            caseExpr.ElseExpression = ParseExpression();
+        }
+
+        Expect(SqlTokenType.End);
+        return caseExpr;
+    }
+
+    /// <summary>解析 CAST(expr AS type) 表达式</summary>
+    /// <returns>CAST 表达式</returns>
+    private CastExpression ParseCastExpression()
+    {
+        Expect(SqlTokenType.Cast);
+        Expect(SqlTokenType.LeftParen);
+
+        var operand = ParseExpression();
+        Expect(SqlTokenType.As);
+        var typeName = ExpectIdentifier();
+
+        Expect(SqlTokenType.RightParen);
+
+        return new CastExpression { Operand = operand, TargetTypeName = typeName };
+    }
+
     private FunctionExpression ParseFunction()
     {
         var funcToken = Advance();
@@ -753,7 +870,9 @@ public class SqlParser
         var func = new FunctionExpression
         {
             FunctionName = funcToken.Value.ToUpper(),
-            IsAggregate = funcToken.Type is SqlTokenType.Count or SqlTokenType.Sum or SqlTokenType.Avg or SqlTokenType.Min or SqlTokenType.Max
+            IsAggregate = funcToken.Type is SqlTokenType.Count or SqlTokenType.Sum or SqlTokenType.Avg
+                or SqlTokenType.Min or SqlTokenType.Max or SqlTokenType.StringAgg
+                or SqlTokenType.GroupConcat or SqlTokenType.Stddev or SqlTokenType.Variance
         };
 
         // 解析参数

@@ -57,6 +57,16 @@ public class SqlLexer
         ["LEFT"] = SqlTokenType.Left,
         ["RIGHT"] = SqlTokenType.Right,
         ["INNER"] = SqlTokenType.Inner,
+        ["CASE"] = SqlTokenType.Case,
+        ["WHEN"] = SqlTokenType.When,
+        ["THEN"] = SqlTokenType.Then,
+        ["ELSE"] = SqlTokenType.Else,
+        ["END"] = SqlTokenType.End,
+        ["CAST"] = SqlTokenType.Cast,
+        ["STRING_AGG"] = SqlTokenType.StringAgg,
+        ["GROUP_CONCAT"] = SqlTokenType.GroupConcat,
+        ["STDDEV"] = SqlTokenType.Stddev,
+        ["VARIANCE"] = SqlTokenType.Variance,
     };
 
     /// <summary>创建词法分析器</summary>
@@ -229,6 +239,8 @@ public class SqlLexer
                 return new SqlToken(SqlTokenType.Star, "*", start);
             case '/':
                 return new SqlToken(SqlTokenType.Slash, "/", start);
+            case '%':
+                return new SqlToken(SqlTokenType.Percent, "%", start);
             case '=':
                 return new SqlToken(SqlTokenType.Equals, "=", start);
             case '<':
