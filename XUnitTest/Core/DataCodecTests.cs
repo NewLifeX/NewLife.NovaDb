@@ -108,7 +108,7 @@ public class DataCodecTests
         Assert.Equal(4 + 5, _codec.GetEncodedLength("Hello", DataType.String));
         Assert.Equal(4 + 3, _codec.GetEncodedLength(new byte[] { 1, 2, 3 }, DataType.Binary));
         Assert.Equal(8, _codec.GetEncodedLength(DateTime.Now, DataType.DateTime));
-        Assert.Equal(4, _codec.GetEncodedLength(null, DataType.String));
+        Assert.Equal(1, _codec.GetEncodedLength(null, DataType.String));
     }
 
     [Fact]

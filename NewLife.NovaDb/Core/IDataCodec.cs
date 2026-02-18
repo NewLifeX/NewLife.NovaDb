@@ -26,6 +26,12 @@ public interface IDataCodec
 /// <summary>默认数据编解码器实现</summary>
 public class DefaultDataCodec : IDataCodec
 {
+    /// <summary>NULL 标记字节</summary>
+    private const Byte NullFlag = 0x00;
+
+    /// <summary>非 NULL 标记字节</summary>
+    private const Byte NotNullFlag = 0x01;
+
     /// <summary>编码值到二进制</summary>
     /// <param name="value">要编码的值</param>
     /// <param name="dataType">数据类型</param>
@@ -33,7 +39,7 @@ public class DefaultDataCodec : IDataCodec
     public Byte[] Encode(Object? value, DataType dataType)
     {
         if (value == null)
-            return BitConverter.GetBytes(-1);
+            return [NullFlag];
 
         try
         {
@@ -74,16 +80,9 @@ public class DefaultDataCodec : IDataCodec
         if (offset >= buffer.Length)
             throw new ArgumentOutOfRangeException(nameof(offset), "Offset exceeds buffer length");
 
-        // 检查 NULL 标记（String/Binary 类型使用 -1 长度表示 NULL）
-        if (dataType is DataType.String or DataType.Binary)
-        {
-            if (buffer.Length < offset + 4)
-                throw new ArgumentException("Buffer too short to read length prefix");
-
-            var length = BitConverter.ToInt32(buffer, offset);
-            if (length == -1)
-                return null;
-        }
+        // 检查 NULL 标记（单字节 0x00 表示 NULL）
+        if (buffer[offset] == NullFlag && buffer.Length - offset == 1)
+            return null;
 
         try
         {
@@ -122,7 +121,7 @@ public class DefaultDataCodec : IDataCodec
     {
         if (value == null)
         {
-            return 4; // -1 标记
+            return 1; // NULL 标记单字节
         }
 
         return dataType switch
