@@ -1,10 +1,10 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net45;net461;netstandard2.0;netstandard2.1</TargetFrameworks>
-    <AssemblyTitle>NovaDb库</AssemblyTitle>
-    <Description>NovaDb基础设施</Description>
+    <AssemblyTitle>NewLife.NovaDb 混合数据库</AssemblyTitle>
+    <Description>以 C# 实现、运行于 .NET 平台的中大型混合数据库基础设施：嵌入/服务双模，融合关系型、时序、消息队列、NoSQL(KV) 能力；通过裁剪冷门特性提升读写性能。</Description>
     <Company>新生命开发团队</Company>
-    <Copyright>©2002-2025 新生命开发团队</Copyright>
+    <Copyright>©2002-2026 新生命开发团队</Copyright>
     <VersionPrefix>1.0</VersionPrefix>
     <VersionSuffix>$([System.DateTime]::Now.ToString(`yyyy.MMdd`))</VersionSuffix>
     <Version>$(VersionPrefix).$(VersionSuffix)</Version>
@@ -23,12 +23,12 @@
   <PropertyGroup>
     <PackageId>$(AssemblyName)</PackageId>
     <Authors>$(Company)</Authors>
-    <PackageProjectUrl>https://newlifex.com/core</PackageProjectUrl>
+    <PackageProjectUrl>https://git.newlifex.com/NewLife/NewLife.NovaDb</PackageProjectUrl>
     <PackageIcon>leaf.png</PackageIcon>
-    <RepositoryUrl>https://github.com/NewLifeX/NewLife.NovaDb</RepositoryUrl>
+    <RepositoryUrl>https://git.newlifex.com/NewLife/NewLife.NovaDb</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>新生命团队;X组件;NewLife;$(AssemblyName)</PackageTags>
-    <PackageReleaseNotes></PackageReleaseNotes>
+    <PackageTags>新生命团队;X组件;NewLife;NovaDb;Database;SQL;TimeSeries;MessageQueue;KV;Embedded;Server;$(AssemblyName)</PackageTags>
+    <PackageReleaseNotes>https://git.newlifex.com/NewLife/NewLife.NovaDb</PackageReleaseNotes>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
