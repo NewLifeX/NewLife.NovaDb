@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net45;net461;netstandard2.0;netstandard2.1</TargetFrameworks>
+    <TargetFramework>net8.0</TargetFramework>
     <AssemblyTitle>NewLife.NovaDb 混合数据库</AssemblyTitle>
     <Description>以 C# 实现、运行于 .NET 平台的中大型混合数据库基础设施：嵌入/服务双模，融合关系型、时序、消息队列、NoSQL(KV) 能力；通过裁剪冷门特性提升读写性能。</Description>
     <Company>新生命开发团队</Company>
