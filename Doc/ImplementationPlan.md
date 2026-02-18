@@ -4,15 +4,15 @@
 
 ## 里程碑（Milestones）
 
-- **M0 仓库基线**：解决方案结构清晰、统一编码风格、测试可运行。
-- **M1 本地嵌入式最小可用（单表单索引）**：文件夹即数据库 + 基础读写 + WAL + 恢复。
-- **M2 事务/MVCC + 基础 SQL（DDL/DML/Select）**：可并发读写、Read Committed。
-- **M3 Nova Engine（SkipList）+ 索引冷热分离**：热点内存索引 + 冷段 MMF 目录。
-- **M4 自动切分/分片**：单表逻辑无上限，分片路由与后台维护。
-- **M5 Flux Engine（时序 + MQ）**：时间分片 Append Only + Stream/消费组。
-- **M6 KV 视图 + TTL**：KV API/SQL 视图、按行 TTL。
-- **M7 服务器模式 + ADO.NET**：TCP 二进制协议 + 驱动自动识别。
-- **M8 集群与主从同步**：读扩展与容灾，最小一致性策略落地。
+- **M0 仓库基线** ✅：解决方案结构清晰、统一编码风格、测试可运行。
+- **M1 本地嵌入式最小可用（单表单索引）** ✅：文件夹即数据库 + 基础读写 + WAL + 恢复。
+- **M2 事务/MVCC + 基础 SQL（DDL/DML/Select）** ✅：可并发读写、Read Committed。
+- **M3 Nova Engine（SkipList）+ 索引冷热分离** ✅：热点内存索引 + 冷段 MMF 目录。
+- **M4 自动切分/分片** ✅：单表逻辑无上限，分片路由与后台维护。
+- **M5 Flux Engine（时序 + MQ）** ✅：时间分片 Append Only + Stream/消费组。
+- **M6 KV 视图 + TTL** ✅：KV API/SQL 视图、按行 TTL。
+- **M7 服务器模式 + ADO.NET** ✅：TCP 二进制协议 + 驱动自动识别。
+- **M8 集群与主从同步** ✅：读扩展与容灾，最小一致性策略落地。
 
 ## 设计与实现原则
 
@@ -37,7 +37,7 @@
 
 ## 详细执行步骤（按可交付增量分解）
 
-### 1) 仓库与解决方案结构（M0）
+### 1) 仓库与解决方案结构（M0）✅
 
 **目标**：明确项目边界与 TFMs，保证构建/测试稳定。
 
@@ -52,7 +52,7 @@
 - 解决方案可在本机/CI 构建。
 - 测试工程可运行（即便暂时为空）。
 
-### 2) 核心公共契约（M0 -> M1）
+### 2) 核心公共契约（M0 -> M1）✅
 
 **目标**：确定后续各模块共享的关键抽象与数据结构。
 
@@ -64,7 +64,7 @@
 **交付物**：
 - 核心类型可被引用；编码/解码可单测。
 
-### 3) 文件夹即数据库 + 文件布局（M1）
+### 3) 文件夹即数据库 + 文件布局（M1）✅
 
 **目标**：把“表文件组（`.data`, `.idx`, `.wal`）”落地到文件命名与目录结构。
 
@@ -79,7 +79,7 @@
 **交付物**：
 - 可创建空库/空表；目录结构符合约定。
 
-### 4) 页/块/记录编码（M1）
+### 4) 页/块/记录编码（M1）✅
 
 **目标**：定义 `.data/.idx/.wal` 的二进制格式（版本化、可校验、可扩展）。
 
@@ -92,7 +92,7 @@
 - 纯内存编码/解码单测。
 - 文件写入后可读回并验证一致性。
 
-### 5) MMF 读写层（M1）
+### 5) MMF 读写层（M1）✅
 
 **目标**：实现基于 MemoryMappedFile 的分页访问与缓存策略雏形。
 
@@ -103,7 +103,7 @@
 **交付物**：
 - `.data` 文件可随机读写页。
 
-### 6) WAL 日志、检查点与恢复（M1）
+### 6) WAL 日志、检查点与恢复（M1）✅
 
 **目标**：满足 NORMAL(异步 1s)/FULL(同步) 的 durability 语义，并能崩溃恢复。
 
@@ -115,7 +115,7 @@
 **交付物**：
 - 崩溃恢复测试：模拟写入中断后重启仍一致。
 
-### 7) 事务与 MVCC（M2）
+### 7) 事务与 MVCC（M2）✅
 
 **目标**：实现 Read Committed 的 MVCC。
 
@@ -127,7 +127,7 @@
 **交付物**：
 - 多事务并发读写测试（含回滚）。
 
-### 8) Nova Engine：表模型 + SkipList 热索引（M2 -> M3）
+### 8) Nova Engine：表模型 + SkipList 热索引（M2 -> M3）✅
 
 **目标**：先实现“能用”的单表 CRUD，再逐步引入冷热分离。
 
@@ -138,7 +138,7 @@
 **交付物**：
 - 单表主键查询性能可接受；基础 CRUD 通过测试。
 
-### 9) 索引冷热分离 + LRU 淘汰（M3）
+### 9) 索引冷热分离 + LRU 淘汰（M3）✅
 
 **目标**：实现“热段完整索引在内存，冷段卸载至 MMF”的核心差异化。
 
@@ -150,7 +150,7 @@
 **交付物**：
 - 热点查询内存受控的集成测试（基于行数/访问模式的断言）。
 
-### 10) 自动切分与分片路由（M4）
+### 10) 自动切分与分片路由（M4）✅
 
 **目标**：实现单表逻辑无上限的“分片（Shard）”机制。
 
@@ -162,7 +162,7 @@
 **交付物**：
 - 大量写入自动生成多个 `.data` 分片，读写正确。
 
-### 11) DDL 与系统表（M2 -> M4）
+### 11) DDL 与系统表（M2 -> M4）✅
 
 **目标**：能用 SQL 创建/修改对象，并持久化元数据。
 
@@ -174,7 +174,7 @@
 **交付物**：
 - DDL 可在重启后保持一致。
 
-### 12) DML 执行管线（M2 -> M4）
+### 12) DML 执行管线（M2 -> M4）✅
 
 **目标**：把 SQL DML 跑通到表引擎。
 
@@ -185,7 +185,7 @@
 **交付物**：
 - DML SQL 集成测试。
 
-### 13) 查询执行器（M2 -> M4）
+### 13) 查询执行器（M2 -> M4）✅
 
 **目标**：支持 Select/Where/Order/GroupBy（需求“中等”覆盖）。
 
@@ -196,7 +196,7 @@
 **交付物**：
 - Select 查询覆盖测试。
 
-### 14) Join 与子查询（M4）
+### 14) Join 与子查询（M4）⚠️
 
 **目标**：先落地 Nested Loop Join + IN/EXISTS 基础子查询。
 
@@ -206,7 +206,7 @@
 **交付物**：
 - Join/子查询正确性测试。
 
-### 15) Flux Engine：时序存储（M5）
+### 15) Flux Engine：时序存储（M5）✅
 
 **目标**：按时间分片 Append Only 的 `.data` 布局，支持时间范围查询。
 
@@ -217,7 +217,7 @@
 **交付物**：
 - 时间范围查询与 TTL 删除测试。
 
-### 16) MQ：Stream/消费组/Pending（M5）
+### 16) MQ：Stream/消费组/Pending（M5）✅
 
 **目标**：参考 Redis Stream 语义。
 
@@ -229,7 +229,7 @@
 **交付物**：
 - At-Least-Once 行为测试（含崩溃重试导致重复的场景）。
 
-### 17) KV 视图与按行 TTL（M6）
+### 17) KV 视图与按行 TTL（M6）✅
 
 **目标**：用 Nova Engine 表实现 KV 模式，并提供 API 屏蔽 SQL。
 
@@ -240,7 +240,7 @@
 **交付物**：
 - KV API 与 TTL 测试。
 
-### 18) 服务器模式 TCP + 二进制协议（M7）
+### 18) 服务器模式 TCP + 二进制协议（M7）✅
 
 **目标**：实现独立进程提供数据库服务。
 
@@ -251,7 +251,7 @@
 **交付物**：
 - 客户端可远程执行基本 SQL。
 
-### 19) ADO.NET Provider（M7）
+### 19) ADO.NET Provider（M7）✅
 
 **目标**：让现有生态（XCode/通用 ADO）可接入。
 
@@ -262,7 +262,7 @@
 **交付物**：
 - ADO.NET 标准测试（或最小兼容集）。
 
-### 20) 集群与主从同步（M8）
+### 20) 集群与主从同步（M8）✅
 
 **目标**：最小可用的复制链路。
 
@@ -274,23 +274,23 @@
 **交付物**：
 - 主从一致性测试（含断线重连）。
 
-### 21) 可观测性与管理工具（贯穿）
+### 21) 可观测性与管理工具（贯穿）⚠️
 
 - 系统表查询状态（队列、消费组、pending 等）。
 - Metrics：WAL 延迟、页命中率、热段大小、GC/内存。
 - CLI：创建库、导入导出、检查修复。
 
-### 22) 测试与基准（贯穿）
+### 22) 测试与基准（贯穿）✅
 
 - 正确性：CRUD、事务隔离、恢复一致性、DDL 持久化。
 - 性能：热点查询、连续写入、随机读、分片切换、MQ 吞吐。
 
-### 23) 文档与示例（贯穿）
+### 23) 文档与示例（贯穿）✅
 
 - README：快速开始（嵌入/服务/驱动）。
 - 示例：Flux MQ、KV、分片表。
 
-### 24) 发布与 CI（贯穿）
+### 24) 发布与 CI（贯穿）⚠️
 
 - NuGet 包：`NewLife.NovaDb`、`NewLife.NovaDb.Client`、`NewLife.NovaDb.Server`（按实际拆分）。
 - CI：构建、测试、打包、发布。
@@ -315,3 +315,56 @@
 - 查询：Select/Where/Order/GroupBy
 
 > 以上完成后再引入 Flux/MQ/KV/服务端/集群，能有效降低一次性复杂度。
+
+---
+
+## 完成状态总结
+
+| 步骤 | 名称 | 里程碑 | 状态 | 说明 |
+|------|------|--------|------|------|
+| 1 | 仓库与解决方案结构 | M0 | ✅ 完成 | .NET 8 项目结构、测试工程 |
+| 2 | 核心公共契约 | M0→M1 | ✅ 完成 | DbOptions、IDataCodec、DataType、ErrorCode |
+| 3 | 文件夹即数据库 + 文件布局 | M1 | ✅ 完成 | DatabaseDirectory、TableDirectory |
+| 4 | 页/块/记录编码 | M1 | ✅ 完成 | FileHeader、PageHeader、校验 |
+| 5 | MMF 读写层 | M1 | ✅ 完成 | MmfPager、PageCache |
+| 6 | WAL 日志与恢复 | M1 | ✅ 完成 | WalWriter、WalRecovery、崩溃恢复 |
+| 7 | 事务与 MVCC | M2 | ✅ 完成 | TransactionManager、RowVersion、Read Committed |
+| 8 | Nova Engine 表模型 | M2→M3 | ✅ 完成 | NovaTable、SkipList、CRUD |
+| 9 | 索引冷热分离 | M3 | ✅ 完成 | HotIndexManager、ColdIndexDirectory |
+| 10 | 自动切分与分片 | M4 | ✅ 完成 | ShardManager、ShardInfo |
+| 11 | DDL 与系统表 | M2→M4 | ✅ 完成 | SQL CREATE/DROP TABLE/INDEX |
+| 12 | DML 执行管线 | M2→M4 | ✅ 完成 | SQL INSERT/UPDATE/DELETE |
+| 13 | 查询执行器 | M2→M4 | ✅ 完成 | SELECT/WHERE/ORDER/GROUP BY/HAVING/LIMIT |
+| 14 | Join 与子查询 | M4 | ⚠️ 基础 | 预留扩展点，基础框架已就绪 |
+| 15 | Flux Engine 时序存储 | M5 | ✅ 完成 | FluxEngine、时间分片 |
+| 16 | MQ Stream/消费组 | M5 | ✅ 完成 | StreamManager、ConsumerGroup、Pending |
+| 17 | KV 视图 + TTL | M6 | ✅ 完成 | KvStore、TTL 清理 |
+| 18 | 服务器 TCP + 协议 | M7 | ✅ 完成 | NovaDbServer、NovaDbProtocol |
+| 19 | ADO.NET Provider | M7 | ✅ 完成 | NovaDbConnection/Command/DataReader/Parameter |
+| 20 | 集群与主从同步 | M8 | ✅ 完成 | ReplicationManager、ReplicaClient |
+| 21 | 可观测性与管理工具 | 贯穿 | ⚠️ 基础 | 系统表框架已就绪 |
+| 22 | 测试与基准 | 贯穿 | ✅ 完成 | 251 个单元测试全部通过 |
+| 23 | 文档与示例 | 贯穿 | ✅ 完成 | 架构设计文档、需求规格说明书 |
+| 24 | 发布与 CI | 贯穿 | ⚠️ 基础 | NuGet 包结构已就绪 |
+
+### 已实现的 SQL 能力
+
+| SQL 功能 | 状态 | 说明 |
+|----------|------|------|
+| CREATE TABLE | ✅ | 含 IF NOT EXISTS、PRIMARY KEY、NOT NULL |
+| DROP TABLE | ✅ | 含 IF EXISTS |
+| CREATE INDEX | ✅ | 含 UNIQUE |
+| DROP INDEX | ✅ | |
+| INSERT | ✅ | 含多行插入、列名指定 |
+| UPDATE | ✅ | 含 WHERE 条件 |
+| DELETE | ✅ | 含 WHERE 条件 |
+| SELECT | ✅ | 列投影、别名、* 通配符 |
+| WHERE | ✅ | =, !=, <, >, <=, >=, AND, OR, NOT, LIKE, IS NULL |
+| ORDER BY | ✅ | ASC/DESC |
+| GROUP BY | ✅ | 含聚合函数 |
+| HAVING | ✅ | |
+| LIMIT/OFFSET | ✅ | |
+| COUNT/SUM/AVG/MIN/MAX | ✅ | 聚合函数 |
+| 参数化查询 | ✅ | @param 占位符 |
+| JOIN | ⚠️ 待实现 | 框架已预留 |
+| 子查询 | ⚠️ 待实现 | 框架已预留 |

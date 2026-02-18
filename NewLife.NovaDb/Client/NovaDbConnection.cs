@@ -1,5 +1,7 @@
 using System.Data;
 using System.Data.Common;
+using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Sql;
 
 namespace NewLife.NovaDb.Client;
 
@@ -10,6 +12,7 @@ public class NovaDbConnection : DbConnection
     private ConnectionState _state = ConnectionState.Closed;
     private String _database = String.Empty;
     private NovaDbClient? _client;
+    private SqlEngine? _sqlEngine;
 
     /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
     public override String ConnectionString
@@ -45,10 +48,22 @@ public class NovaDbConnection : DbConnection
     /// <summary>远程客户端（服务器模式）</summary>
     public NovaDbClient? Client => _client;
 
+    /// <summary>SQL 执行引擎（嵌入模式）</summary>
+    public SqlEngine? SqlEngine => _sqlEngine;
+
     /// <summary>打开连接</summary>
     public override void Open()
     {
-        if (!IsEmbedded)
+        if (IsEmbedded)
+        {
+            var dataSource = ParseValue("Data Source");
+            if (!String.IsNullOrEmpty(dataSource))
+            {
+                var options = new DbOptions { Path = dataSource, WalMode = WalMode.None };
+                _sqlEngine = new SqlEngine(dataSource, options);
+            }
+        }
+        else
         {
             var server = ParseValue("Server");
             var portStr = ParseValue("Port");
@@ -65,6 +80,10 @@ public class NovaDbConnection : DbConnection
     {
         _client?.Close("Connection.Close");
         _client = null;
+
+        _sqlEngine?.Dispose();
+        _sqlEngine = null;
+
         _state = ConnectionState.Closed;
     }
 
@@ -90,6 +109,9 @@ public class NovaDbConnection : DbConnection
         _client?.Close(disposing ? "Dispose" : "GC");
         _client?.Dispose();
         _client = null;
+
+        _sqlEngine?.Dispose();
+        _sqlEngine = null;
     }
 
     #region 辅助
