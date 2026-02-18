@@ -93,6 +93,16 @@ public enum ErrorCode
     ConstraintViolation = 4003,
 
     /// <summary>
+    /// 分片未找到
+    /// </summary>
+    ShardNotFound = 4004,
+
+    /// <summary>
+    /// 分片数量超限
+    /// </summary>
+    ShardLimitExceeded = 4005,
+
+    /// <summary>
     /// 不支持的操作
     /// </summary>
     NotSupported = 5000,
