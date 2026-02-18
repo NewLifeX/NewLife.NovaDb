@@ -165,5 +165,25 @@ public enum ErrorCode
     /// <summary>
     /// 会话过期
     /// </summary>
-    SessionExpired = 7003
+    SessionExpired = 7003,
+
+    /// <summary>
+    /// 复制错误
+    /// </summary>
+    ReplicationError = 8000,
+
+    /// <summary>
+    /// 节点不存在
+    /// </summary>
+    NodeNotFound = 8001,
+
+    /// <summary>
+    /// 非主节点
+    /// </summary>
+    NotMaster = 8002,
+
+    /// <summary>
+    /// 复制延迟过大
+    /// </summary>
+    ReplicationLag = 8003
 }
