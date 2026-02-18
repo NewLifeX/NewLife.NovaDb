@@ -1,4 +1,7 @@
-﻿namespace NewLife.NovaDb.Storage;
+﻿using NewLife.Buffers;
+using NewLife.Data;
+
+namespace NewLife.NovaDb.Storage;
 
 /// <summary>页头结构（每个页的开头，固定 32 字节）</summary>
 /// <remarks>
@@ -31,80 +34,74 @@ public class PageHeader
     /// <summary>页内有效数据长度</summary>
     public UInt32 DataLength { get; set; }
 
-    /// <summary>序列化为字节数组（固定 32 字节）</summary>
-    /// <returns>32 字节的页头数据</returns>
-    public Byte[] ToBytes()
+    /// <summary>序列化为数据包（固定 32 字节），使用后需 Dispose 归还到对象池</summary>
+    /// <returns>包含 32 字节页头数据的数据包</returns>
+    public IOwnerPacket ToPacket()
     {
-        var buffer = new Byte[HeaderSize];
-        var offset = 0;
+        var pk = new OwnerPacket(HeaderSize);
+        var writer = new SpanWriter(pk);
 
         // PageId (8 bytes)
-        Buffer.BlockCopy(BitConverter.GetBytes(PageId), 0, buffer, offset, 8);
-        offset += 8;
+        writer.Write(PageId);
 
         // PageType (1 byte)
-        buffer[offset++] = (Byte)PageType;
+        writer.WriteByte((Byte)PageType);
 
         // Reserved (3 bytes)
-        offset += 3;
+        writer.FillZero(3);
 
         // Lsn (8 bytes)
-        Buffer.BlockCopy(BitConverter.GetBytes(Lsn), 0, buffer, offset, 8);
-        offset += 8;
+        writer.Write(Lsn);
 
         // Checksum (4 bytes)
-        Buffer.BlockCopy(BitConverter.GetBytes(Checksum), 0, buffer, offset, 4);
-        offset += 4;
+        writer.Write(Checksum);
 
         // DataLength (4 bytes)
-        Buffer.BlockCopy(BitConverter.GetBytes(DataLength), 0, buffer, offset, 4);
-        offset += 4;
+        writer.Write(DataLength);
 
-        // Reserved (4 bytes) - 自动为 0
+        // Reserved (4 bytes) - 显式填零
+        writer.FillZero(4);
 
-        return buffer;
+        return pk;
     }
 
-    /// <summary>从字节数组反序列化</summary>
-    /// <param name="buffer">包含页头数据的字节数组（至少 32 字节）</param>
+    /// <summary>从数据包反序列化</summary>
+    /// <param name="data">包含页头数据的数据包（至少 32 字节）</param>
     /// <returns>反序列化的页头对象</returns>
-    /// <exception cref="ArgumentNullException">buffer 为 null</exception>
-    /// <exception cref="ArgumentException">buffer 长度不足 32 字节</exception>
+    /// <exception cref="ArgumentNullException">data 为 null</exception>
+    /// <exception cref="ArgumentException">data 长度不足 32 字节</exception>
     /// <exception cref="Core.NovaException">页类型无效</exception>
-    public static PageHeader FromBytes(Byte[] buffer)
+    public static PageHeader Read(IPacket data)
     {
-        if (buffer == null)
-            throw new ArgumentNullException(nameof(buffer));
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
 
-        if (buffer.Length < HeaderSize)
-            throw new ArgumentException($"Buffer too short for PageHeader, expected {HeaderSize} bytes, got {buffer.Length}", nameof(buffer));
+        if (data.Length < HeaderSize)
+            throw new ArgumentException($"Buffer too short for PageHeader, expected {HeaderSize} bytes, got {data.Length}", nameof(data));
 
-        var offset = 0;
+        var reader = new SpanReader(data);
 
         // PageId
-        var pageId = BitConverter.ToUInt64(buffer, offset);
-        offset += 8;
+        var pageId = reader.ReadUInt64();
 
         // PageType 验证
-        var pageTypeByte = buffer[offset++];
+        var pageTypeByte = reader.ReadByte();
         if (!Enum.IsDefined(typeof(PageType), pageTypeByte))
             throw new Core.NovaException(Core.ErrorCode.FileCorrupted, $"Invalid page type: {pageTypeByte}");
 
         var pageType = (PageType)pageTypeByte;
 
         // Reserved
-        offset += 3;
+        reader.Advance(3);
 
         // Lsn
-        var lsn = BitConverter.ToUInt64(buffer, offset);
-        offset += 8;
+        var lsn = reader.ReadUInt64();
 
         // Checksum
-        var checksum = BitConverter.ToUInt32(buffer, offset);
-        offset += 4;
+        var checksum = reader.ReadUInt32();
 
         // DataLength
-        var dataLength = BitConverter.ToUInt32(buffer, offset);
+        var dataLength = reader.ReadUInt32();
 
         return new PageHeader
         {

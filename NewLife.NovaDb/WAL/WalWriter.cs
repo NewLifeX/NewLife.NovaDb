@@ -1,3 +1,4 @@
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
@@ -89,14 +90,15 @@ public class WalWriter : IDisposable
             record.Timestamp = DateTime.UtcNow.Ticks;
 
             // 序列化记录
-            var data = record.ToBytes();
+            using var pk = record.ToPacket();
+            pk.TryGetArray(out var segment);
 
             // 写入长度前缀（4 字节）
-            var lengthPrefix = BitConverter.GetBytes(data.Length);
+            var lengthPrefix = BitConverter.GetBytes(pk.Length);
             _fileStream.Write(lengthPrefix, 0, 4);
 
             // 写入记录数据
-            _fileStream.Write(data, 0, data.Length);
+            _fileStream.Write(segment.Array!, segment.Offset, segment.Count);
 
             // 根据模式刷盘
             if (_mode == WalMode.Full)
@@ -198,7 +200,7 @@ public class WalWriter : IDisposable
                 if (_fileStream.Read(data, 0, length) != length)
                     break;
 
-                var record = WalRecord.FromBytes(data);
+                var record = WalRecord.Read(new ArrayPacket(data));
                 if (record.Lsn > maxLsn)
                 {
                     maxLsn = record.Lsn;

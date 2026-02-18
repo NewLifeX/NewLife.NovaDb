@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using NewLife.Data;
+using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;
 
@@ -49,7 +50,12 @@ public class DatabaseDirectory
             OptionsHash = ComputeOptionsHash(_options)
         };
 
-        File.WriteAllBytes(metaPath, header.ToBytes());
+        using var pk = header.ToPacket();
+        if (pk.TryGetArray(out var segment))
+        {
+            using var fs = new FileStream(metaPath, FileMode.Create, FileAccess.Write);
+            fs.Write(segment.Array!, segment.Offset, segment.Count);
+        }
     }
 
     /// <summary>打开数据库（验证目录存在且格式正确）</summary>
@@ -65,7 +71,7 @@ public class DatabaseDirectory
 
         // 验证文件格式
         var metaBytes = File.ReadAllBytes(metaPath);
-        var header = FileHeader.FromBytes(metaBytes);
+        var header = FileHeader.Read(new ArrayPacket(metaBytes));
 
         if (header.Version > 1)
             throw new NovaException(ErrorCode.IncompatibleFileFormat, $"Unsupported database version: {header.Version}");

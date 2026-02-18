@@ -1,3 +1,6 @@
+using NewLife.Buffers;
+using NewLife.Data;
+
 namespace NewLife.NovaDb.Server;
 
 /// <summary>请求类型</summary>
@@ -74,62 +77,59 @@ public class ProtocolHeader
     /// <summary>最大负载长度（100MB）</summary>
     public const Int32 MaxPayloadLength = 100 * 1024 * 1024;
 
-    /// <summary>序列化为字节数组</summary>
-    /// <returns>16 字节的头部数据</returns>
-    public Byte[] ToBytes()
+    /// <summary>序列化为数据包，使用后需 Dispose 归还到对象池</summary>
+    /// <returns>包含 16 字节头部数据的数据包</returns>
+    public IOwnerPacket ToPacket()
     {
-        var buffer = new Byte[HeaderSize];
+        var pk = new OwnerPacket(HeaderSize);
+        var writer = new SpanWriter(pk) { IsLittleEndian = false };
 
         // 2B: Magic
-        buffer[0] = (Byte)(Magic >> 8);
-        buffer[1] = (Byte)(Magic & 0xFF);
+        writer.Write(Magic);
 
         // 1B: Version
-        buffer[2] = Version;
+        writer.WriteByte(Version);
 
         // 1B: RequestType
-        buffer[3] = (Byte)RequestType;
+        writer.WriteByte((Byte)RequestType);
 
         // 4B: SequenceId (big-endian)
-        buffer[4] = (Byte)(SequenceId >> 24);
-        buffer[5] = (Byte)(SequenceId >> 16);
-        buffer[6] = (Byte)(SequenceId >> 8);
-        buffer[7] = (Byte)(SequenceId & 0xFF);
+        writer.Write(SequenceId);
 
         // 4B: PayloadLength (big-endian)
-        buffer[8] = (Byte)(PayloadLength >> 24);
-        buffer[9] = (Byte)(PayloadLength >> 16);
-        buffer[10] = (Byte)(PayloadLength >> 8);
-        buffer[11] = (Byte)(PayloadLength & 0xFF);
+        writer.Write(PayloadLength);
 
         // 1B: Status
-        buffer[12] = (Byte)Status;
+        writer.WriteByte((Byte)Status);
 
-        // 3B: Reserved (already zeroed)
+        // 3B: Reserved
+        writer.FillZero(3);
 
-        return buffer;
+        return pk;
     }
 
-    /// <summary>从字节数组反序列化</summary>
-    /// <param name="buffer">至少 16 字节的数据</param>
+    /// <summary>从数据包反序列化</summary>
+    /// <param name="data">至少 16 字节的数据包</param>
     /// <returns>协议头实例</returns>
-    public static ProtocolHeader FromBytes(Byte[] buffer)
+    public static ProtocolHeader Read(IPacket data)
     {
-        if (buffer == null) throw new ArgumentNullException(nameof(buffer));
-        if (buffer.Length < HeaderSize)
-            throw new ArgumentException($"Buffer must be at least {HeaderSize} bytes", nameof(buffer));
+        if (data == null) throw new ArgumentNullException(nameof(data));
+        if (data.Length < HeaderSize)
+            throw new ArgumentException($"Buffer must be at least {HeaderSize} bytes", nameof(data));
 
-        var magic = (UInt16)((buffer[0] << 8) | buffer[1]);
+        var reader = new SpanReader(data) { IsLittleEndian = false };
+
+        var magic = reader.ReadUInt16();
         if (magic != Magic)
             throw new InvalidOperationException($"Invalid magic number: 0x{magic:X4}, expected 0x{Magic:X4}");
 
         var header = new ProtocolHeader
         {
-            Version = buffer[2],
-            RequestType = (RequestType)buffer[3],
-            SequenceId = (UInt32)((buffer[4] << 24) | (buffer[5] << 16) | (buffer[6] << 8) | buffer[7]),
-            PayloadLength = (buffer[8] << 24) | (buffer[9] << 16) | (buffer[10] << 8) | buffer[11],
-            Status = (ResponseStatus)buffer[12]
+            Version = reader.ReadByte(),
+            RequestType = (RequestType)reader.ReadByte(),
+            SequenceId = reader.ReadUInt32(),
+            PayloadLength = reader.ReadInt32(),
+            Status = (ResponseStatus)reader.ReadByte()
         };
 
         if (header.PayloadLength < 0 || header.PayloadLength > MaxPayloadLength)
