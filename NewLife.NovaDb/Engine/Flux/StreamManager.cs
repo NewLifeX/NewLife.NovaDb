@@ -54,7 +54,7 @@ public class StreamManager : IDisposable
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaDbException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
 
             var allEntries = _engine.GetAllEntries();
             var result = new List<FluxEntry>();
@@ -90,7 +90,7 @@ public class StreamManager : IDisposable
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaDbException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
 
             return group.Acknowledge(id);
         }
@@ -106,7 +106,7 @@ public class StreamManager : IDisposable
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaDbException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
 
             return group.GetPendingEntries();
         }

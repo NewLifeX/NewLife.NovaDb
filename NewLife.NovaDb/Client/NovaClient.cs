@@ -3,7 +3,7 @@ using NewLife.Remoting;
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb 远程客户端，基于 Remoting 的 ApiClient 实现 RPC 通信</summary>
-public class NovaDbClient : DisposeBase
+public class NovaClient : DisposeBase
 {
     private ApiClient? _client;
 
@@ -18,7 +18,7 @@ public class NovaDbClient : DisposeBase
 
     /// <summary>创建客户端实例</summary>
     /// <param name="serverUri">服务器地址，如 tcp://127.0.0.1:3306</param>
-    public NovaDbClient(String serverUri)
+    public NovaClient(String serverUri)
     {
         if (serverUri == null) throw new ArgumentNullException(nameof(serverUri));
         ServerUri = serverUri;
@@ -38,7 +38,7 @@ public class NovaDbClient : DisposeBase
     /// <param name="reason">关闭原因</param>
     public void Close(String? reason = null)
     {
-        _client?.Close(reason ?? "NovaDbClient.Close");
+        _client?.Close(reason ?? "NovaClient.Close");
         _client = null;
     }
 

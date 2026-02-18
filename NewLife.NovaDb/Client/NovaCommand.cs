@@ -5,10 +5,10 @@ using NewLife.NovaDb.Sql;
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb ADO.NET 命令</summary>
-public class NovaDbCommand : DbCommand
+public class NovaCommand : DbCommand
 {
     private String _commandText = String.Empty;
-    private readonly NovaDbParameterCollection _parameters = new();
+    private readonly NovaParameterCollection _parameters = new();
 
     /// <summary>SQL 命令文本</summary>
     public override String CommandText
@@ -45,7 +45,7 @@ public class NovaDbCommand : DbCommand
     /// <returns>受影响行数</returns>
     public override Int32 ExecuteNonQuery()
     {
-        var conn = DbConnection as NovaDbConnection;
+        var conn = DbConnection as NovaConnection;
         if (conn == null) return 0;
 
         // 嵌入模式：直接使用 SQL 引擎
@@ -66,7 +66,7 @@ public class NovaDbCommand : DbCommand
     /// <returns>标量值</returns>
     public override Object? ExecuteScalar()
     {
-        var conn = DbConnection as NovaDbConnection;
+        var conn = DbConnection as NovaConnection;
         if (conn == null) return null;
 
         // 嵌入模式：直接使用 SQL 引擎
@@ -92,15 +92,15 @@ public class NovaDbCommand : DbCommand
 
     /// <summary>创建参数</summary>
     /// <returns>参数实例</returns>
-    protected override DbParameter CreateDbParameter() => new NovaDbParameter();
+    protected override DbParameter CreateDbParameter() => new NovaParameter();
 
     /// <summary>执行查询并返回数据读取器</summary>
     /// <param name="behavior">命令行为</param>
     /// <returns>数据读取器</returns>
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
-        var reader = new NovaDbDataReader();
-        var conn = DbConnection as NovaDbConnection;
+        var reader = new NovaDataReader();
+        var conn = DbConnection as NovaConnection;
         if (conn == null) return reader;
 
         // 嵌入模式：直接使用 SQL 引擎
@@ -142,7 +142,7 @@ public class NovaDbCommand : DbCommand
         var dict = new Dictionary<String, Object?>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < _parameters.Count; i++)
         {
-            var p = (NovaDbParameter)_parameters[i];
+            var p = (NovaParameter)_parameters[i];
             dict[p.ParameterName] = p.Value;
         }
 
@@ -152,7 +152,7 @@ public class NovaDbCommand : DbCommand
     /// <summary>从 RPC 查询结果填充数据读取器</summary>
     /// <param name="reader">数据读取器</param>
     /// <param name="queryResult">查询结果字典</param>
-    private static void FillReaderFromQueryResult(NovaDbDataReader reader, IDictionary<String, Object?> queryResult)
+    private static void FillReaderFromQueryResult(NovaDataReader reader, IDictionary<String, Object?> queryResult)
     {
         // 解析列名（Remoting 反序列化后为 List<Object>）
         if (queryResult.TryGetValue("ColumnNames", out var colObj) || queryResult.TryGetValue("columnNames", out colObj))

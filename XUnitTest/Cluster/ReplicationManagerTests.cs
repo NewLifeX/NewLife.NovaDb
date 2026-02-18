@@ -224,7 +224,7 @@ public class ReplicationManagerTests : IDisposable
     {
         var masterNode = new NodeInfo { NodeId = "master-2", Endpoint = "127.0.0.1:9010", Role = NodeRole.Master };
 
-        var ex = Assert.Throws<NovaDbException>(() => _manager.RegisterSlave(masterNode));
+        var ex = Assert.Throws<NovaException>(() => _manager.RegisterSlave(masterNode));
         Assert.Equal(ErrorCode.ReplicationError, ex.Code);
     }
 
@@ -235,20 +235,20 @@ public class ReplicationManagerTests : IDisposable
         _manager.RegisterSlave(slave);
 
         var duplicate = new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9002", Role = NodeRole.Slave };
-        var ex = Assert.Throws<NovaDbException>(() => _manager.RegisterSlave(duplicate));
+        var ex = Assert.Throws<NovaException>(() => _manager.RegisterSlave(duplicate));
         Assert.Equal(ErrorCode.ReplicationError, ex.Code);
     }
 
     [Fact(DisplayName = "测试不存在的节点抛出异常")]
     public void TestNonExistentNodeThrows()
     {
-        var ex1 = Assert.Throws<NovaDbException>(() => _manager.GetPendingRecords("nonexistent"));
+        var ex1 = Assert.Throws<NovaException>(() => _manager.GetPendingRecords("nonexistent"));
         Assert.Equal(ErrorCode.NodeNotFound, ex1.Code);
 
-        var ex2 = Assert.Throws<NovaDbException>(() => _manager.AcknowledgeReplication("nonexistent", 1));
+        var ex2 = Assert.Throws<NovaException>(() => _manager.AcknowledgeReplication("nonexistent", 1));
         Assert.Equal(ErrorCode.NodeNotFound, ex2.Code);
 
-        var ex3 = Assert.Throws<NovaDbException>(() => _manager.GetReplicationLag("nonexistent"));
+        var ex3 = Assert.Throws<NovaException>(() => _manager.GetReplicationLag("nonexistent"));
         Assert.Equal(ErrorCode.NodeNotFound, ex3.Code);
     }
 }

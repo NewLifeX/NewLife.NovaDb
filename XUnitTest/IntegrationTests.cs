@@ -12,7 +12,7 @@ namespace XUnitTest;
 public class IntegrationServerFixture : IDisposable
 {
     /// <summary>NovaDb 服务器实例</summary>
-    public NovaDbServer Server { get; }
+    public NovaServer Server { get; }
 
     /// <summary>服务器端口</summary>
     public Int32 Port { get; }
@@ -22,8 +22,8 @@ public class IntegrationServerFixture : IDisposable
 
     public IntegrationServerFixture()
     {
-        DbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"NovaDbIntegration_{Guid.NewGuid():N}");
-        Server = new NovaDbServer(0) { DbPath = DbPath };
+        DbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"NovaIntegration_{Guid.NewGuid():N}");
+        Server = new NovaServer(0) { DbPath = DbPath };
         Server.Start();
         Port = Server.Port;
     }
@@ -60,7 +60,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
         Assert.True(_fixture.Server.IsRunning);
         Assert.True(_port > 0);
 
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
         Assert.True(client.IsConnected);
 
@@ -75,7 +75,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET连接")]
     public void TestAdoNetConnection()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = $"Server=127.0.0.1;Port={_port}"
         };
@@ -99,7 +99,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC创建表")]
     public async Task TestRpcCreateTable()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         var rows = await client.ExecuteAsync("CREATE TABLE t_rpc_create (id INT PRIMARY KEY, name VARCHAR NOT NULL, age INT)");
@@ -113,7 +113,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET创建表")]
     public void TestAdoNetCreateTable()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -129,7 +129,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC添删改查")]
     public async Task TestRpcCrud()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         // 创建表
@@ -166,7 +166,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET添删改查")]
     public void TestAdoNetCrud()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -201,7 +201,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET查询DataReader")]
     public void TestAdoNetQueryDataReader()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -233,7 +233,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET ExecuteScalar")]
     public void TestAdoNetExecuteScalar()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -259,7 +259,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC批量插入")]
     public async Task TestRpcBatchInsert()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         await client.ExecuteAsync("CREATE TABLE t_rpc_batch (id INT PRIMARY KEY, name VARCHAR NOT NULL, score INT)");
@@ -272,7 +272,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET批量插入")]
     public void TestAdoNetBatchInsert()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -288,7 +288,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC批量查询")]
     public async Task TestRpcBatchQuery()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         await client.ExecuteAsync("CREATE TABLE t_rpc_bquery (id INT PRIMARY KEY, name VARCHAR, score INT)");
@@ -314,7 +314,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET批量查询")]
     public void TestAdoNetBatchQuery()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -334,7 +334,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC批量修改")]
     public async Task TestRpcBatchUpdate()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         await client.ExecuteAsync("CREATE TABLE t_rpc_bupd (id INT PRIMARY KEY, name VARCHAR, status INT)");
@@ -348,7 +348,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET批量修改")]
     public void TestAdoNetBatchUpdate()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -365,7 +365,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC批量删除")]
     public async Task TestRpcBatchDelete()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         await client.ExecuteAsync("CREATE TABLE t_rpc_bdel (id INT PRIMARY KEY, name VARCHAR, age INT)");
@@ -379,7 +379,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET批量删除")]
     public void TestAdoNetBatchDelete()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
         using var cmd = conn.CreateCommand();
 
@@ -400,7 +400,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC事务提交")]
     public async Task TestRpcTransactionCommit()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         // 开始事务
@@ -416,7 +416,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC事务回滚")]
     public async Task TestRpcTransactionRollback()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         // 开始事务
@@ -431,15 +431,15 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET事务提交")]
     public void TestAdoNetTransactionCommit()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
 
         // 通过 ADO.NET 开始事务
         using var tx = conn.BeginTransaction();
         Assert.NotNull(tx);
-        Assert.IsType<NovaDbTransaction>(tx);
+        Assert.IsType<NovaTransaction>(tx);
 
-        var novaDbTx = (NovaDbTransaction)tx;
+        var novaDbTx = (NovaTransaction)tx;
         Assert.False(novaDbTx.IsCompleted);
         Assert.NotNull(novaDbTx.TxId);
         Assert.NotEmpty(novaDbTx.TxId);
@@ -452,11 +452,11 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET事务回滚")]
     public void TestAdoNetTransactionRollback()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
 
         using var tx = conn.BeginTransaction();
-        var novaDbTx = (NovaDbTransaction)tx;
+        var novaDbTx = (NovaTransaction)tx;
         Assert.False(novaDbTx.IsCompleted);
 
         // 回滚
@@ -467,7 +467,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-RPC多次事务")]
     public async Task TestRpcMultipleTransactions()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         // 第一个事务：提交
@@ -500,7 +500,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-完整业务流程")]
     public async Task TestFullBusinessFlow()
     {
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{_port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{_port}");
         client.Open();
 
         // 1. Ping
@@ -553,7 +553,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
     [Fact(DisplayName = "集成测试-ADO.NET完整流程")]
     public void TestAdoNetFullFlow()
     {
-        using var conn = new NovaDbConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
+        using var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };
         conn.Open();
 
         using var cmd = conn.CreateCommand();
@@ -591,7 +591,7 @@ public class IntegrationTests : IClassFixture<IntegrationServerFixture>
         // 6. 事务操作
         using (var tx = conn.BeginTransaction())
         {
-            var novaDbTx = (NovaDbTransaction)tx;
+            var novaDbTx = (NovaTransaction)tx;
             Assert.False(novaDbTx.IsCompleted);
             tx.Commit();
             Assert.True(novaDbTx.IsCompleted);

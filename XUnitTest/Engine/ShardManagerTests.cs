@@ -65,7 +65,7 @@ public class ShardManagerTests : IDisposable
 
         manager.AddShard(shard1);
 
-        var ex = Assert.Throws<NovaDbException>(() => manager.AddShard(shard2));
+        var ex = Assert.Throws<NovaException>(() => manager.AddShard(shard2));
         Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
     }
 
@@ -304,9 +304,9 @@ public class ShardManagerTests : IDisposable
     {
         var manager = new ShardManager(_options, _tempDir);
 
-        Assert.Throws<NovaDbException>(() => manager.RecordWrite(99, 100));
-        Assert.Throws<NovaDbException>(() => manager.ShouldSplit(99));
-        Assert.Throws<NovaDbException>(() => manager.Split(99));
+        Assert.Throws<NovaException>(() => manager.RecordWrite(99, 100));
+        Assert.Throws<NovaException>(() => manager.ShouldSplit(99));
+        Assert.Throws<NovaException>(() => manager.Split(99));
     }
 
     [Fact(DisplayName = "测试并发写入线程安全")]

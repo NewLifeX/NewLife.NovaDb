@@ -3,19 +3,19 @@ namespace NewLife.NovaDb.Core;
 /// <summary>
 /// NovaDb 异常基类
 /// </summary>
-public class NovaDbException : Exception
+public class NovaException : Exception
 {
     /// <summary>
     /// 错误码
     /// </summary>
     public ErrorCode Code { get; }
 
-    public NovaDbException(ErrorCode code, String message) : base(message)
+    public NovaException(ErrorCode code, String message) : base(message)
     {
         Code = code;
     }
 
-    public NovaDbException(ErrorCode code, String message, Exception innerException)
+    public NovaException(ErrorCode code, String message, Exception innerException)
         : base(message, innerException)
     {
         Code = code;

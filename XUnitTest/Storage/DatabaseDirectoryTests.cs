@@ -14,7 +14,7 @@ public class DatabaseDirectoryTests : IDisposable
 
     public DatabaseDirectoryTests()
     {
-        _testPath = Path.Combine(Path.GetTempPath(), $"NovaDbTest_{Guid.NewGuid()}");
+        _testPath = Path.Combine(Path.GetTempPath(), $"NovaTest_{Guid.NewGuid()}");
         _options = new DbOptions
         {
             Path = _testPath,

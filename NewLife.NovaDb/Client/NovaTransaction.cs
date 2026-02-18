@@ -4,9 +4,9 @@ using System.Data.Common;
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb ADO.NET 事务</summary>
-public class NovaDbTransaction : DbTransaction
+public class NovaTransaction : DbTransaction
 {
-    private readonly NovaDbConnection _connection;
+    private readonly NovaConnection _connection;
     private Boolean _completed;
 
     /// <summary>远程事务 ID（服务器模式）</summary>
@@ -14,7 +14,7 @@ public class NovaDbTransaction : DbTransaction
 
     /// <summary>创建事务实例</summary>
     /// <param name="connection">关联的连接</param>
-    public NovaDbTransaction(NovaDbConnection connection)
+    public NovaTransaction(NovaConnection connection)
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
 

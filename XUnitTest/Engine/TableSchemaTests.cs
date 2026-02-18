@@ -45,7 +45,7 @@ public class TableSchemaTests
 
         schema.AddColumn(col1);
 
-        Assert.Throws<NovaDbException>(() => schema.AddColumn(col2));
+        Assert.Throws<NovaException>(() => schema.AddColumn(col2));
     }
 
     [Fact(DisplayName = "测试多个主键")]
@@ -57,7 +57,7 @@ public class TableSchemaTests
 
         schema.AddColumn(col1);
 
-        Assert.Throws<NovaDbException>(() => schema.AddColumn(col2));
+        Assert.Throws<NovaException>(() => schema.AddColumn(col2));
     }
 
     [Fact(DisplayName = "测试获取列")]
@@ -79,7 +79,7 @@ public class TableSchemaTests
         var schema = new TableSchema("users");
         schema.AddColumn(new ColumnDefinition("id", DataType.Int32));
 
-        Assert.Throws<NovaDbException>(() => schema.GetColumn("unknown"));
+        Assert.Throws<NovaException>(() => schema.GetColumn("unknown"));
     }
 
     [Fact(DisplayName = "测试获取主键列")]

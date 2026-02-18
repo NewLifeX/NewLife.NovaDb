@@ -5,7 +5,7 @@ using System.Data.Common;
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb ADO.NET 参数</summary>
-public class NovaDbParameter : DbParameter
+public class NovaParameter : DbParameter
 {
     /// <summary>参数数据类型</summary>
     public override DbType DbType { get; set; }
@@ -36,9 +36,9 @@ public class NovaDbParameter : DbParameter
 }
 
 /// <summary>NovaDb 参数集合</summary>
-public class NovaDbParameterCollection : DbParameterCollection
+public class NovaParameterCollection : DbParameterCollection
 {
-    private readonly List<NovaDbParameter> _parameters = [];
+    private readonly List<NovaParameter> _parameters = [];
 
     /// <summary>参数数量</summary>
     public override Int32 Count => _parameters.Count;
@@ -51,7 +51,7 @@ public class NovaDbParameterCollection : DbParameterCollection
     /// <returns>参数索引</returns>
     public override Int32 Add(Object value)
     {
-        _parameters.Add((NovaDbParameter)value);
+        _parameters.Add((NovaParameter)value);
         return _parameters.Count - 1;
     }
 
@@ -59,7 +59,7 @@ public class NovaDbParameterCollection : DbParameterCollection
     /// <param name="values">参数数组</param>
     public override void AddRange(Array values)
     {
-        foreach (NovaDbParameter p in values)
+        foreach (NovaParameter p in values)
         {
             _parameters.Add(p);
         }
@@ -71,7 +71,7 @@ public class NovaDbParameterCollection : DbParameterCollection
     /// <summary>是否包含指定参数</summary>
     /// <param name="value">参数对象</param>
     /// <returns>是否包含</returns>
-    public override Boolean Contains(Object value) => _parameters.Contains((NovaDbParameter)value);
+    public override Boolean Contains(Object value) => _parameters.Contains((NovaParameter)value);
 
     /// <summary>是否包含指定名称的参数</summary>
     /// <param name="value">参数名称</param>
@@ -90,7 +90,7 @@ public class NovaDbParameterCollection : DbParameterCollection
     /// <summary>获取参数索引</summary>
     /// <param name="value">参数对象</param>
     /// <returns>索引，未找到返回 -1</returns>
-    public override Int32 IndexOf(Object value) => _parameters.IndexOf((NovaDbParameter)value);
+    public override Int32 IndexOf(Object value) => _parameters.IndexOf((NovaParameter)value);
 
     /// <summary>按名称获取参数索引</summary>
     /// <param name="parameterName">参数名称</param>
@@ -109,11 +109,11 @@ public class NovaDbParameterCollection : DbParameterCollection
     /// <summary>插入参数</summary>
     /// <param name="index">插入位置</param>
     /// <param name="value">参数对象</param>
-    public override void Insert(Int32 index, Object value) => _parameters.Insert(index, (NovaDbParameter)value);
+    public override void Insert(Int32 index, Object value) => _parameters.Insert(index, (NovaParameter)value);
 
     /// <summary>移除参数</summary>
     /// <param name="value">参数对象</param>
-    public override void Remove(Object value) => _parameters.Remove((NovaDbParameter)value);
+    public override void Remove(Object value) => _parameters.Remove((NovaParameter)value);
 
     /// <summary>按索引移除参数</summary>
     /// <param name="index">参数索引</param>
@@ -148,7 +148,7 @@ public class NovaDbParameterCollection : DbParameterCollection
     /// <summary>按索引设置参数</summary>
     /// <param name="index">参数索引</param>
     /// <param name="value">参数实例</param>
-    protected override void SetParameter(Int32 index, DbParameter value) => _parameters[index] = (NovaDbParameter)value;
+    protected override void SetParameter(Int32 index, DbParameter value) => _parameters[index] = (NovaParameter)value;
 
     /// <summary>按名称设置参数</summary>
     /// <param name="parameterName">参数名称</param>
@@ -159,6 +159,6 @@ public class NovaDbParameterCollection : DbParameterCollection
         if (index < 0)
             throw new KeyNotFoundException($"Parameter '{parameterName}' not found");
 
-        _parameters[index] = (NovaDbParameter)value;
+        _parameters[index] = (NovaParameter)value;
     }
 }

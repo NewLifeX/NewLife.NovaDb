@@ -102,7 +102,7 @@ public class NovaTableTests : IDisposable
         table.Insert(tx, row1);
 
         // 尝试插入相同主键应该失败
-        Assert.Throws<NovaDbException>(() => table.Insert(tx, row2));
+        Assert.Throws<NovaException>(() => table.Insert(tx, row2));
 
         tx.Commit();
     }
@@ -253,7 +253,7 @@ public class NovaTableTests : IDisposable
 
         var row = new Object?[] { null, "Alice", 25 };
 
-        Assert.Throws<NovaDbException>(() => table.Insert(tx, row));
+        Assert.Throws<NovaException>(() => table.Insert(tx, row));
     }
 
     [Fact(DisplayName = "测试 WAL 模式")]

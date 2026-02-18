@@ -52,6 +52,6 @@ public class FileHeaderTests
         var bytes = new byte[32];
         BitConverter.GetBytes(0xDEADBEEFu).CopyTo(bytes, 0);
 
-        Assert.Throws<NewLife.NovaDb.Core.NovaDbException>(() => FileHeader.FromBytes(bytes));
+        Assert.Throws<NewLife.NovaDb.Core.NovaException>(() => FileHeader.FromBytes(bytes));
     }
 }

@@ -6,13 +6,13 @@ namespace XUnitTest.Server;
 
 /// <summary>NovaDb 服务器单元测试</summary>
 [Collection("IntegrationTests")]
-public class NovaDbServerTests : IDisposable
+public class NovaServerTests : IDisposable
 {
-    private readonly NovaDbServer _server;
+    private readonly NovaServer _server;
 
-    public NovaDbServerTests()
+    public NovaServerTests()
     {
-        _server = new NovaDbServer(0);
+        _server = new NovaServer(0);
     }
 
     public void Dispose() => _server.Dispose();

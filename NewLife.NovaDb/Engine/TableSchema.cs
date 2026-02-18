@@ -91,7 +91,7 @@ public class TableSchema
             throw new ArgumentNullException(nameof(column));
 
         if (_columnIndexes.ContainsKey(column.Name))
-            throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{column.Name}' already exists");
+            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{column.Name}' already exists");
 
         column.Ordinal = _columns.Count;
         _columns.Add(column);
@@ -100,7 +100,7 @@ public class TableSchema
         if (column.IsPrimaryKey)
         {
             if (_primaryKeyIndex.HasValue)
-                throw new NovaDbException(ErrorCode.InvalidArgument, "Table can only have one primary key");
+                throw new NovaException(ErrorCode.InvalidArgument, "Table can only have one primary key");
 
             _primaryKeyIndex = column.Ordinal;
         }
@@ -117,7 +117,7 @@ public class TableSchema
             throw new ArgumentNullException(nameof(columnName));
 
         if (!_columnIndexes.TryGetValue(columnName, out var index))
-            throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
 
         return index;
     }

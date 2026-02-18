@@ -344,8 +344,8 @@
 | 15 | Flux Engine 时序存储 | M5 | ✅ 完成 | FluxEngine、时间分片 |
 | 16 | MQ Stream/消费组 | M5 | ✅ 完成 | StreamManager、ConsumerGroup、Pending |
 | 17 | KV 视图 + TTL | M6 | ✅ 完成 | KvStore、TTL 清理 |
-| 18 | 服务器 TCP + 协议 | M7 | ✅ 完成 | NovaDbServer、NovaDbProtocol、NovaController 已接入 SqlEngine |
-| 19 | ADO.NET Provider | M7 | ✅ 完成 | NovaDbConnection/Command/DataReader/Parameter |
+| 18 | 服务器 TCP + 协议 | M7 | ✅ 完成 | NovaServer、NovaProtocol、NovaController 已接入 SqlEngine |
+| 19 | ADO.NET Provider | M7 | ✅ 完成 | NovaConnection/Command/DataReader/Parameter |
 | 20 | 集群与主从同步 | M8 | ✅ 完成 | ReplicationManager、ReplicaClient |
 | 21 | 可观测性与管理工具 | 贯穿 | ⚠️ 基础 | 系统表框架已就绪 |
 | 22 | 测试与基准 | 贯穿 | ✅ 完成 | 258 个单元测试全部通过 |

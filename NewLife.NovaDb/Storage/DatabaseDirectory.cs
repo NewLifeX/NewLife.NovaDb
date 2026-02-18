@@ -33,7 +33,7 @@ public class DatabaseDirectory
     {
         if (Directory.Exists(_basePath))
         {
-            throw new NovaDbException(ErrorCode.InvalidArgument,
+            throw new NovaException(ErrorCode.InvalidArgument,
                 $"Database directory already exists: {_basePath}");
         }
 
@@ -61,14 +61,14 @@ public class DatabaseDirectory
     {
         if (!Directory.Exists(_basePath))
         {
-            throw new NovaDbException(ErrorCode.InvalidArgument,
+            throw new NovaException(ErrorCode.InvalidArgument,
                 $"Database directory does not exist: {_basePath}");
         }
 
         var metaPath = System.IO.Path.Combine(_basePath, "nova.db");
         if (!File.Exists(metaPath))
         {
-            throw new NovaDbException(ErrorCode.FileCorrupted,
+            throw new NovaException(ErrorCode.FileCorrupted,
                 $"Database metadata file not found: {metaPath}");
         }
 
@@ -78,7 +78,7 @@ public class DatabaseDirectory
 
         if (header.Version > 1)
         {
-            throw new NovaDbException(ErrorCode.IncompatibleFileFormat,
+            throw new NovaException(ErrorCode.IncompatibleFileFormat,
                 $"Unsupported database version: {header.Version}");
         }
 

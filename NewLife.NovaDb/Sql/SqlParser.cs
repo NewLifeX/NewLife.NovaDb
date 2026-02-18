@@ -822,7 +822,7 @@ public class SqlParser
         return false;
     }
 
-    private static NovaDbException SyntaxError(String message) => new(ErrorCode.SyntaxError, message);
+    private static NovaException SyntaxError(String message) => new(ErrorCode.SyntaxError, message);
 
     #endregion
 }

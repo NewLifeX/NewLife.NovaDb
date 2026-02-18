@@ -287,7 +287,7 @@ public class SqlParserTests
     [Fact(DisplayName = "测试语法错误")]
     public void TestSyntaxError()
     {
-        Assert.Throws<NovaDbException>(() =>
+        Assert.Throws<NovaException>(() =>
         {
             var parser = new SqlParser("INVALID SQL");
             parser.Parse();

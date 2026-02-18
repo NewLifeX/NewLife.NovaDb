@@ -188,7 +188,7 @@ public class SqlLexer
             _pos++;
         }
 
-        throw new NovaDbException(ErrorCode.SyntaxError, $"Unterminated string literal at position {start}");
+        throw new NovaException(ErrorCode.SyntaxError, $"Unterminated string literal at position {start}");
     }
 
     private SqlToken ReadParameter()
@@ -259,6 +259,6 @@ public class SqlLexer
                 break;
         }
 
-        throw new NovaDbException(ErrorCode.SyntaxError, $"Unexpected character '{ch}' at position {start}");
+        throw new NovaException(ErrorCode.SyntaxError, $"Unexpected character '{ch}' at position {start}");
     }
 }

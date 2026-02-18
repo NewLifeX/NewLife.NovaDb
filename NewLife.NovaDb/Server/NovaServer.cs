@@ -6,7 +6,7 @@ using NewLife.Remoting;
 namespace NewLife.NovaDb.Server;
 
 /// <summary>NovaDb TCP 服务器，基于 Remoting 的 ApiServer 实现 RPC 通信</summary>
-public class NovaDbServer : DisposeBase
+public class NovaServer : DisposeBase
 {
     private ApiServer? _server;
     private readonly Int32 _port;
@@ -29,7 +29,7 @@ public class NovaDbServer : DisposeBase
 
     /// <summary>创建服务器实例</summary>
     /// <param name="port">监听端口</param>
-    public NovaDbServer(Int32 port = 3306)
+    public NovaServer(Int32 port = 3306)
     {
         _port = port;
     }
@@ -65,7 +65,7 @@ public class NovaDbServer : DisposeBase
     /// <param name="reason">停止原因</param>
     public void Stop(String? reason = null)
     {
-        _server?.Stop(reason ?? "NovaDbServer.Stop");
+        _server?.Stop(reason ?? "NovaServer.Stop");
         _server = null;
 
         NovaController.SharedEngine = null;

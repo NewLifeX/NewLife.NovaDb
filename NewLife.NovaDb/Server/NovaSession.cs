@@ -1,7 +1,7 @@
 namespace NewLife.NovaDb.Server;
 
 /// <summary>客户端会话</summary>
-public class NovaDbSession
+public class NovaSession
 {
     /// <summary>会话 ID</summary>
     public String SessionId { get; }
@@ -19,7 +19,7 @@ public class NovaDbSession
     public Int32 TimeoutSeconds { get; set; } = 300;
 
     /// <summary>创建会话</summary>
-    public NovaDbSession()
+    public NovaSession()
     {
         SessionId = Guid.NewGuid().ToString("N");
         ConnectedAt = DateTime.UtcNow;

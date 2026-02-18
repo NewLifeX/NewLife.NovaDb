@@ -136,7 +136,7 @@ public class HotIndexManager
         if (segment == null)
             throw new ArgumentNullException(nameof(segment));
         if (segment.MinKey == null)
-            throw new NovaDbException(ErrorCode.InvalidArgument, "Segment MinKey cannot be null");
+            throw new NovaException(ErrorCode.InvalidArgument, "Segment MinKey cannot be null");
 
         lock (_lock)
         {

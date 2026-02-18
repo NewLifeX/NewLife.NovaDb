@@ -9,12 +9,12 @@ namespace XUnitTest.Client;
 
 /// <summary>NovaDb 连接单元测试</summary>
 [Collection("IntegrationTests")]
-public class NovaDbConnectionTests
+public class NovaConnectionTests
 {
     [Fact(DisplayName = "测试打开和关闭嵌入模式连接")]
     public void TestOpenAndClose()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Data Source=./test.db"
         };
@@ -32,7 +32,7 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试嵌入模式检测")]
     public void TestEmbeddedModeDetection()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Data Source=./test.db"
         };
@@ -44,7 +44,7 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试服务器模式检测")]
     public void TestServerModeDetection()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Server=localhost;Port=3306"
         };
@@ -56,20 +56,20 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试创建命令")]
     public void TestCreateCommand()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Data Source=./test.db"
         };
 
         using var cmd = conn.CreateCommand();
         Assert.NotNull(cmd);
-        Assert.IsType<NovaDbCommand>(cmd);
+        Assert.IsType<NovaCommand>(cmd);
     }
 
     [Fact(DisplayName = "测试事务")]
     public void TestTransaction()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Data Source=./test.db"
         };
@@ -77,9 +77,9 @@ public class NovaDbConnectionTests
 
         using var tx = conn.BeginTransaction();
         Assert.NotNull(tx);
-        Assert.IsType<NovaDbTransaction>(tx);
+        Assert.IsType<NovaTransaction>(tx);
 
-        var novaDbTx = (NovaDbTransaction)tx;
+        var novaDbTx = (NovaTransaction)tx;
         Assert.False(novaDbTx.IsCompleted);
         Assert.Equal(IsolationLevel.ReadCommitted, tx.IsolationLevel);
 
@@ -90,14 +90,14 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试事务回滚")]
     public void TestTransactionRollback()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Data Source=./test.db"
         };
         conn.Open();
 
         using var tx = conn.BeginTransaction();
-        var novaDbTx = (NovaDbTransaction)tx;
+        var novaDbTx = (NovaTransaction)tx;
 
         tx.Rollback();
         Assert.True(novaDbTx.IsCompleted);
@@ -106,7 +106,7 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试切换数据库")]
     public void TestChangeDatabase()
     {
-        using var conn = new NovaDbConnection
+        using var conn = new NovaConnection
         {
             ConnectionString = "Data Source=./test.db"
         };
@@ -118,14 +118,14 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试服务器版本")]
     public void TestServerVersion()
     {
-        using var conn = new NovaDbConnection();
+        using var conn = new NovaConnection();
         Assert.Equal("1.0", conn.ServerVersion);
     }
 
     [Fact(DisplayName = "测试命令属性")]
     public void TestCommandProperties()
     {
-        using var cmd = new NovaDbCommand
+        using var cmd = new NovaCommand
         {
             CommandText = "SELECT 1",
             CommandTimeout = 60,
@@ -140,11 +140,11 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试命令参数")]
     public void TestCommandParameters()
     {
-        using var cmd = new NovaDbCommand();
+        using var cmd = new NovaCommand();
         var param = cmd.CreateParameter();
 
         Assert.NotNull(param);
-        Assert.IsType<NovaDbParameter>(param);
+        Assert.IsType<NovaParameter>(param);
 
         param.ParameterName = "@id";
         param.Value = 42;
@@ -157,7 +157,7 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试数据读取器")]
     public void TestDataReader()
     {
-        var reader = new NovaDbDataReader();
+        var reader = new NovaDataReader();
         reader.SetColumns("Id", "Name");
         reader.AddRow([1, "Alice"]);
         reader.AddRow([2, "Bob"]);
@@ -182,10 +182,10 @@ public class NovaDbConnectionTests
     [Fact(DisplayName = "测试参数集合操作")]
     public void TestParameterCollectionOperations()
     {
-        var collection = new NovaDbParameterCollection();
+        var collection = new NovaParameterCollection();
 
-        var p1 = new NovaDbParameter { ParameterName = "@id", Value = 1 };
-        var p2 = new NovaDbParameter { ParameterName = "@name", Value = "test" };
+        var p1 = new NovaParameter { ParameterName = "@id", Value = 1 };
+        var p2 = new NovaParameter { ParameterName = "@name", Value = "test" };
 
         collection.Add(p1);
         collection.Add(p2);
@@ -207,13 +207,13 @@ public class NovaDbConnectionTests
     public async Task TestClientServerEndToEnd()
     {
         // Start a server on a random port
-        using var server = new NovaDbServer(0);
+        using var server = new NovaServer(0);
         server.Start();
         var port = server.Port;
         Assert.True(port > 0);
 
         // Create client and connect
-        using var client = new NovaDbClient($"tcp://127.0.0.1:{port}");
+        using var client = new NovaClient($"tcp://127.0.0.1:{port}");
         client.Open();
         Assert.True(client.IsConnected);
 

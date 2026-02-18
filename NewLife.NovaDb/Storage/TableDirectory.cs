@@ -35,7 +35,7 @@ public class TableDirectory
     {
         if (Directory.Exists(_tablePath))
         {
-            throw new NovaDbException(ErrorCode.TableExists,
+            throw new NovaException(ErrorCode.TableExists,
                 $"Table directory already exists: {_tablePath}");
         }
 
@@ -49,7 +49,7 @@ public class TableDirectory
     {
         if (!Directory.Exists(_tablePath))
         {
-            throw new NovaDbException(ErrorCode.TableNotFound,
+            throw new NovaException(ErrorCode.TableNotFound,
                 $"Table directory does not exist: {_tablePath}");
         }
     }

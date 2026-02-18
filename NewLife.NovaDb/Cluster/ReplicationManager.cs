@@ -53,7 +53,7 @@ public class ReplicationManager : IDisposable
         _walPath = walPath ?? throw new ArgumentNullException(nameof(walPath));
         if (masterInfo == null) throw new ArgumentNullException(nameof(masterInfo));
         if (masterInfo.Role != NodeRole.Master)
-            throw new NovaDbException(ErrorCode.NotMaster, "节点角色必须为 Master");
+            throw new NovaException(ErrorCode.NotMaster, "节点角色必须为 Master");
 
         MasterInfo = masterInfo;
         MasterInfo.State = NodeState.Online;
@@ -65,14 +65,14 @@ public class ReplicationManager : IDisposable
     {
         if (slave == null) throw new ArgumentNullException(nameof(slave));
         if (slave.Role != NodeRole.Slave)
-            throw new NovaDbException(ErrorCode.ReplicationError, "只能注册从节点角色");
+            throw new NovaException(ErrorCode.ReplicationError, "只能注册从节点角色");
 
         lock (_lock)
         {
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicationManager));
 
             if (_slaves.ContainsKey(slave.NodeId))
-                throw new NovaDbException(ErrorCode.ReplicationError, $"从节点 {slave.NodeId} 已注册");
+                throw new NovaException(ErrorCode.ReplicationError, $"从节点 {slave.NodeId} 已注册");
 
             slave.State = NodeState.Syncing;
             _slaves[slave.NodeId] = slave;
@@ -155,7 +155,7 @@ public class ReplicationManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicationManager));
 
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaDbException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
 
             var ackedLsn = _slavePositions[nodeId];
             var pending = new List<WalRecord>();
@@ -185,7 +185,7 @@ public class ReplicationManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicationManager));
 
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaDbException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
 
             _slavePositions[nodeId] = lsn;
 
@@ -211,7 +211,7 @@ public class ReplicationManager : IDisposable
         lock (_lock)
         {
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaDbException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
 
             var ackedLsn = _slavePositions[nodeId];
             return _masterLsn - ackedLsn;

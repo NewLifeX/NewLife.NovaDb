@@ -64,7 +64,7 @@ public class SqlEngineTests : IDisposable
     {
         _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
 
-        var ex = Assert.Throws<NovaDbException>(() =>
+        var ex = Assert.Throws<NovaException>(() =>
             _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)"));
 
         Assert.Equal(ErrorCode.TableExists, ex.Code);
@@ -330,7 +330,7 @@ public class SqlEngineTests : IDisposable
     [Fact(DisplayName = "测试表不存在异常")]
     public void TestTableNotFound()
     {
-        var ex = Assert.Throws<NovaDbException>(() =>
+        var ex = Assert.Throws<NovaException>(() =>
             _engine.Execute("SELECT * FROM nonexistent"));
 
         Assert.Equal(ErrorCode.TableNotFound, ex.Code);
@@ -372,7 +372,7 @@ public class SqlEngineTests : IDisposable
     {
         var dbPath = Path.Combine(_testDir, "ado_test");
 
-        using var conn = new NewLife.NovaDb.Client.NovaDbConnection
+        using var conn = new NewLife.NovaDb.Client.NovaConnection
         {
             ConnectionString = $"Data Source={dbPath}"
         };

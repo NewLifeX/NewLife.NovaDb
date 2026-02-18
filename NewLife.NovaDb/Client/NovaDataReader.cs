@@ -4,7 +4,7 @@ using System.Data.Common;
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb ADO.NET 数据读取器</summary>
-public class NovaDbDataReader : DbDataReader
+public class NovaDataReader : DbDataReader
 {
     private readonly List<Object?[]> _rows = [];
     private readonly List<String> _columnNames = [];

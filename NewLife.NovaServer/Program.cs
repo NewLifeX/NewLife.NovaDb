@@ -32,7 +32,7 @@ var star = services.AddStardust();
 // 注册后台任务 IHostedService
 var host = services.BuildHost();
 // 服务器
-var svr = new NovaDbServer()
+var svr = new NovaServer()
 {
     //Port = set.Port,
     //ServiceProvider = services.BuildServiceProvider(),

@@ -67,7 +67,7 @@ public class SqlEngine : IDisposable
             UpdateStatement update => ExecuteUpdate(update, parameters),
             DeleteStatement delete => ExecuteDelete(delete, parameters),
             SelectStatement select => ExecuteSelect(select, parameters),
-            _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
+            _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
         };
     }
 
@@ -80,7 +80,7 @@ public class SqlEngine : IDisposable
             if (_schemas.ContainsKey(stmt.TableName))
             {
                 if (stmt.IfNotExists) return new SqlResult { AffectedRows = 0 };
-                throw new NovaDbException(ErrorCode.TableExists, $"Table '{stmt.TableName}' already exists");
+                throw new NovaException(ErrorCode.TableExists, $"Table '{stmt.TableName}' already exists");
             }
 
             var schema = new TableSchema(stmt.TableName);
@@ -108,7 +108,7 @@ public class SqlEngine : IDisposable
             if (!_schemas.ContainsKey(stmt.TableName))
             {
                 if (stmt.IfExists) return new SqlResult { AffectedRows = 0 };
-                throw new NovaDbException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
             }
 
             if (_tables.TryGetValue(stmt.TableName, out var table))
@@ -142,7 +142,7 @@ public class SqlEngine : IDisposable
         lock (_lock)
         {
             if (!_schemas.ContainsKey(stmt.TableName))
-                throw new NovaDbException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
 
             // 当前实现仅记录索引元数据，实际索引由 NovaTable 的 SkipList 主键索引处理
             return new SqlResult { AffectedRows = 0 };
@@ -154,7 +154,7 @@ public class SqlEngine : IDisposable
         lock (_lock)
         {
             if (!_schemas.ContainsKey(stmt.TableName))
-                throw new NovaDbException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
 
             return new SqlResult { AffectedRows = 0 };
         }
@@ -189,7 +189,7 @@ public class SqlEngine : IDisposable
             {
                 // 按列序号填充
                 if (values.Count != schema.Columns.Count)
-                    throw new NovaDbException(ErrorCode.InvalidArgument,
+                    throw new NovaException(ErrorCode.InvalidArgument,
                         $"INSERT values count ({values.Count}) does not match column count ({schema.Columns.Count})");
 
                 for (var i = 0; i < values.Count; i++)
@@ -587,13 +587,13 @@ public class SqlEngine : IDisposable
 
             case ColumnRefExpression colRef:
                 if (row == null || schema == null)
-                    throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' cannot be evaluated without a row context");
+                    throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' cannot be evaluated without a row context");
                 var idx = schema.GetColumnIndex(colRef.ColumnName);
                 return row[idx];
 
             case ParameterExpression param:
                 if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
-                    throw new NovaDbException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
+                    throw new NovaException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
                 return paramValue;
 
             case BinaryExpression binary:
@@ -604,14 +604,14 @@ public class SqlEngine : IDisposable
 
             case FunctionExpression func when func.IsAggregate:
                 // 单行上下文中不应出现聚合函数
-                throw new NovaDbException(ErrorCode.SyntaxError, $"Aggregate function {func.FunctionName} not allowed in this context");
+                throw new NovaException(ErrorCode.SyntaxError, $"Aggregate function {func.FunctionName} not allowed in this context");
 
             case IsNullExpression isNull:
                 var operandVal = EvaluateExpression(isNull.Operand, row, schema, parameters);
                 return isNull.IsNot ? operandVal != null : operandVal == null;
 
             default:
-                throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported expression type: {expr.ExprType}");
+                throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type: {expr.ExprType}");
         }
     }
 
@@ -658,7 +658,7 @@ public class SqlEngine : IDisposable
             BinaryOperator.Multiply => ArithmeticOp(left, right, (a, b) => a * b),
             BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
             BinaryOperator.Like => EvaluateLike(left, right),
-            _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
+            _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
         };
     }
 
@@ -670,7 +670,7 @@ public class SqlEngine : IDisposable
         {
             "NOT" => !(Convert.ToBoolean(operand)),
             "-" => ArithmeticNegate(operand),
-            _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
+            _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
         };
     }
 
@@ -731,7 +731,7 @@ public class SqlEngine : IDisposable
                 return maxVal;
 
             default:
-                throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported aggregate function: {func.FunctionName}");
+                throw new NovaException(ErrorCode.NotSupported, $"Unsupported aggregate function: {func.FunctionName}");
         }
     }
 
@@ -780,7 +780,7 @@ public class SqlEngine : IDisposable
         lock (_lock)
         {
             if (!_tables.TryGetValue(tableName, out var table))
-                throw new NovaDbException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
             return table;
         }
     }
@@ -790,7 +790,7 @@ public class SqlEngine : IDisposable
         lock (_lock)
         {
             if (!_schemas.TryGetValue(tableName, out var schema))
-                throw new NovaDbException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
             return schema;
         }
     }
@@ -819,7 +819,7 @@ public class SqlEngine : IDisposable
             "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" => DataType.String,
             "BLOB" or "BINARY" or "VARBINARY" or "BYTES" => DataType.ByteArray,
             "DATETIME" or "TIMESTAMP" or "DATE" => DataType.DateTime,
-            _ => throw new NovaDbException(ErrorCode.SyntaxError, $"Unknown data type: {typeName}")
+            _ => throw new NovaException(ErrorCode.SyntaxError, $"Unknown data type: {typeName}")
         };
     }
 
@@ -977,7 +977,7 @@ public class SqlEngine : IDisposable
 
             case ParameterExpression param:
                 if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
-                    throw new NovaDbException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
+                    throw new NovaException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
                 return paramValue;
 
             case BinaryExpression binary:
@@ -1013,7 +1013,7 @@ public class SqlEngine : IDisposable
                     BinaryOperator.Multiply => ArithmeticOp(left, right, (a, b) => a * b),
                     BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
                     BinaryOperator.Like => EvaluateLike(left, right),
-                    _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
+                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
                 };
 
             case UnaryExpression unary:
@@ -1022,7 +1022,7 @@ public class SqlEngine : IDisposable
                 {
                     "NOT" => !(Convert.ToBoolean(operand)),
                     "-" => ArithmeticNegate(operand),
-                    _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
+                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
                 };
 
             case IsNullExpression isNull:
@@ -1030,7 +1030,7 @@ public class SqlEngine : IDisposable
                 return isNull.IsNot ? val != null : val == null;
 
             default:
-                throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported expression type in JOIN: {expr.ExprType}");
+                throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type in JOIN: {expr.ExprType}");
         }
     }
 
@@ -1046,7 +1046,7 @@ public class SqlEngine : IDisposable
                     String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
                     return i;
             }
-            throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{colRef.TablePrefix}.{colRef.ColumnName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.TablePrefix}.{colRef.ColumnName}' not found");
         }
 
         // 无表前缀：按列名匹配（如有歧义取第一个）
@@ -1055,7 +1055,7 @@ public class SqlEngine : IDisposable
             if (String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
                 return i;
         }
-        throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' not found");
+        throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' not found");
     }
 
     /// <summary>构建 JOIN 查询的结果投影</summary>

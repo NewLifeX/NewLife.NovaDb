@@ -200,7 +200,7 @@ public class StreamManagerTests : IDisposable
         using (engine)
         using (manager)
         {
-            var ex = Assert.Throws<NovaDbException>(() => manager.ReadGroup("nonexistent", "c1", 1));
+            var ex = Assert.Throws<NovaException>(() => manager.ReadGroup("nonexistent", "c1", 1));
             Assert.Equal(ErrorCode.ConsumerGroupNotFound, ex.Code);
         }
     }

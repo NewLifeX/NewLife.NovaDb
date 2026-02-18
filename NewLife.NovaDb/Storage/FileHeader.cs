@@ -92,7 +92,7 @@ public class FileHeader
         offset += 4;
         if (magic != MagicNumber)
         {
-            throw new Core.NovaDbException(Core.ErrorCode.FileCorrupted,
+            throw new Core.NovaException(Core.ErrorCode.FileCorrupted,
                 $"Invalid magic number: 0x{magic:X8}");
         }
 

@@ -78,7 +78,7 @@ public class MmfPager : IDisposable
 
                 if (fileHeader.PageSize != _pageSize)
                 {
-                    throw new NovaDbException(ErrorCode.IncompatibleFileFormat,
+                    throw new NovaException(ErrorCode.IncompatibleFileFormat,
                         $"Page size mismatch: file={fileHeader.PageSize}, expected={_pageSize}");
                 }
             }
@@ -129,7 +129,7 @@ public class MmfPager : IDisposable
 
                 if (pageHeader.Checksum != computedChecksum)
                 {
-                    throw new NovaDbException(ErrorCode.ChecksumFailed,
+                    throw new NovaException(ErrorCode.ChecksumFailed,
                         $"Checksum mismatch for page {pageId}");
                 }
             }

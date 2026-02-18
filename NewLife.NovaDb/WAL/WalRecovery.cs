@@ -80,7 +80,7 @@ public class WalRecovery
                 catch (Exception ex)
                 {
                     NewLife.Log.XTrace.WriteException(ex);
-                    throw new NovaDbException(ErrorCode.IoError,
+                    throw new NovaException(ErrorCode.IoError,
                         $"Failed to apply page update during recovery: pageId={pageId}, txId={txId}", ex);
                 }
             }

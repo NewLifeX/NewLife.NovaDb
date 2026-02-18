@@ -86,7 +86,7 @@ public class ShardManager
             foreach (var existing in _shards)
             {
                 if (existing.ShardId == shard.ShardId)
-                    throw new NovaDbException(ErrorCode.InvalidArgument, $"Shard with ID {shard.ShardId} already exists");
+                    throw new NovaException(ErrorCode.InvalidArgument, $"Shard with ID {shard.ShardId} already exists");
             }
 
             _shards.Add(shard);
@@ -102,7 +102,7 @@ public class ShardManager
         {
             var shard = FindShardByIdLocked(shardId);
             if (shard == null)
-                throw new NovaDbException(ErrorCode.ShardNotFound, $"Shard {shardId} not found");
+                throw new NovaException(ErrorCode.ShardNotFound, $"Shard {shardId} not found");
 
             shard.RowCount++;
             shard.SizeBytes += bytesWritten;
@@ -118,7 +118,7 @@ public class ShardManager
         {
             var shard = FindShardByIdLocked(shardId);
             if (shard == null)
-                throw new NovaDbException(ErrorCode.ShardNotFound, $"Shard {shardId} not found");
+                throw new NovaException(ErrorCode.ShardNotFound, $"Shard {shardId} not found");
 
             if (shard.IsReadOnly)
                 return false;
@@ -144,7 +144,7 @@ public class ShardManager
         {
             var shard = FindShardByIdLocked(shardId);
             if (shard == null)
-                throw new NovaDbException(ErrorCode.ShardNotFound, $"Shard {shardId} not found");
+                throw new NovaException(ErrorCode.ShardNotFound, $"Shard {shardId} not found");
 
             // 标记当前分片为只读
             shard.IsReadOnly = true;

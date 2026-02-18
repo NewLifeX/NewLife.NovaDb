@@ -15,7 +15,7 @@ internal class NovaController : IApi
     /// <summary>会话</summary>
     public IApiSession Session { get; set; } = null!;
 
-    /// <summary>共享 SQL 执行引擎，由 NovaDbServer 启动时设置</summary>
+    /// <summary>共享 SQL 执行引擎，由 NovaServer 启动时设置</summary>
     internal static SqlEngine? SharedEngine { get; set; }
 
     /// <summary>共享事务字典，跨请求维护事务状态</summary>

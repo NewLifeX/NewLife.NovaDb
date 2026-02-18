@@ -6,12 +6,12 @@ using NewLife.NovaDb.Sql;
 namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb ADO.NET 连接</summary>
-public class NovaDbConnection : DbConnection
+public class NovaConnection : DbConnection
 {
     private String _connectionString = String.Empty;
     private ConnectionState _state = ConnectionState.Closed;
     private String _database = String.Empty;
-    private NovaDbClient? _client;
+    private NovaClient? _client;
     private SqlEngine? _sqlEngine;
 
     /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
@@ -46,7 +46,7 @@ public class NovaDbConnection : DbConnection
     public Boolean IsEmbedded => _connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>远程客户端（服务器模式）</summary>
-    public NovaDbClient? Client => _client;
+    public NovaClient? Client => _client;
 
     /// <summary>SQL 执行引擎（嵌入模式）</summary>
     public SqlEngine? SqlEngine => _sqlEngine;
@@ -68,7 +68,7 @@ public class NovaDbConnection : DbConnection
             var server = ParseValue("Server");
             var portStr = ParseValue("Port");
             var port = Int32.TryParse(portStr, out var p) ? p : 3306;
-            _client = new NovaDbClient($"tcp://{server}:{port}");
+            _client = new NovaClient($"tcp://{server}:{port}");
             _client.Open();
         }
 
@@ -94,11 +94,11 @@ public class NovaDbConnection : DbConnection
     /// <summary>开始事务</summary>
     /// <param name="isolationLevel">隔离级别</param>
     /// <returns>事务实例</returns>
-    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => new NovaDbTransaction(this);
+    protected override DbTransaction BeginDbTransaction(IsolationLevel isolationLevel) => new NovaTransaction(this);
 
     /// <summary>创建命令</summary>
     /// <returns>命令实例</returns>
-    protected override DbCommand CreateDbCommand() => new NovaDbCommand { Connection = this };
+    protected override DbCommand CreateDbCommand() => new NovaCommand { Connection = this };
 
     /// <summary>释放资源</summary>
     /// <param name="disposing">是否由 Dispose 调用</param>

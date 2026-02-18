@@ -49,7 +49,7 @@ public class NovaTable : IDisposable
         _codec = new DefaultDataCodec();
 
         if (!_schema.PrimaryKeyIndex.HasValue)
-            throw new NovaDbException(ErrorCode.InvalidArgument, "Table must have a primary key");
+            throw new NovaException(ErrorCode.InvalidArgument, "Table must have a primary key");
 
         // 创建表目录
         if (!Directory.Exists(_tablePath))
@@ -84,7 +84,7 @@ public class NovaTable : IDisposable
         if (row == null)
             throw new ArgumentNullException(nameof(row));
         if (row.Length != _schema.Columns.Count)
-            throw new NovaDbException(ErrorCode.InvalidArgument, $"Row has {row.Length} columns, expected {_schema.Columns.Count}");
+            throw new NovaException(ErrorCode.InvalidArgument, $"Row has {row.Length} columns, expected {_schema.Columns.Count}");
 
         lock (_lock)
         {
@@ -93,7 +93,7 @@ public class NovaTable : IDisposable
             var pkValue = row[pkColumn.Ordinal];
 
             if (pkValue == null)
-                throw new NovaDbException(ErrorCode.InvalidArgument, "Primary key cannot be null");
+                throw new NovaException(ErrorCode.InvalidArgument, "Primary key cannot be null");
 
             // 序列化行数据
             var payload = SerializeRow(row);
@@ -116,7 +116,7 @@ public class NovaTable : IDisposable
                 foreach (var ver in versions)
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
-                        throw new NovaDbException(ErrorCode.PrimaryKeyConflict, $"Primary key '{pkValue}' already exists");
+                        throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Primary key '{pkValue}' already exists");
                 }
             }
 
@@ -205,7 +205,7 @@ public class NovaTable : IDisposable
         if (newRow == null)
             throw new ArgumentNullException(nameof(newRow));
         if (newRow.Length != _schema.Columns.Count)
-            throw new NovaDbException(ErrorCode.InvalidArgument, $"Row has {newRow.Length} columns, expected {_schema.Columns.Count}");
+            throw new NovaException(ErrorCode.InvalidArgument, $"Row has {newRow.Length} columns, expected {_schema.Columns.Count}");
 
         lock (_lock)
         {
