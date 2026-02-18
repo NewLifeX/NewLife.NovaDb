@@ -5,6 +5,7 @@ using Xunit;
 namespace XUnitTest.Server;
 
 /// <summary>NovaDb 服务器单元测试</summary>
+[Collection("IntegrationTests")]
 public class NovaDbServerTests : IDisposable
 {
     private readonly NovaDbServer _server;

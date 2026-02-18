@@ -8,6 +8,7 @@ using Xunit;
 namespace XUnitTest.Client;
 
 /// <summary>NovaDb 连接单元测试</summary>
+[Collection("IntegrationTests")]
 public class NovaDbConnectionTests
 {
     [Fact(DisplayName = "测试打开和关闭嵌入模式连接")]

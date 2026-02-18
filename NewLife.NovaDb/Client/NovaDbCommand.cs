@@ -45,22 +45,46 @@ public class NovaDbCommand : DbCommand
     /// <returns>受影响行数</returns>
     public override Int32 ExecuteNonQuery()
     {
-        var engine = GetSqlEngine();
-        if (engine == null) return 0;
+        var conn = DbConnection as NovaDbConnection;
+        if (conn == null) return 0;
 
-        var result = engine.Execute(_commandText, BuildParameters());
-        return result.AffectedRows;
+        // 嵌入模式：直接使用 SQL 引擎
+        if (conn.SqlEngine != null)
+        {
+            var result = conn.SqlEngine.Execute(_commandText, BuildParameters());
+            return result.AffectedRows;
+        }
+
+        // 服务器模式：通过 RPC 客户端执行
+        if (conn.Client != null)
+            return conn.Client.ExecuteAsync(_commandText).ConfigureAwait(false).GetAwaiter().GetResult();
+
+        return 0;
     }
 
     /// <summary>执行查询并返回第一行第一列</summary>
     /// <returns>标量值</returns>
     public override Object? ExecuteScalar()
     {
-        var engine = GetSqlEngine();
-        if (engine == null) return null;
+        var conn = DbConnection as NovaDbConnection;
+        if (conn == null) return null;
 
-        var result = engine.Execute(_commandText, BuildParameters());
-        return result.GetScalar();
+        // 嵌入模式：直接使用 SQL 引擎
+        if (conn.SqlEngine != null)
+        {
+            var result = conn.SqlEngine.Execute(_commandText, BuildParameters());
+            return result.GetScalar();
+        }
+
+        // 服务器模式：通过查询获取标量值
+        if (conn.Client != null)
+        {
+            var reader = ExecuteDbDataReader(CommandBehavior.Default);
+            if (reader.Read() && reader.FieldCount > 0)
+                return reader.GetValue(0);
+        }
+
+        return null;
     }
 
     /// <summary>预编译命令</summary>
@@ -76,16 +100,32 @@ public class NovaDbCommand : DbCommand
     protected override DbDataReader ExecuteDbDataReader(CommandBehavior behavior)
     {
         var reader = new NovaDbDataReader();
-        var engine = GetSqlEngine();
-        if (engine == null) return reader;
+        var conn = DbConnection as NovaDbConnection;
+        if (conn == null) return reader;
 
-        var result = engine.Execute(_commandText, BuildParameters());
-        if (result.IsQuery && result.ColumnNames != null)
+        // 嵌入模式：直接使用 SQL 引擎
+        if (conn.SqlEngine != null)
         {
-            reader.SetColumns(result.ColumnNames);
-            foreach (var row in result.Rows)
+            var result = conn.SqlEngine.Execute(_commandText, BuildParameters());
+            if (result.IsQuery && result.ColumnNames != null)
             {
-                reader.AddRow(row);
+                reader.SetColumns(result.ColumnNames);
+                foreach (var row in result.Rows)
+                {
+                    reader.AddRow(row);
+                }
+            }
+            return reader;
+        }
+
+        // 服务器模式：通过 RPC 客户端查询
+        if (conn.Client != null)
+        {
+            var queryResult = conn.Client.QueryAsync<IDictionary<String, Object?>>(_commandText)
+                .ConfigureAwait(false).GetAwaiter().GetResult();
+            if (queryResult != null)
+            {
+                FillReaderFromQueryResult(reader, queryResult);
             }
         }
 
@@ -93,15 +133,6 @@ public class NovaDbCommand : DbCommand
     }
 
     #region 辅助
-
-    /// <summary>获取 SQL 引擎实例</summary>
-    private SqlEngine? GetSqlEngine()
-    {
-        if (DbConnection is NovaDbConnection conn)
-            return conn.SqlEngine;
-
-        return null;
-    }
 
     /// <summary>将参数集合转换为字典</summary>
     private Dictionary<String, Object?>? BuildParameters()
@@ -116,6 +147,46 @@ public class NovaDbCommand : DbCommand
         }
 
         return dict;
+    }
+
+    /// <summary>从 RPC 查询结果填充数据读取器</summary>
+    /// <param name="reader">数据读取器</param>
+    /// <param name="queryResult">查询结果字典</param>
+    private static void FillReaderFromQueryResult(NovaDbDataReader reader, IDictionary<String, Object?> queryResult)
+    {
+        // 解析列名（Remoting 反序列化后为 List<Object>）
+        if (queryResult.TryGetValue("ColumnNames", out var colObj) || queryResult.TryGetValue("columnNames", out colObj))
+        {
+            if (colObj is IList<Object> colList)
+            {
+                var columns = colList.Select(c => c?.ToString() ?? String.Empty).ToArray();
+                reader.SetColumns(columns);
+            }
+            else if (colObj is Object[] colArr)
+            {
+                var columns = colArr.Select(c => c?.ToString() ?? String.Empty).ToArray();
+                reader.SetColumns(columns);
+            }
+            else if (colObj is String[] colStrArr)
+            {
+                reader.SetColumns(colStrArr);
+            }
+        }
+
+        // 解析行数据（Remoting 反序列化后每行为 List<Object>）
+        if (queryResult.TryGetValue("Rows", out var rowsObj) || queryResult.TryGetValue("rows", out rowsObj))
+        {
+            if (rowsObj is IList<Object> rows)
+            {
+                foreach (var row in rows)
+                {
+                    if (row is IList<Object> rowList)
+                        reader.AddRow(rowList.ToArray());
+                    else if (row is Object[] rowArr)
+                        reader.AddRow(rowArr);
+                }
+            }
+        }
     }
 
     #endregion
