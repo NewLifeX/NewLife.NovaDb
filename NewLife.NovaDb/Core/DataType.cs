@@ -86,18 +86,96 @@ public static class DataTypeExtensions
     }
 }
 
-/// <summary>地理坐标点（经纬度）</summary>
+/// <summary>地理编码类型，表示经纬度坐标点</summary>
 /// <remarks>初始化地理坐标点</remarks>
-/// <param name="latitude">纬度</param>
-/// <param name="longitude">经度</param>
-public struct GeoPoint(Double latitude, Double longitude)
+/// <param name="latitude">纬度（-90 到 90）</param>
+/// <param name="longitude">经度（-180 到 180）</param>
+public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<GeoPoint>
 {
+    /// <summary>地球平均半径（米）</summary>
+    private const Double EarthRadiusMeters = 6_371_000.0;
+
     /// <summary>纬度（-90 到 90）</summary>
-    public Double Latitude { get; set; } = latitude;
+    public Double Latitude { get; } = latitude;
 
     /// <summary>经度（-180 到 180）</summary>
-    public Double Longitude { get; set; } = longitude;
+    public Double Longitude { get; } = longitude;
+
+    /// <summary>计算到另一个坐标点的距离（米），使用 Haversine 公式</summary>
+    /// <param name="other">另一个坐标点</param>
+    /// <returns>距离（米）</returns>
+    public Double Distance(GeoPoint other)
+    {
+        var lat1 = Latitude * Math.PI / 180.0;
+        var lat2 = other.Latitude * Math.PI / 180.0;
+        var dLat = (other.Latitude - Latitude) * Math.PI / 180.0;
+        var dLon = (other.Longitude - Longitude) * Math.PI / 180.0;
+
+        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                Math.Cos(lat1) * Math.Cos(lat2) *
+                Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+
+        return EarthRadiusMeters * c;
+    }
+
+    /// <summary>判断是否在指定中心点的半径范围内</summary>
+    /// <param name="center">中心坐标点</param>
+    /// <param name="radiusMeters">半径（米）</param>
+    /// <returns>是否在范围内</returns>
+    public Boolean WithinRadius(GeoPoint center, Double radiusMeters) => Distance(center) <= radiusMeters;
+
+    /// <summary>从字符串解析坐标点，格式为 "(lat, lon)"</summary>
+    /// <param name="s">字符串</param>
+    /// <returns>坐标点</returns>
+    public static GeoPoint Parse(String s)
+    {
+        if (s == null) throw new ArgumentNullException(nameof(s));
+
+        var trimmed = s.Trim();
+        if (trimmed.StartsWith("(") && trimmed.EndsWith(")"))
+            trimmed = trimmed.Substring(1, trimmed.Length - 2);
+
+        var parts = trimmed.Split(',');
+        if (parts.Length != 2)
+            throw new FormatException($"Invalid GeoPoint format: '{s}', expected '(lat, lon)'");
+
+        return new GeoPoint(Double.Parse(parts[0].Trim()), Double.Parse(parts[1].Trim()));
+    }
+
+    /// <summary>判断是否相等</summary>
+    /// <param name="other">另一个坐标点</param>
+    /// <returns>是否相等</returns>
+    public Boolean Equals(GeoPoint other) => Latitude == other.Latitude && Longitude == other.Longitude;
+
+    /// <summary>判断是否相等</summary>
+    /// <param name="obj">对象</param>
+    /// <returns>是否相等</returns>
+    public override Boolean Equals(Object? obj) => obj is GeoPoint other && Equals(other);
+
+    /// <summary>获取哈希码</summary>
+    /// <returns>哈希码</returns>
+    public override Int32 GetHashCode()
+    {
+        unchecked
+        {
+            return (Latitude.GetHashCode() * 397) ^ Longitude.GetHashCode();
+        }
+    }
 
     /// <summary>返回字符串表示</summary>
-    public override readonly String ToString() => $"({Latitude}, {Longitude})";
+    /// <returns>字符串表示</returns>
+    public override String ToString() => $"({Latitude}, {Longitude})";
+
+    /// <summary>相等运算符</summary>
+    /// <param name="left">左操作数</param>
+    /// <param name="right">右操作数</param>
+    /// <returns>是否相等</returns>
+    public static Boolean operator ==(GeoPoint left, GeoPoint right) => left.Equals(right);
+
+    /// <summary>不等运算符</summary>
+    /// <param name="left">左操作数</param>
+    /// <param name="right">右操作数</param>
+    /// <returns>是否不等</returns>
+    public static Boolean operator !=(GeoPoint left, GeoPoint right) => !left.Equals(right);
 }

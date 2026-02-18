@@ -486,4 +486,108 @@ public class SqlFunctionTests : IDisposable
     }
 
     #endregion
+
+    #region GeoPoint 函数
+
+    [Fact(DisplayName = "GEOPOINT 创建地理坐标")]
+    public void TestGeoPointFunction()
+    {
+        var r = _engine.Execute("SELECT GEOPOINT(39.9042, 116.4074)");
+        var point = (GeoPoint)r.Rows[0][0]!;
+        Assert.Equal(39.9042, point.Latitude);
+        Assert.Equal(116.4074, point.Longitude);
+    }
+
+    [Fact(DisplayName = "DISTANCE 计算两点距离")]
+    public void TestDistanceFunction()
+    {
+        var r = _engine.Execute("SELECT DISTANCE(GEOPOINT(39.9042, 116.4074), GEOPOINT(31.2304, 121.4737))");
+        var distance = Convert.ToDouble(r.Rows[0][0]);
+        // 北京到上海约 1068 km
+        Assert.InRange(distance, 1_050_000, 1_090_000);
+    }
+
+    [Fact(DisplayName = "DISTANCE NULL 参数返回 NULL")]
+    public void TestDistanceNullArgs()
+    {
+        var r = _engine.Execute("SELECT DISTANCE(NULL, GEOPOINT(31.2304, 121.4737))");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "WITHIN_RADIUS 在范围内")]
+    public void TestWithinRadiusTrue()
+    {
+        var r = _engine.Execute("SELECT WITHIN_RADIUS(GEOPOINT(39.91, 116.41), GEOPOINT(39.9042, 116.4074), 5000)");
+        Assert.Equal(true, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "WITHIN_RADIUS 超出范围")]
+    public void TestWithinRadiusFalse()
+    {
+        var r = _engine.Execute("SELECT WITHIN_RADIUS(GEOPOINT(39.9042, 116.4074), GEOPOINT(31.2304, 121.4737), 100000)");
+        Assert.Equal(false, r.Rows[0][0]);
+    }
+
+    #endregion
+
+    #region Vector 函数
+
+    [Fact(DisplayName = "VECTOR 创建向量")]
+    public void TestVectorFunction()
+    {
+        var r = _engine.Execute("SELECT VECTOR(1.0, 2.0, 3.0)");
+        var vec = (Single[])r.Rows[0][0]!;
+        Assert.Equal(3, vec.Length);
+        Assert.Equal(1.0f, vec[0]);
+        Assert.Equal(2.0f, vec[1]);
+        Assert.Equal(3.0f, vec[2]);
+    }
+
+    [Fact(DisplayName = "COSINE_SIMILARITY 余弦相似度")]
+    public void TestCosineSimilarity()
+    {
+        var r = _engine.Execute("SELECT COSINE_SIMILARITY(VECTOR(1, 0, 0), VECTOR(1, 0, 0))");
+        var similarity = Convert.ToDouble(r.Rows[0][0]);
+        Assert.Equal(1.0, similarity, 6);
+    }
+
+    [Fact(DisplayName = "COSINE_SIMILARITY 正交向量")]
+    public void TestCosineSimilarityOrthogonal()
+    {
+        var r = _engine.Execute("SELECT COSINE_SIMILARITY(VECTOR(1, 0, 0), VECTOR(0, 1, 0))");
+        var similarity = Convert.ToDouble(r.Rows[0][0]);
+        Assert.Equal(0.0, similarity, 6);
+    }
+
+    [Fact(DisplayName = "COSINE_SIMILARITY NULL 参数返回 NULL")]
+    public void TestCosineSimilarityNull()
+    {
+        var r = _engine.Execute("SELECT COSINE_SIMILARITY(NULL, VECTOR(1, 0, 0))");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "EUCLIDEAN_DISTANCE 欧氏距离")]
+    public void TestEuclideanDistance()
+    {
+        var r = _engine.Execute("SELECT EUCLIDEAN_DISTANCE(VECTOR(0, 0, 0), VECTOR(3, 4, 0))");
+        var distance = Convert.ToDouble(r.Rows[0][0]);
+        Assert.Equal(5.0, distance, 6);
+    }
+
+    [Fact(DisplayName = "DOT_PRODUCT 点积")]
+    public void TestDotProduct()
+    {
+        var r = _engine.Execute("SELECT DOT_PRODUCT(VECTOR(1, 2, 3), VECTOR(4, 5, 6))");
+        var result = Convert.ToDouble(r.Rows[0][0]);
+        Assert.Equal(32.0, result, 6); // 1*4 + 2*5 + 3*6 = 32
+    }
+
+    [Fact(DisplayName = "DOT_PRODUCT NULL 参数返回 NULL")]
+    public void TestDotProductNull()
+    {
+        var r = _engine.Execute("SELECT DOT_PRODUCT(NULL, VECTOR(1, 2, 3))");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    #endregion
 }

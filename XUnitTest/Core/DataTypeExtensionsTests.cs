@@ -118,11 +118,7 @@ public class GeoPointTests
     [Fact]
     public void TestPropertySetter()
     {
-        var point = new GeoPoint(0, 0)
-        {
-            Latitude = 31.2304,
-            Longitude = 121.4737
-        };
+        var point = new GeoPoint(31.2304, 121.4737);
 
         Assert.Equal(31.2304, point.Latitude);
         Assert.Equal(121.4737, point.Longitude);

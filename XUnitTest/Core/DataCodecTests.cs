@@ -259,4 +259,68 @@ public class DataCodecTests
         var ex = Assert.Throws<NotSupportedException>(() => _codec.GetEncodedLength(123, (DataType)255));
         Assert.Contains("Unsupported data type", ex.Message);
     }
+
+    [Fact]
+    public void TestEncodeDecodeGeoPoint()
+    {
+        var value = new GeoPoint(39.9042, 116.4074);
+        var encoded = _codec.Encode(value, DataType.GeoPoint);
+        var decoded = (GeoPoint)_codec.Decode(encoded, 0, DataType.GeoPoint)!;
+
+        Assert.Equal(value.Latitude, decoded.Latitude);
+        Assert.Equal(value.Longitude, decoded.Longitude);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeGeoPointNull()
+    {
+        var encoded = _codec.Encode(null, DataType.GeoPoint);
+        var decoded = _codec.Decode(encoded, 0, DataType.GeoPoint);
+
+        Assert.Null(decoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeVector()
+    {
+        var value = new Single[] { 1.0f, 2.5f, -3.14f, 0f };
+        var encoded = _codec.Encode(value, DataType.Vector);
+        var decoded = (Single[])_codec.Decode(encoded, 0, DataType.Vector)!;
+
+        Assert.Equal(value, decoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeVectorNull()
+    {
+        var encoded = _codec.Encode(null, DataType.Vector);
+        var decoded = _codec.Decode(encoded, 0, DataType.Vector);
+
+        Assert.Null(decoded);
+    }
+
+    [Fact]
+    public void TestEncodeDecodeEmptyVector()
+    {
+        var value = Array.Empty<Single>();
+        var encoded = _codec.Encode(value, DataType.Vector);
+        var decoded = (Single[])_codec.Decode(encoded, 0, DataType.Vector)!;
+
+        Assert.Equal(value, decoded);
+        Assert.Equal(4, encoded.Length); // 长度前缀 4 字节 + 0 字节数据
+    }
+
+    [Fact]
+    public void TestGetEncodedLengthGeoPoint()
+    {
+        var value = new GeoPoint(39.9042, 116.4074);
+        Assert.Equal(16, _codec.GetEncodedLength(value, DataType.GeoPoint));
+    }
+
+    [Fact]
+    public void TestGetEncodedLengthVector()
+    {
+        var value = new Single[] { 1.0f, 2.0f, 3.0f };
+        Assert.Equal(4 + 3 * 4, _codec.GetEncodedLength(value, DataType.Vector));
+    }
 }

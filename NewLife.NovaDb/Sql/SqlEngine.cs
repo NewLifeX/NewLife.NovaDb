@@ -1111,6 +1111,40 @@ public class SqlEngine : IDisposable
 
             default:
                 throw new NovaException(ErrorCode.NotSupported, $"Unsupported function: {func.FunctionName}");
+
+            // GeoPoint 函数
+            case "GEOPOINT":
+                if (args.Count < 2) throw new NovaException(ErrorCode.InvalidArgument, "GEOPOINT requires 2 arguments (lat, lon)");
+                return new GeoPoint(Convert.ToDouble(args[0]), Convert.ToDouble(args[1]));
+
+            case "DISTANCE":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                return ((GeoPoint)args[0]!).Distance((GeoPoint)args[1]!);
+
+            case "WITHIN_RADIUS":
+                if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
+                return ((GeoPoint)args[0]!).WithinRadius((GeoPoint)args[1]!, Convert.ToDouble(args[2]));
+
+            // Vector 函数
+            case "VECTOR":
+                var vec = new Single[args.Count];
+                for (var i = 0; i < args.Count; i++)
+                {
+                    vec[i] = Convert.ToSingle(args[i]);
+                }
+                return vec;
+
+            case "COSINE_SIMILARITY":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                return CosineSimilarity((Single[])args[0]!, (Single[])args[1]!);
+
+            case "EUCLIDEAN_DISTANCE":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                return EuclideanDistance((Single[])args[0]!, (Single[])args[1]!);
+
+            case "DOT_PRODUCT":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                return DotProduct((Single[])args[0]!, (Single[])args[1]!);
         }
     }
 
@@ -1202,6 +1236,8 @@ public class SqlEngine : IDisposable
             "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" => DataType.String,
             "BINARY" or "VARBINARY" or "BYTES" or "BLOB" => DataType.Binary,
             "DATETIME" or "TIMESTAMP" or "DATE" => DataType.DateTime,
+            "GEOPOINT" => DataType.GeoPoint,
+            "VECTOR" => DataType.Vector,
             _ => throw new NovaException(ErrorCode.SyntaxError, $"Unknown data type: {typeName}")
         };
     }
@@ -1229,6 +1265,8 @@ public class SqlEngine : IDisposable
             DataType.String => Convert.ToString(value)!,
             DataType.DateTime => Convert.ToDateTime(value),
             DataType.Binary when value is Byte[] bytes => bytes,
+            DataType.GeoPoint when value is GeoPoint gp => gp,
+            DataType.Vector when value is Single[] vec => vec,
             _ => value
         };
     }
@@ -1249,6 +1287,64 @@ public class SqlEngine : IDisposable
 
     private static Boolean IsNumeric(Object? value) =>
         value is Int32 or Int64 or Double or Decimal or Single or Byte or Int16 or UInt32 or UInt64;
+
+    /// <summary>计算两个向量的余弦相似度</summary>
+    /// <param name="a">向量 A</param>
+    /// <param name="b">向量 B</param>
+    /// <returns>余弦相似度（-1 到 1）</returns>
+    private static Double CosineSimilarity(Single[] a, Single[] b)
+    {
+        if (a.Length != b.Length)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Vector dimensions mismatch: {a.Length} vs {b.Length}");
+
+        Double dot = 0, normA = 0, normB = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            dot += a[i] * (Double)b[i];
+            normA += a[i] * (Double)a[i];
+            normB += b[i] * (Double)b[i];
+        }
+
+        var denominator = Math.Sqrt(normA) * Math.Sqrt(normB);
+        return denominator == 0 ? 0 : dot / denominator;
+    }
+
+    /// <summary>计算两个向量的欧氏距离</summary>
+    /// <param name="a">向量 A</param>
+    /// <param name="b">向量 B</param>
+    /// <returns>欧氏距离</returns>
+    private static Double EuclideanDistance(Single[] a, Single[] b)
+    {
+        if (a.Length != b.Length)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Vector dimensions mismatch: {a.Length} vs {b.Length}");
+
+        Double sum = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            var diff = a[i] - (Double)b[i];
+            sum += diff * diff;
+        }
+
+        return Math.Sqrt(sum);
+    }
+
+    /// <summary>计算两个向量的点积</summary>
+    /// <param name="a">向量 A</param>
+    /// <param name="b">向量 B</param>
+    /// <returns>点积</returns>
+    private static Double DotProduct(Single[] a, Single[] b)
+    {
+        if (a.Length != b.Length)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Vector dimensions mismatch: {a.Length} vs {b.Length}");
+
+        Double sum = 0;
+        for (var i = 0; i < a.Length; i++)
+        {
+            sum += a[i] * (Double)b[i];
+        }
+
+        return sum;
+    }
 
     private static Object? ArithmeticOp(Object? left, Object? right, Func<Double, Double, Double> op)
     {
