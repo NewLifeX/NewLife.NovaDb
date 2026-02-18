@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using NewLife.NovaDb.Core;
@@ -415,4 +415,85 @@ public class SqlEngineTests : IDisposable
 
         conn.Close();
     }
+
+    #region JOIN 测试
+
+    private void CreateJoinTables()
+    {
+        _engine.Execute("CREATE TABLE departments (id INT PRIMARY KEY, name VARCHAR NOT NULL)");
+        _engine.Execute("INSERT INTO departments VALUES (1, 'Engineering')");
+        _engine.Execute("INSERT INTO departments VALUES (2, 'Marketing')");
+        _engine.Execute("INSERT INTO departments VALUES (3, 'Finance')");
+
+        _engine.Execute("CREATE TABLE employees (id INT PRIMARY KEY, name VARCHAR NOT NULL, dept_id INT)");
+        _engine.Execute("INSERT INTO employees VALUES (1, 'Alice', 1)");
+        _engine.Execute("INSERT INTO employees VALUES (2, 'Bob', 1)");
+        _engine.Execute("INSERT INTO employees VALUES (3, 'Charlie', 2)");
+        _engine.Execute("INSERT INTO employees VALUES (4, 'Diana', NULL)");
+    }
+
+    [Fact(DisplayName = "测试 INNER JOIN")]
+    public void TestInnerJoin()
+    {
+        CreateJoinTables();
+
+        var result = _engine.Execute(
+            "SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.dept_id = d.id ORDER BY e.name ASC");
+
+        Assert.True(result.IsQuery);
+        Assert.Equal(3, result.Rows.Count);
+        Assert.Equal("Alice", result.Rows[0][0]);
+        Assert.Equal("Engineering", result.Rows[0][1]);
+        Assert.Equal("Bob", result.Rows[1][0]);
+        Assert.Equal("Charlie", result.Rows[2][0]);
+        Assert.Equal("Marketing", result.Rows[2][1]);
+    }
+
+    [Fact(DisplayName = "测试 LEFT JOIN")]
+    public void TestLeftJoin()
+    {
+        CreateJoinTables();
+
+        var result = _engine.Execute(
+            "SELECT e.name, d.name FROM employees e LEFT JOIN departments d ON e.dept_id = d.id ORDER BY e.name ASC");
+
+        Assert.True(result.IsQuery);
+        Assert.Equal(4, result.Rows.Count);
+
+        // 按 name 排序后: Alice, Bob, Charlie, Diana
+        Assert.Equal("Alice", result.Rows[0][0]);
+        Assert.Equal("Engineering", result.Rows[0][1]);
+        Assert.Equal("Bob", result.Rows[1][0]);
+        Assert.Equal("Charlie", result.Rows[2][0]);
+        Assert.Equal("Diana", result.Rows[3][0]);
+        // Diana 没有 dept_id 匹配, LEFT JOIN 填充 NULL
+        Assert.Null(result.Rows[3][1]);
+    }
+
+    [Fact(DisplayName = "测试 JOIN 带 WHERE")]
+    public void TestJoinWithWhere()
+    {
+        CreateJoinTables();
+
+        var result = _engine.Execute(
+            "SELECT e.name, d.name FROM employees e JOIN departments d ON e.dept_id = d.id WHERE d.name = 'Engineering'");
+
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact(DisplayName = "测试 JOIN SELECT *")]
+    public void TestJoinSelectAll()
+    {
+        CreateJoinTables();
+
+        var result = _engine.Execute(
+            "SELECT * FROM employees e JOIN departments d ON e.dept_id = d.id");
+
+        Assert.True(result.IsQuery);
+        Assert.Equal(3, result.Rows.Count);
+        // 列数 = employees(3) + departments(2) = 5
+        Assert.Equal(5, result.ColumnNames!.Length);
+    }
+
+    #endregion
 }

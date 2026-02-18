@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
@@ -360,5 +360,50 @@ public class SqlParserTests
         Assert.IsType<CreateTableStatement>(stmt);
         var create = (CreateTableStatement)stmt;
         Assert.True(create.Columns[0].IsPrimaryKey);
+    }
+
+    [Fact(DisplayName = "测试 INNER JOIN 解析")]
+    public void TestParseInnerJoin()
+    {
+        var parser = new SqlParser("SELECT e.name, d.name FROM employees e INNER JOIN departments d ON e.dept_id = d.id");
+        var stmt = parser.Parse();
+
+        Assert.IsType<SelectStatement>(stmt);
+        var select = (SelectStatement)stmt;
+        Assert.Equal("employees", select.TableName);
+        Assert.Equal("e", select.TableAlias);
+        Assert.True(select.HasJoin);
+        Assert.Single(select.Joins!);
+
+        var join = select.Joins![0];
+        Assert.Equal(JoinType.Inner, join.Type);
+        Assert.Equal("departments", join.TableName);
+        Assert.Equal("d", join.Alias);
+        Assert.NotNull(join.Condition);
+    }
+
+    [Fact(DisplayName = "测试 LEFT JOIN 解析")]
+    public void TestParseLeftJoin()
+    {
+        var parser = new SqlParser("SELECT * FROM a LEFT JOIN b ON a.id = b.a_id");
+        var stmt = parser.Parse();
+
+        Assert.IsType<SelectStatement>(stmt);
+        var select = (SelectStatement)stmt;
+        Assert.True(select.HasJoin);
+        Assert.Equal(JoinType.Left, select.Joins![0].Type);
+    }
+
+    [Fact(DisplayName = "测试多表 JOIN 解析")]
+    public void TestParseMultipleJoins()
+    {
+        var parser = new SqlParser("SELECT * FROM a JOIN b ON a.id = b.a_id JOIN c ON b.id = c.b_id");
+        var stmt = parser.Parse();
+
+        Assert.IsType<SelectStatement>(stmt);
+        var select = (SelectStatement)stmt;
+        Assert.Equal(2, select.Joins!.Count);
+        Assert.Equal("b", select.Joins[0].TableName);
+        Assert.Equal("c", select.Joins[1].TableName);
     }
 }

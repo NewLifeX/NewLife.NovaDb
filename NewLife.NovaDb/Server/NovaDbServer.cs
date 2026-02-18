@@ -1,4 +1,6 @@
-using NewLife.Log;
+﻿using NewLife.Log;
+using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Sql;
 using NewLife.Remoting;
 
 namespace NewLife.NovaDb.Server;
@@ -8,6 +10,7 @@ public class NovaDbServer : DisposeBase
 {
     private ApiServer? _server;
     private readonly Int32 _port;
+    private SqlEngine? _sqlEngine;
 
     /// <summary>端口</summary>
     public Int32 Port => _server?.Port ?? _port;
@@ -17,6 +20,12 @@ public class NovaDbServer : DisposeBase
 
     /// <summary>内部 ApiServer 实例</summary>
     public ApiServer? Server => _server;
+
+    /// <summary>数据库路径。为空时使用当前目录下的 NovaData 文件夹</summary>
+    public String DbPath { get; set; } = String.Empty;
+
+    /// <summary>SQL 执行引擎</summary>
+    public SqlEngine? SqlEngine => _sqlEngine;
 
     /// <summary>创建服务器实例</summary>
     /// <param name="port">监听端口</param>
@@ -29,6 +38,16 @@ public class NovaDbServer : DisposeBase
     public void Start()
     {
         if (_server != null && _server.Active) return;
+
+        // 初始化 SQL 引擎
+        var dbPath = DbPath;
+        if (String.IsNullOrEmpty(dbPath))
+            dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NovaData");
+
+        _sqlEngine = new SqlEngine(dbPath, new DbOptions { Path = dbPath });
+
+        // 设置共享引擎供控制器使用
+        NovaController.SharedEngine = _sqlEngine;
 
         var server = new ApiServer(_port)
         {
@@ -48,6 +67,10 @@ public class NovaDbServer : DisposeBase
     {
         _server?.Stop(reason ?? "NovaDbServer.Stop");
         _server = null;
+
+        NovaController.SharedEngine = null;
+        _sqlEngine?.Dispose();
+        _sqlEngine = null;
     }
 
     /// <summary>释放资源</summary>
@@ -59,5 +82,10 @@ public class NovaDbServer : DisposeBase
         _server?.Stop(disposing ? "Dispose" : "GC");
         _server.TryDispose();
         _server = null;
+
+        NovaController.SharedEngine = null;
+        _sqlEngine?.Dispose();
+        _sqlEngine = null;
     }
 }
+

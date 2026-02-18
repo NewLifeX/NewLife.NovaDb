@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -164,6 +164,12 @@ public class SelectStatement : SqlStatement
     /// <summary>FROM 表名</summary>
     public String? TableName { get; set; }
 
+    /// <summary>FROM 表别名</summary>
+    public String? TableAlias { get; set; }
+
+    /// <summary>JOIN 子句列表</summary>
+    public List<JoinClause>? Joins { get; set; }
+
     /// <summary>WHERE 条件</summary>
     public SqlExpression? Where { get; set; }
 
@@ -184,6 +190,9 @@ public class SelectStatement : SqlStatement
 
     /// <summary>是否为 SELECT *</summary>
     public Boolean IsSelectAll => Columns.Count == 1 && Columns[0].IsWildcard;
+
+    /// <summary>是否包含 JOIN</summary>
+    public Boolean HasJoin => Joins != null && Joins.Count > 0;
 }
 
 /// <summary>SELECT 列</summary>
@@ -197,6 +206,33 @@ public class SelectColumn
 
     /// <summary>是否为通配符 *</summary>
     public Boolean IsWildcard { get; set; }
+}
+
+/// <summary>JOIN 类型</summary>
+public enum JoinType
+{
+    /// <summary>INNER JOIN</summary>
+    Inner,
+    /// <summary>LEFT JOIN</summary>
+    Left,
+    /// <summary>RIGHT JOIN</summary>
+    Right
+}
+
+/// <summary>JOIN 子句</summary>
+public class JoinClause
+{
+    /// <summary>JOIN 类型</summary>
+    public JoinType Type { get; set; }
+
+    /// <summary>右表名</summary>
+    public String TableName { get; set; } = String.Empty;
+
+    /// <summary>表别名</summary>
+    public String? Alias { get; set; }
+
+    /// <summary>ON 条件</summary>
+    public SqlExpression Condition { get; set; } = null!;
 }
 
 /// <summary>ORDER BY 子句</summary>

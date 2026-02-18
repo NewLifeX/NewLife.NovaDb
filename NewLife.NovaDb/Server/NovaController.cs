@@ -1,3 +1,5 @@
+﻿using NewLife.NovaDb.Sql;
+using NewLife.NovaDb.Tx;
 using NewLife.Remoting;
 
 namespace NewLife.NovaDb.Server;
@@ -6,11 +8,19 @@ namespace NewLife.NovaDb.Server;
 /// <remarks>
 /// 控制器方法通过 Remoting RPC 暴露为远程接口。
 /// 路由格式：Nova/{方法名}，如 Nova/Ping、Nova/Execute。
+/// 控制器实例由 Remoting 框架按请求创建，通过静态字段共享 SQL 引擎与事务。
 /// </remarks>
 internal class NovaController : IApi
 {
     /// <summary>会话</summary>
     public IApiSession Session { get; set; } = null!;
+
+    /// <summary>共享 SQL 执行引擎，由 NovaDbServer 启动时设置</summary>
+    internal static SqlEngine? SharedEngine { get; set; }
+
+    /// <summary>共享事务字典，跨请求维护事务状态</summary>
+    private static readonly Dictionary<String, Transaction> _transactions = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Object _txLock = new();
 
     /// <summary>心跳</summary>
     /// <returns>服务器时间</returns>
@@ -21,25 +31,45 @@ internal class NovaController : IApi
     /// <returns>受影响行数</returns>
     public Int32 Execute(String sql)
     {
-        // TODO: 接入 SQL 引擎
-        return 0;
+        if (SharedEngine == null) return 0;
+
+        var result = SharedEngine.Execute(sql);
+        return result.AffectedRows;
     }
 
     /// <summary>查询</summary>
     /// <param name="sql">SQL 语句</param>
-    /// <returns>查询结果（JSON）</returns>
+    /// <returns>查询结果</returns>
     public Object? Query(String sql)
     {
-        // TODO: 接入 SQL 引擎
-        return null;
+        if (SharedEngine == null) return null;
+
+        var result = SharedEngine.Execute(sql);
+        if (!result.IsQuery) return result.AffectedRows;
+
+        return new
+        {
+            result.ColumnNames,
+            Rows = result.Rows.Select(r => r.ToArray()).ToArray()
+        };
     }
 
     /// <summary>开始事务</summary>
     /// <returns>事务 ID</returns>
     public String BeginTransaction()
     {
-        // TODO: 接入事务管理器
-        return Guid.NewGuid().ToString("N");
+        var engine = SharedEngine;
+        if (engine == null) return Guid.NewGuid().ToString("N");
+
+        var tx = engine.TxManager.BeginTransaction();
+        var txId = tx.TxId.ToString();
+
+        lock (_txLock)
+        {
+            _transactions[txId] = tx;
+        }
+
+        return txId;
     }
 
     /// <summary>提交事务</summary>
@@ -47,8 +77,14 @@ internal class NovaController : IApi
     /// <returns>是否成功</returns>
     public Boolean CommitTransaction(String txId)
     {
-        // TODO: 接入事务管理器
-        return true;
+        lock (_txLock)
+        {
+            if (!_transactions.TryGetValue(txId, out var tx)) return true;
+
+            tx.Commit();
+            _transactions.Remove(txId);
+            return true;
+        }
     }
 
     /// <summary>回滚事务</summary>
@@ -56,7 +92,13 @@ internal class NovaController : IApi
     /// <returns>是否成功</returns>
     public Boolean RollbackTransaction(String txId)
     {
-        // TODO: 接入事务管理器
-        return true;
+        lock (_txLock)
+        {
+            if (!_transactions.TryGetValue(txId, out var tx)) return true;
+
+            tx.Rollback();
+            _transactions.Remove(txId);
+            return true;
+        }
     }
 }

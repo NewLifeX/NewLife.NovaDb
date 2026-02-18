@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
 
@@ -283,6 +283,12 @@ public class SqlEngine : IDisposable
             return ExecuteSelectNoTable(stmt, parameters);
         }
 
+        // JOIN 查询
+        if (stmt.HasJoin)
+        {
+            return ExecuteSelectWithJoin(stmt, parameters);
+        }
+
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
 
@@ -346,6 +352,133 @@ public class SqlEngine : IDisposable
         result.ColumnNames = colNames.ToArray();
         result.Rows.Add(values.ToArray());
         return result;
+    }
+
+    private SqlResult ExecuteSelectWithJoin(SelectStatement stmt, Dictionary<String, Object?>? parameters)
+    {
+        using var tx = _txManager.BeginTransaction();
+
+        // 构建合并 Schema：左表 + 所有 JOIN 右表
+        var leftSchema = GetSchema(stmt.TableName!);
+        var leftTable = GetTable(stmt.TableName!);
+        var leftAlias = stmt.TableAlias ?? stmt.TableName!;
+
+        var leftRows = leftTable.GetAll(tx);
+
+        // 表别名 → Schema 的映射
+        var aliasSchemas = new Dictionary<String, TableSchema>(StringComparer.OrdinalIgnoreCase)
+        {
+            [leftAlias] = leftSchema,
+            [stmt.TableName!] = leftSchema
+        };
+
+        // 合并 Schema 列名列表（含表前缀）
+        var mergedColumns = new List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)>();
+        for (var i = 0; i < leftSchema.Columns.Count; i++)
+            mergedColumns.Add((leftAlias, leftSchema.Columns[i].Name, 0, i));
+
+        // 合并行数据：当前结果集
+        var currentRows = leftRows.Select(r => r.ToArray() as Object?[]).ToList();
+
+        // 依次处理每个 JOIN
+        for (var joinIdx = 0; joinIdx < stmt.Joins!.Count; joinIdx++)
+        {
+            var join = stmt.Joins[joinIdx];
+            var rightSchema = GetSchema(join.TableName);
+            var rightTable = GetTable(join.TableName);
+            var rightAlias = join.Alias ?? join.TableName;
+            var rightRows = rightTable.GetAll(tx);
+
+            aliasSchemas[rightAlias] = rightSchema;
+            aliasSchemas[join.TableName] = rightSchema;
+
+            var rightColStart = mergedColumns.Count;
+            for (var i = 0; i < rightSchema.Columns.Count; i++)
+                mergedColumns.Add((rightAlias, rightSchema.Columns[i].Name, joinIdx + 1, i));
+
+            // Nested Loop Join
+            var joinedRows = new List<Object?[]>();
+
+            foreach (var leftRow in currentRows)
+            {
+                var matched = false;
+
+                foreach (var rightRow in rightRows)
+                {
+                    // 合并为一行
+                    var combined = new Object?[leftRow.Length + rightRow.Length];
+                    Array.Copy(leftRow, 0, combined, 0, leftRow.Length);
+                    Array.Copy(rightRow, 0, combined, leftRow.Length, rightRow.Length);
+
+                    // 在合并行上求值 ON 条件
+                    if (EvaluateJoinCondition(join.Condition, combined, mergedColumns, parameters))
+                    {
+                        joinedRows.Add(combined);
+                        matched = true;
+                    }
+                }
+
+                // LEFT JOIN：左行无匹配时补 NULL
+                if (!matched && join.Type == JoinType.Left)
+                {
+                    var combined = new Object?[leftRow.Length + rightSchema.Columns.Count];
+                    Array.Copy(leftRow, 0, combined, 0, leftRow.Length);
+                    joinedRows.Add(combined);
+                }
+            }
+
+            // RIGHT JOIN：右行无匹配时补 NULL
+            if (join.Type == JoinType.Right)
+            {
+                var leftWidth = currentRows.Count > 0 ? currentRows[0].Length - rightSchema.Columns.Count : 0;
+                foreach (var rightRow in rightRows)
+                {
+                    var hasMatch = false;
+                    foreach (var leftRow in currentRows)
+                    {
+                        var combined = new Object?[leftRow.Length + rightRow.Length];
+                        Array.Copy(leftRow, 0, combined, 0, leftRow.Length);
+                        Array.Copy(rightRow, 0, combined, leftRow.Length, rightRow.Length);
+
+                        if (EvaluateJoinCondition(join.Condition, combined, mergedColumns, parameters))
+                        {
+                            hasMatch = true;
+                            break;
+                        }
+                    }
+
+                    if (!hasMatch)
+                    {
+                        var combined = new Object?[leftWidth + rightRow.Length];
+                        Array.Copy(rightRow, 0, combined, leftWidth, rightRow.Length);
+                        joinedRows.Add(combined);
+                    }
+                }
+            }
+
+            currentRows = joinedRows;
+        }
+
+        // WHERE 过滤
+        if (stmt.Where != null)
+        {
+            currentRows = currentRows.Where(row => EvaluateJoinCondition(stmt.Where, row, mergedColumns, parameters)).ToList();
+        }
+
+        // ORDER BY
+        if (stmt.OrderBy != null)
+        {
+            currentRows = ApplyJoinOrderBy(currentRows, stmt.OrderBy, mergedColumns);
+        }
+
+        // OFFSET / LIMIT
+        if (stmt.OffsetValue.HasValue)
+            currentRows = currentRows.Skip(stmt.OffsetValue.Value).ToList();
+        if (stmt.Limit.HasValue)
+            currentRows = currentRows.Take(stmt.Limit.Value).ToList();
+
+        // 投影
+        return BuildJoinSelectResult(stmt, currentRows, mergedColumns, parameters);
     }
 
     private SqlResult ExecuteGroupBy(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
@@ -815,6 +948,169 @@ public class SqlEngine : IDisposable
         return false;
     }
 
+    #endregion
+
+    #region JOIN 辅助
+
+    /// <summary>在合并行上对 JOIN 条件求值</summary>
+    private Boolean EvaluateJoinCondition(SqlExpression expr, Object?[] combinedRow,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
+        Dictionary<String, Object?>? parameters)
+    {
+        var result = EvaluateJoinExpression(expr, combinedRow, columns, parameters);
+        return result is Boolean b && b;
+    }
+
+    /// <summary>在合并行上对表达式求值（支持 table.column 前缀解析）</summary>
+    private Object? EvaluateJoinExpression(SqlExpression expr, Object?[] combinedRow,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
+        Dictionary<String, Object?>? parameters)
+    {
+        switch (expr)
+        {
+            case LiteralExpression lit:
+                return lit.Value;
+
+            case ColumnRefExpression colRef:
+                var colIdx = ResolveJoinColumnIndex(colRef, columns);
+                return combinedRow[colIdx];
+
+            case ParameterExpression param:
+                if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
+                    throw new NovaDbException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
+                return paramValue;
+
+            case BinaryExpression binary:
+                // 短路求值
+                if (binary.Operator == BinaryOperator.And)
+                {
+                    var lv = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
+                    if (lv is Boolean lb && !lb) return false;
+                    var rv = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
+                    return Convert.ToBoolean(lv) && Convert.ToBoolean(rv);
+                }
+                if (binary.Operator == BinaryOperator.Or)
+                {
+                    var lv = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
+                    if (lv is Boolean lb && lb) return true;
+                    var rv = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
+                    return Convert.ToBoolean(lv) || Convert.ToBoolean(rv);
+                }
+
+                var left = EvaluateJoinExpression(binary.Left, combinedRow, columns, parameters);
+                var right = EvaluateJoinExpression(binary.Right, combinedRow, columns, parameters);
+
+                return binary.Operator switch
+                {
+                    BinaryOperator.Equal => CompareValues(left, right) == 0,
+                    BinaryOperator.NotEqual => CompareValues(left, right) != 0,
+                    BinaryOperator.LessThan => CompareValues(left, right) < 0,
+                    BinaryOperator.GreaterThan => CompareValues(left, right) > 0,
+                    BinaryOperator.LessOrEqual => CompareValues(left, right) <= 0,
+                    BinaryOperator.GreaterOrEqual => CompareValues(left, right) >= 0,
+                    BinaryOperator.Add => ArithmeticOp(left, right, (a, b) => a + b),
+                    BinaryOperator.Subtract => ArithmeticOp(left, right, (a, b) => a - b),
+                    BinaryOperator.Multiply => ArithmeticOp(left, right, (a, b) => a * b),
+                    BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
+                    BinaryOperator.Like => EvaluateLike(left, right),
+                    _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
+                };
+
+            case UnaryExpression unary:
+                var operand = EvaluateJoinExpression(unary.Operand, combinedRow, columns, parameters);
+                return unary.Operator switch
+                {
+                    "NOT" => !(Convert.ToBoolean(operand)),
+                    "-" => ArithmeticNegate(operand),
+                    _ => throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
+                };
+
+            case IsNullExpression isNull:
+                var val = EvaluateJoinExpression(isNull.Operand, combinedRow, columns, parameters);
+                return isNull.IsNot ? val != null : val == null;
+
+            default:
+                throw new NovaDbException(ErrorCode.NotSupported, $"Unsupported expression type in JOIN: {expr.ExprType}");
+        }
+    }
+
+    /// <summary>解析 JOIN 中的列引用（支持 table.column 和 无前缀）</summary>
+    private static Int32 ResolveJoinColumnIndex(ColumnRefExpression colRef,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns)
+    {
+        if (colRef.TablePrefix != null)
+        {
+            for (var i = 0; i < columns.Count; i++)
+            {
+                if (String.Equals(columns[i].Alias, colRef.TablePrefix, StringComparison.OrdinalIgnoreCase) &&
+                    String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+            throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{colRef.TablePrefix}.{colRef.ColumnName}' not found");
+        }
+
+        // 无表前缀：按列名匹配（如有歧义取第一个）
+        for (var i = 0; i < columns.Count; i++)
+        {
+            if (String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
+                return i;
+        }
+        throw new NovaDbException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' not found");
+    }
+
+    /// <summary>构建 JOIN 查询的结果投影</summary>
+    private SqlResult BuildJoinSelectResult(SelectStatement stmt, List<Object?[]> rows,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
+        Dictionary<String, Object?>? parameters)
+    {
+        var result = new SqlResult();
+
+        if (stmt.IsSelectAll)
+        {
+            result.ColumnNames = columns.Select(c => c.Column).ToArray();
+            result.Rows = rows;
+        }
+        else
+        {
+            var colNames = new String[stmt.Columns.Count];
+            for (var i = 0; i < stmt.Columns.Count; i++)
+            {
+                var col = stmt.Columns[i];
+                if (col.Alias != null)
+                    colNames[i] = col.Alias;
+                else if (col.Expression is ColumnRefExpression cr)
+                    colNames[i] = cr.ColumnName;
+                else
+                    colNames[i] = $"col{i}";
+            }
+            result.ColumnNames = colNames;
+
+            foreach (var row in rows)
+            {
+                var outputRow = new Object?[stmt.Columns.Count];
+                for (var i = 0; i < stmt.Columns.Count; i++)
+                {
+                    var col = stmt.Columns[i];
+                    outputRow[i] = EvaluateJoinExpression(col.Expression, row, columns, parameters);
+                }
+                result.Rows.Add(outputRow);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>JOIN 结果的 ORDER BY</summary>
+    private static List<Object?[]> ApplyJoinOrderBy(List<Object?[]> rows, List<OrderByClause> orderBy,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns)
+    {
+        return rows.OrderBy(r => 0, Comparer<Int32>.Default)
+            .ThenBy(r => r, new JoinOrderByComparer(orderBy, columns))
+            .ToList();
+    }
+
+    #endregion
+
     /// <summary>释放资源</summary>
     public void Dispose()
     {
@@ -833,8 +1129,6 @@ public class SqlEngine : IDisposable
         _disposed = true;
     }
 
-    #endregion
-
     /// <summary>ORDER BY 比较器</summary>
     private class OrderByComparer(List<OrderByClause> orderBy, TableSchema schema) : IComparer<Object?[]>
     {
@@ -849,6 +1143,39 @@ public class SqlEngine : IDisposable
                 var idx = schema.GetColumnIndex(clause.ColumnName);
                 var cmp = CompareValues(x[idx], y[idx]);
 
+                if (cmp != 0)
+                    return clause.Descending ? -cmp : cmp;
+            }
+
+            return 0;
+        }
+    }
+
+    /// <summary>JOIN 结果 ORDER BY 比较器</summary>
+    private class JoinOrderByComparer(List<OrderByClause> orderBy,
+        List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns) : IComparer<Object?[]>
+    {
+        public Int32 Compare(Object?[]? x, Object?[]? y)
+        {
+            if (x == null && y == null) return 0;
+            if (x == null) return -1;
+            if (y == null) return 1;
+
+            foreach (var clause in orderBy)
+            {
+                var idx = -1;
+                for (var i = 0; i < columns.Count; i++)
+                {
+                    if (String.Equals(columns[i].Column, clause.ColumnName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        idx = i;
+                        break;
+                    }
+                }
+
+                if (idx < 0) continue;
+
+                var cmp = CompareValues(x[idx], y[idx]);
                 if (cmp != 0)
                     return clause.Descending ? -cmp : cmp;
             }

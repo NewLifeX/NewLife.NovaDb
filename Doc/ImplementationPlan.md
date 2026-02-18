@@ -196,15 +196,19 @@
 **交付物**：
 - Select 查询覆盖测试。
 
-### 14) Join 与子查询（M4）⚠️
+### 14) Join 与子查询（M4）✅
 
 **目标**：先落地 Nested Loop Join + IN/EXISTS 基础子查询。
 
-- Join：Nested Loop（可带简单索引加速）。
-- 子查询：`IN/EXISTS` 转换为半连接/迭代求值。
+- Join：Nested Loop Join 已实现（INNER/LEFT/RIGHT JOIN）。✅
+  - AST 层：新增 `JoinClause`、`JoinType` 枚举，`SelectStatement` 扩展 `Joins` 属性。
+  - Parser 层：支持 `[INNER|LEFT|RIGHT] JOIN ... ON ...` 语法，含表别名。
+  - Engine 层：Nested Loop Join 执行，支持多表 JOIN、合并行表达式求值、JOIN + WHERE/ORDER BY/LIMIT。
+- 子查询：`IN/EXISTS` 转换为半连接/迭代求值（规划中，按需实现）。
 
 **交付物**：
-- Join/子查询正确性测试。
+- JOIN 解析测试（INNER JOIN/LEFT JOIN/多表 JOIN 解析）。✅
+- JOIN 执行测试（INNER JOIN/LEFT JOIN/JOIN+WHERE/JOIN SELECT *）。✅
 
 ### 15) Flux Engine：时序存储（M5）✅
 
@@ -247,9 +251,10 @@
 - 会话：连接、握手、认证（可后置）。
 - 请求：Prepare/Execute/Fetch/Close。
 - 传输：无压缩的二进制协议；粘包拆包；心跳。
+- **NovaController 已接入 SqlEngine**：Execute/Query/BeginTransaction/CommitTransaction/RollbackTransaction 全部由 SQL 引擎驱动。✅
 
 **交付物**：
-- 客户端可远程执行基本 SQL。
+- 客户端可远程执行基本 SQL（端到端测试通过）。✅
 
 ### 19) ADO.NET Provider（M7）✅
 
@@ -335,15 +340,15 @@
 | 11 | DDL 与系统表 | M2→M4 | ✅ 完成 | SQL CREATE/DROP TABLE/INDEX |
 | 12 | DML 执行管线 | M2→M4 | ✅ 完成 | SQL INSERT/UPDATE/DELETE |
 | 13 | 查询执行器 | M2→M4 | ✅ 完成 | SELECT/WHERE/ORDER/GROUP BY/HAVING/LIMIT |
-| 14 | Join 与子查询 | M4 | ⚠️ 基础 | 预留扩展点，基础框架已就绪 |
+| 14 | Join 与子查询 | M4 | ✅ 完成 | Nested Loop JOIN（INNER/LEFT/RIGHT），7 个测试通过 |
 | 15 | Flux Engine 时序存储 | M5 | ✅ 完成 | FluxEngine、时间分片 |
 | 16 | MQ Stream/消费组 | M5 | ✅ 完成 | StreamManager、ConsumerGroup、Pending |
 | 17 | KV 视图 + TTL | M6 | ✅ 完成 | KvStore、TTL 清理 |
-| 18 | 服务器 TCP + 协议 | M7 | ✅ 完成 | NovaDbServer、NovaDbProtocol |
+| 18 | 服务器 TCP + 协议 | M7 | ✅ 完成 | NovaDbServer、NovaDbProtocol、NovaController 已接入 SqlEngine |
 | 19 | ADO.NET Provider | M7 | ✅ 完成 | NovaDbConnection/Command/DataReader/Parameter |
 | 20 | 集群与主从同步 | M8 | ✅ 完成 | ReplicationManager、ReplicaClient |
 | 21 | 可观测性与管理工具 | 贯穿 | ⚠️ 基础 | 系统表框架已就绪 |
-| 22 | 测试与基准 | 贯穿 | ✅ 完成 | 251 个单元测试全部通过 |
+| 22 | 测试与基准 | 贯穿 | ✅ 完成 | 258 个单元测试全部通过 |
 | 23 | 文档与示例 | 贯穿 | ✅ 完成 | 架构设计文档、需求规格说明书 |
 | 24 | 发布与 CI | 贯穿 | ⚠️ 基础 | NuGet 包结构已就绪 |
 
@@ -366,5 +371,5 @@
 | LIMIT/OFFSET | ✅ | |
 | COUNT/SUM/AVG/MIN/MAX | ✅ | 聚合函数 |
 | 参数化查询 | ✅ | @param 占位符 |
-| JOIN | ⚠️ 待实现 | 框架已预留 |
-| 子查询 | ⚠️ 待实现 | 框架已预留 |
+| JOIN | ✅ | INNER/LEFT/RIGHT JOIN，Nested Loop 执行，支持表别名 |
+| 子查询 | ⚠️ 待实现 | 框架已预留，可按需扩展 IN/EXISTS |

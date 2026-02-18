@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -351,6 +351,27 @@ public class SqlParser
         {
             Advance();
             stmt.TableName = ExpectIdentifier();
+
+            // 可选表别名
+            if (Peek().Type == SqlTokenType.As)
+            {
+                Advance();
+                stmt.TableAlias = ExpectIdentifier();
+            }
+            else if (Peek().Type == SqlTokenType.Identifier)
+            {
+                // 无 AS 的表别名（需排除后续关键字）
+                var next = Peek();
+                if (!IsClauseKeyword(next.Type))
+                    stmt.TableAlias = ExpectIdentifier();
+            }
+
+            // JOIN 子句
+            while (IsJoinKeyword(Peek().Type))
+            {
+                stmt.Joins ??= [];
+                stmt.Joins.Add(ParseJoinClause());
+            }
         }
 
         // WHERE
@@ -451,6 +472,75 @@ public class SqlParser
 
         return col;
     }
+
+    private JoinClause ParseJoinClause()
+    {
+        var joinType = JoinType.Inner;
+
+        var token = Peek();
+        if (token.Type == SqlTokenType.Left)
+        {
+            Advance();
+            joinType = JoinType.Left;
+            // 可选 OUTER
+            TryConsume(SqlTokenType.Join); // LEFT JOIN 中的 JOIN 可能紧跟
+            if (Peek().Type == SqlTokenType.Join) Advance();
+        }
+        else if (token.Type == SqlTokenType.Right)
+        {
+            Advance();
+            joinType = JoinType.Right;
+            TryConsume(SqlTokenType.Join);
+            if (Peek().Type == SqlTokenType.Join) Advance();
+        }
+        else if (token.Type == SqlTokenType.Inner)
+        {
+            Advance();
+            Expect(SqlTokenType.Join);
+            joinType = JoinType.Inner;
+        }
+        else if (token.Type == SqlTokenType.Join)
+        {
+            Advance();
+            joinType = JoinType.Inner;
+        }
+        else
+        {
+            throw SyntaxError($"Expected JOIN keyword, got '{token.Value}'");
+        }
+
+        var clause = new JoinClause
+        {
+            Type = joinType,
+            TableName = ExpectIdentifier()
+        };
+
+        // 可选别名
+        if (Peek().Type == SqlTokenType.As)
+        {
+            Advance();
+            clause.Alias = ExpectIdentifier();
+        }
+        else if (Peek().Type == SqlTokenType.Identifier && !IsClauseKeyword(Peek().Type) && Peek().Type != SqlTokenType.On)
+        {
+            clause.Alias = ExpectIdentifier();
+        }
+
+        // ON 条件
+        Expect(SqlTokenType.On);
+        clause.Condition = ParseExpression();
+
+        return clause;
+    }
+
+    private static Boolean IsJoinKeyword(SqlTokenType type) =>
+        type is SqlTokenType.Join or SqlTokenType.Left or SqlTokenType.Right or SqlTokenType.Inner;
+
+    private static Boolean IsClauseKeyword(SqlTokenType type) =>
+        type is SqlTokenType.Where or SqlTokenType.Group or SqlTokenType.Having
+            or SqlTokenType.Order or SqlTokenType.Limit or SqlTokenType.Offset
+            or SqlTokenType.Join or SqlTokenType.Left or SqlTokenType.Right or SqlTokenType.Inner
+            or SqlTokenType.On or SqlTokenType.Eof or SqlTokenType.Semicolon;
 
     #endregion
 
