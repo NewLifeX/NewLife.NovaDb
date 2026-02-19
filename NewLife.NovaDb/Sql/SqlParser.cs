@@ -787,6 +787,15 @@ public class SqlParser
                 }
                 throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
 
+            // TRUNCATE 关键字后跟 ( 时作为 TRUNCATE() 数值函数
+            case SqlTokenType.Truncate:
+                if (_pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == SqlTokenType.LeftParen)
+                {
+                    Advance();
+                    return ParseScalarFunction(token.Value);
+                }
+                throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
+
             case SqlTokenType.Identifier:
                 Advance();
                 // CURRENT_TIMESTAMP 无括号时返回 NOW()
