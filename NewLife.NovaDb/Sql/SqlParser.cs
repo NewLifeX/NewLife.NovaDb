@@ -32,6 +32,7 @@ public class SqlParser
             SqlTokenType.Delete => ParseDelete(),
             SqlTokenType.Create => ParseCreate(),
             SqlTokenType.Drop => ParseDrop(),
+            SqlTokenType.Truncate => ParseTruncate(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -219,6 +220,17 @@ public class SqlParser
         Expect(SqlTokenType.On);
         stmt.TableName = ExpectIdentifier();
         return stmt;
+    }
+
+    private TruncateTableStatement ParseTruncate()
+    {
+        Expect(SqlTokenType.Truncate);
+        Expect(SqlTokenType.Table);
+
+        return new TruncateTableStatement
+        {
+            TableName = ExpectIdentifier()
+        };
     }
 
     #endregion

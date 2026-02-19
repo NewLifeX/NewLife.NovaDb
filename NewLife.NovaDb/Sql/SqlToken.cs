@@ -114,6 +114,8 @@ public enum SqlTokenType
     Stddev,
     /// <summary>VARIANCE</summary>
     Variance,
+    /// <summary>TRUNCATE</summary>
+    Truncate,
 
     // 标识符与字面量
     /// <summary>标识符</summary>

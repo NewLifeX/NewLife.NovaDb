@@ -79,6 +79,7 @@ public class SqlEngine : IDisposable
             DropTableStatement drop => TrackDdl(ExecuteDropTable(drop)),
             CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx)),
             DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx)),
+            TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate)),
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters)),
             UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters)),
             DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters)),
@@ -173,6 +174,39 @@ public class SqlEngine : IDisposable
         {
             if (!_schemas.ContainsKey(stmt.TableName))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+
+            return new SqlResult { AffectedRows = 0 };
+        }
+    }
+
+    private SqlResult ExecuteTruncateTable(TruncateTableStatement stmt)
+    {
+        lock (_lock)
+        {
+            if (!_schemas.TryGetValue(stmt.TableName, out var schema))
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+
+            // 关闭旧表实例
+            if (_tables.TryGetValue(stmt.TableName, out var oldTable))
+            {
+                oldTable.Dispose();
+                _tables.Remove(stmt.TableName);
+            }
+
+            // 删除表的所有数据文件
+            var fileManager = new TableFileManager(_dbPath, stmt.TableName, _options);
+            try
+            {
+                fileManager.DeleteAllFiles();
+            }
+            catch
+            {
+                // 忽略文件系统错误
+            }
+
+            // 使用同一 Schema 重建表实例
+            var newTable = new NovaTable(schema, _dbPath, _options, _txManager);
+            _tables[stmt.TableName] = newTable;
 
             return new SqlResult { AffectedRows = 0 };
         }
