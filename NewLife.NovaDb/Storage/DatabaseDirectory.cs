@@ -1,4 +1,5 @@
-﻿using NewLife.Data;
+﻿using NewLife;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;
@@ -34,13 +35,13 @@ public class DatabaseDirectory
     /// <exception cref="NovaException">目录已存在时抛出</exception>
     public void Create()
     {
-        if (Directory.Exists(_basePath))
+        var metaFile = _basePath.CombinePath("nova.db").AsFile();
+        if (metaFile.Exists && metaFile.Length > 0)
             throw new NovaException(ErrorCode.InvalidArgument, $"Database directory already exists: {_basePath}");
 
-        Directory.CreateDirectory(_basePath);
+        _basePath.EnsureDirectory();
 
         // 写入元数据文件
-        var metaPath = System.IO.Path.Combine(_basePath, "nova.db");
         var header = new FileHeader
         {
             Version = 1,
@@ -53,7 +54,7 @@ public class DatabaseDirectory
         using var pk = header.ToPacket();
         if (pk.TryGetArray(out var segment))
         {
-            using var fs = new FileStream(metaPath, FileMode.Create, FileAccess.Write);
+            using var fs = new FileStream(metaFile.FullName, FileMode.Create, FileAccess.Write);
             fs.Write(segment.Array!, segment.Offset, segment.Count);
         }
     }

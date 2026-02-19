@@ -83,12 +83,41 @@ public class DatabaseDirectoryTests : IDisposable
     [Fact]
     public void TestCreateDatabaseAlreadyExists()
     {
-        var db = new DatabaseDirectory(_testPath, _options);
-        db.Create();
+        Directory.CreateDirectory(_testPath);
+        var metaPath = Path.Combine(_testPath, "nova.db");
+        File.WriteAllBytes(metaPath, new Byte[] { 1 });
 
+        var db = new DatabaseDirectory(_testPath, _options);
         var ex = Assert.Throws<NovaException>(() => db.Create());
         Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
         Assert.Contains("already exists", ex.Message);
+    }
+
+    [Fact]
+    public void TestCreateDatabaseWithExistingDirectory()
+    {
+        Directory.CreateDirectory(_testPath);
+        File.WriteAllText(Path.Combine(_testPath, "readme.txt"), "data");
+
+        var db = new DatabaseDirectory(_testPath, _options);
+        db.Create();
+
+        var metaPath = Path.Combine(_testPath, "nova.db");
+        Assert.True(File.Exists(metaPath));
+        Assert.Equal(FileHeader.HeaderSize, new FileInfo(metaPath).Length);
+    }
+
+    [Fact]
+    public void TestCreateDatabaseWithEmptyMetadata()
+    {
+        Directory.CreateDirectory(_testPath);
+        var metaPath = Path.Combine(_testPath, "nova.db");
+        File.WriteAllBytes(metaPath, Array.Empty<Byte>());
+
+        var db = new DatabaseDirectory(_testPath, _options);
+        db.Create();
+
+        Assert.Equal(FileHeader.HeaderSize, new FileInfo(metaPath).Length);
     }
     #endregion
 
