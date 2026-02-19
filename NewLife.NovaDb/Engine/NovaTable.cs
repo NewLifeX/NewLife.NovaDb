@@ -54,10 +54,17 @@ public class NovaTable : IDisposable
         // 使用 TableFileManager 生成文件路径（表文件平铺在数据库目录下）
         _fileManager = new TableFileManager(_dbPath, schema.TableName, _options);
 
-        // 初始化数据文件
+        // 初始化数据文件（新建时写入 FileHeader）
         var dataPath = _fileManager.GetDataFilePath();
         _dataPager = new MmfPager(dataPath, _options.PageSize);
-        _dataPager.Open();
+        var dataHeader = new FileHeader
+        {
+            Version = 1,
+            FileType = FileType.Data,
+            PageSize = (UInt32)_options.PageSize,
+            CreatedAt = DateTime.UtcNow.Ticks,
+        };
+        _dataPager.Open(dataHeader);
 
         // 初始化 WAL
         if (_options.WalMode != WalMode.None)
