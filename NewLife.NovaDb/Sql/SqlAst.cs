@@ -26,7 +26,9 @@ public enum SqlStatementType
     /// <summary>DELETE</summary>
     Delete,
     /// <summary>SELECT</summary>
-    Select
+    Select,
+    /// <summary>TRUNCATE TABLE</summary>
+    TruncateTable
 }
 
 /// <summary>SQL 语句基类</summary>
@@ -88,6 +90,16 @@ public class DropTableStatement : SqlStatement
 
     /// <summary>是否包含 IF EXISTS</summary>
     public Boolean IfExists { get; set; }
+}
+
+/// <summary>TRUNCATE TABLE 语句</summary>
+public class TruncateTableStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.TruncateTable;
+
+    /// <summary>表名</summary>
+    public String TableName { get; set; } = String.Empty;
 }
 
 /// <summary>CREATE INDEX 语句</summary>

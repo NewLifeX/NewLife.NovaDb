@@ -33,6 +33,7 @@ public class SqlParser
             SqlTokenType.Create => ParseCreate(),
             SqlTokenType.Drop => ParseDrop(),
             SqlTokenType.Alter => ParseAlter(),
+            SqlTokenType.Truncate => ParseTruncate(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -344,6 +345,15 @@ public class SqlParser
         }
 
         return stmt;
+    private TruncateTableStatement ParseTruncate()
+    {
+        Expect(SqlTokenType.Truncate);
+        Expect(SqlTokenType.Table);
+
+        return new TruncateTableStatement
+        {
+            TableName = ExpectIdentifier()
+        };
     }
 
     #endregion
@@ -893,6 +903,15 @@ public class SqlParser
 
             // IF 关键字后跟 ( 时作为 IF() 函数
             case SqlTokenType.If:
+                if (_pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == SqlTokenType.LeftParen)
+                {
+                    Advance();
+                    return ParseScalarFunction(token.Value);
+                }
+                throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
+
+            // TRUNCATE 关键字后跟 ( 时作为 TRUNCATE() 数值函数
+            case SqlTokenType.Truncate:
                 if (_pos + 1 < _tokens.Count && _tokens[_pos + 1].Type == SqlTokenType.LeftParen)
                 {
                     Advance();

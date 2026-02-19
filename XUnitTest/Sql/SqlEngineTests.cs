@@ -87,6 +87,60 @@ public class SqlEngineTests : IDisposable
         Assert.Equal(0, result.AffectedRows);
     }
 
+    [Fact(DisplayName = "测试 TRUNCATE TABLE")]
+    public void TestTruncateTable()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 25)");
+        _engine.Execute("INSERT INTO users VALUES (2, 'Bob', 30)");
+        _engine.Execute("INSERT INTO users VALUES (3, 'Charlie', 35)");
+
+        // 验证插入成功
+        var query = _engine.Execute("SELECT COUNT(*) FROM users");
+        Assert.Equal(3, query.Rows[0][0]);
+
+        // 执行 TRUNCATE
+        var result = _engine.Execute("TRUNCATE TABLE users");
+        Assert.Equal(0, result.AffectedRows);
+
+        // 验证数据已清空
+        query = _engine.Execute("SELECT COUNT(*) FROM users");
+        Assert.Equal(0, query.Rows[0][0]);
+
+        // 验证表仍然存在，可以继续插入
+        Assert.Contains("users", _engine.TableNames);
+        _engine.Execute("INSERT INTO users VALUES (1, 'Diana', 28)");
+
+        query = _engine.Execute("SELECT * FROM users");
+        Assert.Single(query.Rows);
+        Assert.Equal("Diana", query.Rows[0][1]);
+    }
+
+    [Fact(DisplayName = "测试 TRUNCATE TABLE 不存在的表")]
+    public void TestTruncateTableNotFound()
+    {
+        var ex = Assert.Throws<NovaException>(() =>
+            _engine.Execute("TRUNCATE TABLE nonexistent"));
+
+        Assert.Equal(ErrorCode.TableNotFound, ex.Code);
+    }
+
+    [Fact(DisplayName = "测试 TRUNCATE TABLE 空表")]
+    public void TestTruncateEmptyTable()
+    {
+        CreateUsersTable();
+
+        var result = _engine.Execute("TRUNCATE TABLE users");
+        Assert.Equal(0, result.AffectedRows);
+
+        // 表仍然存在且可正常使用
+        Assert.Contains("users", _engine.TableNames);
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 25)");
+
+        var query = _engine.Execute("SELECT * FROM users");
+        Assert.Single(query.Rows);
+    }
+
     [Fact(DisplayName = "测试 INSERT")]
     public void TestInsert()
     {

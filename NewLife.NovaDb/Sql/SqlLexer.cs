@@ -73,6 +73,7 @@ public class SqlLexer
         ["COLUMN"] = SqlTokenType.Column,
         ["MODIFY"] = SqlTokenType.Modify,
         ["COMMENT"] = SqlTokenType.Comment,
+        ["TRUNCATE"] = SqlTokenType.Truncate,
     };
 
     /// <summary>创建词法分析器</summary>

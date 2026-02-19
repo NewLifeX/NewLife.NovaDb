@@ -126,6 +126,8 @@ public enum SqlTokenType
     Modify,
     /// <summary>COMMENT</summary>
     Comment,
+    /// <summary>TRUNCATE</summary>
+    Truncate,
 
     // 标识符与字面量
     /// <summary>标识符</summary>

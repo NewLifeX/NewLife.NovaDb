@@ -82,6 +82,7 @@ public class SqlEngine : IDisposable
             CreateDatabaseStatement createDb => TrackDdl(ExecuteCreateDatabase(createDb)),
             DropDatabaseStatement dropDb => TrackDdl(ExecuteDropDatabase(dropDb)),
             AlterTableStatement alter => TrackDdl(ExecuteAlterTable(alter)),
+            TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate)),
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters)),
             UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters)),
             DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters)),
@@ -266,6 +267,16 @@ public class SqlEngine : IDisposable
 
             return new SqlResult { AffectedRows = 0 };
         }
+    }
+
+    private SqlResult ExecuteTruncateTable(TruncateTableStatement stmt)
+    {
+        var table = GetTable(stmt.TableName);
+
+        // 直接清空表数据，比逐行 DELETE 更快
+        table.Truncate();
+
+        return new SqlResult { AffectedRows = 0 };
     }
 
     #endregion
