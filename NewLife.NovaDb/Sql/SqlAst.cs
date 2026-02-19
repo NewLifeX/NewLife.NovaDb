@@ -28,7 +28,9 @@ public enum SqlStatementType
     /// <summary>SELECT</summary>
     Select,
     /// <summary>TRUNCATE TABLE</summary>
-    TruncateTable
+    TruncateTable,
+    /// <summary>UPSERT（INSERT ... ON DUPLICATE KEY UPDATE）</summary>
+    Upsert
 }
 
 /// <summary>SQL 语句基类</summary>
@@ -211,6 +213,25 @@ public class InsertStatement : SqlStatement
 
     /// <summary>值列表（多行插入）</summary>
     public List<List<SqlExpression>> ValuesList { get; set; } = [];
+}
+
+/// <summary>UPSERT 语句（INSERT ... ON DUPLICATE KEY UPDATE）</summary>
+public class UpsertStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.Upsert;
+
+    /// <summary>表名</summary>
+    public String TableName { get; set; } = String.Empty;
+
+    /// <summary>列名列表（可选）</summary>
+    public List<String>? Columns { get; set; }
+
+    /// <summary>值列表（多行插入）</summary>
+    public List<List<SqlExpression>> ValuesList { get; set; } = [];
+
+    /// <summary>ON DUPLICATE KEY UPDATE 的 SET 子句</summary>
+    public List<(String Column, SqlExpression Value)> UpdateClauses { get; set; } = [];
 }
 
 /// <summary>UPDATE 语句</summary>

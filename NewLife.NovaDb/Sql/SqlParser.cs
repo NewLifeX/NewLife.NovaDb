@@ -362,25 +362,23 @@ public class SqlParser
 
     #region DML
 
-    private InsertStatement ParseInsert()
+    private SqlStatement ParseInsert()
     {
         Expect(SqlTokenType.Insert);
         Expect(SqlTokenType.Into);
 
-        var stmt = new InsertStatement
-        {
-            TableName = ExpectIdentifier()
-        };
+        var tableName = ExpectIdentifier();
 
         // 可选的列名列表
+        List<String>? columns = null;
         if (Peek().Type == SqlTokenType.LeftParen)
         {
             Advance();
-            stmt.Columns = [];
+            columns = [];
 
             do
             {
-                stmt.Columns.Add(ExpectIdentifier());
+                columns.Add(ExpectIdentifier());
             }
             while (TryConsume(SqlTokenType.Comma));
 
@@ -390,6 +388,7 @@ public class SqlParser
         Expect(SqlTokenType.Values);
 
         // 解析一组或多组值
+        var valuesList = new List<List<SqlExpression>>();
         do
         {
             Expect(SqlTokenType.LeftParen);
@@ -402,11 +401,44 @@ public class SqlParser
             while (TryConsume(SqlTokenType.Comma));
 
             Expect(SqlTokenType.RightParen);
-            stmt.ValuesList.Add(values);
+            valuesList.Add(values);
         }
         while (TryConsume(SqlTokenType.Comma));
 
-        return stmt;
+        // 检查 ON DUPLICATE KEY UPDATE 子句
+        if (Peek().Type == SqlTokenType.On)
+        {
+            Advance();
+            Expect(SqlTokenType.Duplicate);
+            Expect(SqlTokenType.Key);
+            Expect(SqlTokenType.Update);
+
+            var upsert = new UpsertStatement
+            {
+                TableName = tableName,
+                Columns = columns,
+                ValuesList = valuesList
+            };
+
+            // 解析 SET 子句
+            do
+            {
+                var column = ExpectIdentifier();
+                Expect(SqlTokenType.Equals);
+                var value = ParseExpression();
+                upsert.UpdateClauses.Add((column, value));
+            }
+            while (TryConsume(SqlTokenType.Comma));
+
+            return upsert;
+        }
+
+        return new InsertStatement
+        {
+            TableName = tableName,
+            Columns = columns,
+            ValuesList = valuesList
+        };
     }
 
     private UpdateStatement ParseUpdate()

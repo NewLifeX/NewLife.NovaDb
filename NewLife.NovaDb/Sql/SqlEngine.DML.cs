@@ -115,5 +115,76 @@ partial class SqlEngine
         return new SqlResult { AffectedRows = affectedRows };
     }
 
+    private SqlResult ExecuteUpsert(UpsertStatement stmt, Dictionary<String, Object?>? parameters)
+    {
+        var table = GetTable(stmt.TableName);
+        var schema = GetSchema(stmt.TableName);
+        var pkCol = schema.GetPrimaryKeyColumn()
+            ?? throw new NovaException(ErrorCode.InvalidArgument, "UPSERT requires a table with a primary key");
+
+        using var tx = _txManager.BeginTransaction();
+        var affectedRows = 0;
+
+        foreach (var values in stmt.ValuesList)
+        {
+            var row = new Object?[schema.Columns.Count];
+
+            if (stmt.Columns != null)
+            {
+                for (var i = 0; i < stmt.Columns.Count; i++)
+                {
+                    var colIdx = schema.GetColumnIndex(stmt.Columns[i]);
+                    row[colIdx] = EvaluateExpression(values[i], null, schema, parameters);
+                }
+            }
+            else
+            {
+                if (values.Count != schema.Columns.Count)
+                    throw new NovaException(ErrorCode.InvalidArgument,
+                        $"INSERT values count ({values.Count}) does not match column count ({schema.Columns.Count})");
+
+                for (var i = 0; i < values.Count; i++)
+                {
+                    row[i] = EvaluateExpression(values[i], null, schema, parameters);
+                }
+            }
+
+            ConvertRowTypes(row, schema);
+
+            var pkValue = row[pkCol.Ordinal];
+            if (pkValue == null)
+                throw new NovaException(ErrorCode.InvalidArgument, "Primary key value cannot be null for UPSERT");
+
+            // 尝试查找已有行
+            var existingRow = table.Get(tx, pkValue);
+            if (existingRow != null)
+            {
+                // 已存在：执行 UPDATE 逻辑
+                var newRow = new Object?[schema.Columns.Count];
+                Array.Copy(existingRow, newRow, existingRow.Length);
+
+                // 应用 ON DUPLICATE KEY UPDATE 子句
+                foreach (var (column, value) in stmt.UpdateClauses)
+                {
+                    var colIdx = schema.GetColumnIndex(column);
+                    newRow[colIdx] = EvaluateExpression(value, existingRow, schema, parameters);
+                }
+
+                ConvertRowTypes(newRow, schema);
+                table.Update(tx, pkValue, newRow);
+            }
+            else
+            {
+                // 不存在：执行 INSERT 逻辑
+                table.Insert(tx, row);
+            }
+
+            affectedRows++;
+        }
+
+        tx.Commit();
+        return new SqlResult { AffectedRows = affectedRows };
+    }
+
     #endregion
 }

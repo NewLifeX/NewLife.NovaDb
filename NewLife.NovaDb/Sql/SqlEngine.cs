@@ -74,18 +74,25 @@ public partial class SqlEngine : IDisposable
 
         return stmt switch
         {
-            CreateTableStatement create => TrackDdl(ExecuteCreateTable(create)),
-            DropTableStatement drop => TrackDdl(ExecuteDropTable(drop)),
-            CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx)),
-            DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx)),
+            // DDL 语句
             CreateDatabaseStatement createDb => TrackDdl(ExecuteCreateDatabase(createDb)),
             DropDatabaseStatement dropDb => TrackDdl(ExecuteDropDatabase(dropDb)),
+            CreateTableStatement create => TrackDdl(ExecuteCreateTable(create)),
+            DropTableStatement drop => TrackDdl(ExecuteDropTable(drop)),
             AlterTableStatement alter => TrackDdl(ExecuteAlterTable(alter)),
             TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate)),
+            CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx)),
+            DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx)),
+
+            // DML 语句
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters)),
+            UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters)),
             UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters)),
             DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters)),
+
+            // 查询语句
             SelectStatement select => TrackQuery(ExecuteSelect(select, parameters)),
+
             _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
         };
     }
