@@ -51,7 +51,7 @@
 | Функция | Статус | Описание |
 |---------|--------|----------|
 | DDL | ✅ | CREATE/DROP TABLE/INDEX, с IF NOT EXISTS, PRIMARY KEY, UNIQUE |
-| DML | ✅ | INSERT (несколько строк), UPDATE, DELETE, UPSERT |
+| DML | ✅ | INSERT (несколько строк), UPDATE, DELETE, UPSERT (ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
 | Запрос | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | Агрегация | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), поддерживает псевдонимы таблиц |

@@ -51,7 +51,7 @@ Implemented standard SQL subset, covering approximately 60% of common business s
 | Feature | Status | Description |
 |---------|--------|-------------|
 | DDL | ✅ | CREATE/DROP TABLE/INDEX, with IF NOT EXISTS, PRIMARY KEY, UNIQUE |
-| DML | ✅ | INSERT (multiple rows), UPDATE, DELETE, UPSERT |
+| DML | ✅ | INSERT (multiple rows), UPDATE, DELETE, UPSERT (ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
 | Query | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | Aggregation | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), supports table aliases |
