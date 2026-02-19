@@ -122,5 +122,11 @@ public enum ErrorCode
     NotMaster = 8002,
 
     /// <summary>复制延迟过大</summary>
-    ReplicationLag = 8003
+    ReplicationLag = 8003,
+
+    /// <summary>数据库已存在</summary>
+    DatabaseExists = 9000,
+
+    /// <summary>数据库不存在</summary>
+    DatabaseNotFound = 9001
 }
