@@ -67,6 +67,12 @@ public class SqlLexer
         ["GROUP_CONCAT"] = SqlTokenType.GroupConcat,
         ["STDDEV"] = SqlTokenType.Stddev,
         ["VARIANCE"] = SqlTokenType.Variance,
+        ["DATABASE"] = SqlTokenType.Database,
+        ["ALTER"] = SqlTokenType.Alter,
+        ["ADD"] = SqlTokenType.Add,
+        ["COLUMN"] = SqlTokenType.Column,
+        ["MODIFY"] = SqlTokenType.Modify,
+        ["COMMENT"] = SqlTokenType.Comment,
         ["TRUNCATE"] = SqlTokenType.Truncate,
     };
 

@@ -114,6 +114,18 @@ public enum SqlTokenType
     Stddev,
     /// <summary>VARIANCE</summary>
     Variance,
+    /// <summary>DATABASE</summary>
+    Database,
+    /// <summary>ALTER</summary>
+    Alter,
+    /// <summary>ADD</summary>
+    Add,
+    /// <summary>COLUMN</summary>
+    Column,
+    /// <summary>MODIFY</summary>
+    Modify,
+    /// <summary>COMMENT</summary>
+    Comment,
     /// <summary>TRUNCATE</summary>
     Truncate,
 

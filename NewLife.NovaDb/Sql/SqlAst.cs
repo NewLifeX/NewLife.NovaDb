@@ -13,6 +13,12 @@ public enum SqlStatementType
     CreateIndex,
     /// <summary>DROP INDEX</summary>
     DropIndex,
+    /// <summary>CREATE DATABASE</summary>
+    CreateDatabase,
+    /// <summary>DROP DATABASE</summary>
+    DropDatabase,
+    /// <summary>ALTER TABLE</summary>
+    AlterTable,
     /// <summary>INSERT</summary>
     Insert,
     /// <summary>UPDATE</summary>
@@ -46,6 +52,12 @@ public class CreateTableStatement : SqlStatement
 
     /// <summary>是否包含 IF NOT EXISTS</summary>
     public Boolean IfNotExists { get; set; }
+
+    /// <summary>存储引擎名称（默认 Nova）</summary>
+    public String? EngineName { get; set; }
+
+    /// <summary>表注释</summary>
+    public String? Comment { get; set; }
 }
 
 /// <summary>SQL 列定义</summary>
@@ -62,6 +74,9 @@ public class SqlColumnDef
 
     /// <summary>是否不允许为空</summary>
     public Boolean NotNull { get; set; }
+
+    /// <summary>列注释</summary>
+    public String? Comment { get; set; }
 }
 
 /// <summary>DROP TABLE 语句</summary>
@@ -117,6 +132,69 @@ public class DropIndexStatement : SqlStatement
 
     /// <summary>表名</summary>
     public String TableName { get; set; } = String.Empty;
+}
+
+/// <summary>CREATE DATABASE 语句</summary>
+public class CreateDatabaseStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.CreateDatabase;
+
+    /// <summary>数据库名</summary>
+    public String DatabaseName { get; set; } = String.Empty;
+
+    /// <summary>是否包含 IF NOT EXISTS</summary>
+    public Boolean IfNotExists { get; set; }
+}
+
+/// <summary>DROP DATABASE 语句</summary>
+public class DropDatabaseStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.DropDatabase;
+
+    /// <summary>数据库名</summary>
+    public String DatabaseName { get; set; } = String.Empty;
+
+    /// <summary>是否包含 IF EXISTS</summary>
+    public Boolean IfExists { get; set; }
+}
+
+/// <summary>ALTER TABLE 操作类型</summary>
+public enum AlterTableAction
+{
+    /// <summary>添加列</summary>
+    AddColumn,
+    /// <summary>修改列</summary>
+    ModifyColumn,
+    /// <summary>删除列</summary>
+    DropColumn,
+    /// <summary>添加表注释</summary>
+    AddTableComment,
+    /// <summary>添加列注释</summary>
+    AddColumnComment
+}
+
+/// <summary>ALTER TABLE 语句</summary>
+public class AlterTableStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.AlterTable;
+
+    /// <summary>表名</summary>
+    public String TableName { get; set; } = String.Empty;
+
+    /// <summary>操作类型</summary>
+    public AlterTableAction Action { get; set; }
+
+    /// <summary>列定义（ADD COLUMN / MODIFY COLUMN 时使用）</summary>
+    public SqlColumnDef? ColumnDef { get; set; }
+
+    /// <summary>列名（DROP COLUMN 时使用）</summary>
+    public String? ColumnName { get; set; }
+
+    /// <summary>注释内容</summary>
+    public String? Comment { get; set; }
 }
 
 /// <summary>INSERT 语句</summary>

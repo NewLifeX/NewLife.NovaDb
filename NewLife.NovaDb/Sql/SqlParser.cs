@@ -32,6 +32,7 @@ public class SqlParser
             SqlTokenType.Delete => ParseDelete(),
             SqlTokenType.Create => ParseCreate(),
             SqlTokenType.Drop => ParseDrop(),
+            SqlTokenType.Alter => ParseAlter(),
             SqlTokenType.Truncate => ParseTruncate(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
@@ -54,8 +55,10 @@ public class SqlParser
             return ParseCreateTable();
         if (next.Type == SqlTokenType.Unique || next.Type == SqlTokenType.Index)
             return ParseCreateIndex();
+        if (next.Type == SqlTokenType.Database)
+            return ParseCreateDatabase();
 
-        throw SyntaxError($"Expected TABLE or INDEX after CREATE, got '{next.Value}'");
+        throw SyntaxError($"Expected TABLE, INDEX or DATABASE after CREATE, got '{next.Value}'");
     }
 
     private CreateTableStatement ParseCreateTable()
@@ -111,6 +114,9 @@ public class SqlParser
             }
         }
 
+        // 解析表级选项：ENGINE 和 COMMENT
+        ParseTableOptions(stmt);
+
         return stmt;
     }
 
@@ -142,6 +148,11 @@ public class SqlParser
             {
                 Advance();
                 col.NotNull = false;
+            }
+            else if (next.Type == SqlTokenType.Comment)
+            {
+                Advance();
+                col.Comment = Expect(SqlTokenType.StringLiteral).Value;
             }
             else
             {
@@ -178,6 +189,49 @@ public class SqlParser
         return stmt;
     }
 
+    /// <summary>解析表级选项（ENGINE 和 COMMENT）</summary>
+    private void ParseTableOptions(CreateTableStatement stmt)
+    {
+        while (Peek().Type != SqlTokenType.Eof && Peek().Type != SqlTokenType.Semicolon)
+        {
+            var next = Peek();
+            if (next.Type == SqlTokenType.Identifier && String.Equals(next.Value, "ENGINE", StringComparison.OrdinalIgnoreCase))
+            {
+                Advance();
+                TryConsume(SqlTokenType.Equals);
+                stmt.EngineName = ExpectIdentifier();
+            }
+            else if (next.Type == SqlTokenType.Comment)
+            {
+                Advance();
+                TryConsume(SqlTokenType.Equals);
+                stmt.Comment = Expect(SqlTokenType.StringLiteral).Value;
+            }
+            else
+            {
+                break;
+            }
+        }
+    }
+
+    private CreateDatabaseStatement ParseCreateDatabase()
+    {
+        Expect(SqlTokenType.Database);
+
+        var stmt = new CreateDatabaseStatement();
+
+        if (Peek().Type == SqlTokenType.If)
+        {
+            Advance();
+            Expect(SqlTokenType.Not);
+            Expect(SqlTokenType.Exists);
+            stmt.IfNotExists = true;
+        }
+
+        stmt.DatabaseName = ExpectIdentifier();
+        return stmt;
+    }
+
     private SqlStatement ParseDrop()
     {
         Expect(SqlTokenType.Drop);
@@ -187,8 +241,10 @@ public class SqlParser
             return ParseDropTable();
         if (next.Type == SqlTokenType.Index)
             return ParseDropIndex();
+        if (next.Type == SqlTokenType.Database)
+            return ParseDropDatabase();
 
-        throw SyntaxError($"Expected TABLE or INDEX after DROP, got '{next.Value}'");
+        throw SyntaxError($"Expected TABLE, INDEX or DATABASE after DROP, got '{next.Value}'");
     }
 
     private DropTableStatement ParseDropTable()
@@ -222,6 +278,73 @@ public class SqlParser
         return stmt;
     }
 
+    private DropDatabaseStatement ParseDropDatabase()
+    {
+        Expect(SqlTokenType.Database);
+
+        var stmt = new DropDatabaseStatement();
+
+        if (Peek().Type == SqlTokenType.If)
+        {
+            Advance();
+            Expect(SqlTokenType.Exists);
+            stmt.IfExists = true;
+        }
+
+        stmt.DatabaseName = ExpectIdentifier();
+        return stmt;
+    }
+
+    private AlterTableStatement ParseAlter()
+    {
+        Expect(SqlTokenType.Alter);
+        Expect(SqlTokenType.Table);
+
+        var stmt = new AlterTableStatement
+        {
+            TableName = ExpectIdentifier()
+        };
+
+        var next = Peek();
+
+        // ALTER TABLE t ADD [COLUMN] col_def
+        if (next.Type == SqlTokenType.Add)
+        {
+            Advance();
+            TryConsume(SqlTokenType.Column);
+            stmt.Action = AlterTableAction.AddColumn;
+            stmt.ColumnDef = ParseColumnDef();
+        }
+        // ALTER TABLE t MODIFY [COLUMN] col_def
+        else if (next.Type == SqlTokenType.Modify)
+        {
+            Advance();
+            TryConsume(SqlTokenType.Column);
+            stmt.Action = AlterTableAction.ModifyColumn;
+            stmt.ColumnDef = ParseColumnDef();
+        }
+        // ALTER TABLE t DROP [COLUMN] col_name
+        else if (next.Type == SqlTokenType.Drop)
+        {
+            Advance();
+            TryConsume(SqlTokenType.Column);
+            stmt.Action = AlterTableAction.DropColumn;
+            stmt.ColumnName = ExpectIdentifier();
+        }
+        // ALTER TABLE t COMMENT 'xxx' (表注释)
+        else if (next.Type == SqlTokenType.Comment)
+        {
+            Advance();
+            TryConsume(SqlTokenType.Equals);
+            stmt.Action = AlterTableAction.AddTableComment;
+            stmt.Comment = Expect(SqlTokenType.StringLiteral).Value;
+        }
+        else
+        {
+            throw SyntaxError($"Expected ADD, MODIFY, DROP or COMMENT after ALTER TABLE, got '{next.Value}'");
+        }
+
+        return stmt;
     private TruncateTableStatement ParseTruncate()
     {
         Expect(SqlTokenType.Truncate);
