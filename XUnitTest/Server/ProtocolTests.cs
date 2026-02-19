@@ -1,5 +1,6 @@
 using System;
 using System.Text;
+using NewLife.Data;
 using NewLife.NovaDb.Server;
 using Xunit;
 
@@ -20,10 +21,11 @@ public class ProtocolTests
             Status = ResponseStatus.Ok
         };
 
-        var bytes = header.ToBytes();
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
         Assert.Equal(ProtocolHeader.HeaderSize, bytes.Length);
 
-        var parsed = ProtocolHeader.FromBytes(bytes);
+        var parsed = ProtocolHeader.Read(new ArrayPacket(bytes));
         Assert.Equal(header.Version, parsed.Version);
         Assert.Equal(header.RequestType, parsed.RequestType);
         Assert.Equal(header.SequenceId, parsed.SequenceId);
@@ -39,7 +41,7 @@ public class ProtocolTests
         bytes[0] = 0xFF;
         bytes[1] = 0xFF;
 
-        Assert.Throws<InvalidOperationException>(() => ProtocolHeader.FromBytes(bytes));
+        Assert.Throws<InvalidOperationException>(() => ProtocolHeader.Read(new ArrayPacket(bytes)));
     }
 
     [Fact(DisplayName = "测试协议魔数值")]
@@ -48,7 +50,8 @@ public class ProtocolTests
         Assert.Equal((UInt16)0x4E56, ProtocolHeader.Magic);
 
         var header = new ProtocolHeader();
-        var bytes = header.ToBytes();
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
 
         // 验证前两个字节为魔数
         Assert.Equal(0x4E, bytes[0]);
@@ -74,8 +77,9 @@ public class ProtocolTests
         foreach (var reqType in requestTypes)
         {
             var header = new ProtocolHeader { RequestType = reqType, SequenceId = (UInt32)reqType };
-            var bytes = header.ToBytes();
-            var parsed = ProtocolHeader.FromBytes(bytes);
+            using var pk = header.ToPacket();
+            var bytes = pk.GetSpan().ToArray();
+            var parsed = ProtocolHeader.Read(new ArrayPacket(bytes));
 
             Assert.Equal(reqType, parsed.RequestType);
             Assert.Equal((UInt32)reqType, parsed.SequenceId);
@@ -86,13 +90,13 @@ public class ProtocolTests
     public void TestBufferTooSmallThrows()
     {
         var bytes = new Byte[8];
-        Assert.Throws<ArgumentException>(() => ProtocolHeader.FromBytes(bytes));
+        Assert.Throws<ArgumentException>(() => ProtocolHeader.Read(new ArrayPacket(bytes)));
     }
 
     [Fact(DisplayName = "测试空缓冲区抛出异常")]
     public void TestNullBufferThrows()
     {
-        Assert.Throws<ArgumentNullException>(() => ProtocolHeader.FromBytes(null!));
+        Assert.Throws<ArgumentNullException>(() => ProtocolHeader.Read(null!));
     }
 
     [Fact(DisplayName = "测试头部大小为 16 字节")]
@@ -101,7 +105,8 @@ public class ProtocolTests
         Assert.Equal(16, ProtocolHeader.HeaderSize);
 
         var header = new ProtocolHeader();
-        var bytes = header.ToBytes();
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
         Assert.Equal(16, bytes.Length);
     }
 
@@ -114,8 +119,9 @@ public class ProtocolTests
             PayloadLength = 1024
         };
 
-        var bytes = header.ToBytes();
-        var parsed = ProtocolHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var parsed = ProtocolHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(UInt32.MaxValue, parsed.SequenceId);
         Assert.Equal(1024, parsed.PayloadLength);
@@ -129,7 +135,8 @@ public class ProtocolTests
             PayloadLength = Int32.MaxValue
         };
 
-        var bytes = header.ToBytes();
-        Assert.Throws<InvalidOperationException>(() => ProtocolHeader.FromBytes(bytes));
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        Assert.Throws<InvalidOperationException>(() => ProtocolHeader.Read(new ArrayPacket(bytes)));
     }
 }

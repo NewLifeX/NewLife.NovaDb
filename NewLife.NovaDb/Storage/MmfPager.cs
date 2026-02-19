@@ -1,4 +1,5 @@
 ﻿using System.IO.MemoryMappedFiles;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;
@@ -74,8 +75,9 @@ public class MmfPager : IDisposable
             if (isNewFile && header != null)
             {
                 // 新文件写入文件头
-                var headerBytes = header.ToBytes();
-                _fileStream.Write(headerBytes, 0, headerBytes.Length);
+                using var pk = header.ToPacket();
+                if (pk.TryGetArray(out var segment))
+                    _fileStream.Write(segment.Array!, segment.Offset, segment.Count);
                 _fileStream.Flush();
             }
             else if (!isNewFile)
@@ -86,7 +88,7 @@ public class MmfPager : IDisposable
                 if (bytesRead < FileHeader.HeaderSize)
                     throw new NovaException(ErrorCode.FileCorrupted, $"File too short, cannot read header: {_filePath}");
 
-                var fileHeader = FileHeader.FromBytes(headerBytes);
+                var fileHeader = FileHeader.Read(new ArrayPacket(headerBytes));
 
                 if (fileHeader.PageSize != _pageSize)
                     throw new NovaException(ErrorCode.IncompatibleFileFormat, $"Page size mismatch: file={fileHeader.PageSize}, expected={_pageSize}");
@@ -137,7 +139,7 @@ public class MmfPager : IDisposable
             // 校验和验证
             if (_enableChecksum)
             {
-                var pageHeader = PageHeader.FromBytes(buffer);
+                var pageHeader = PageHeader.Read(new ArrayPacket(buffer, 0, PageHeader.HeaderSize));
                 var computedChecksum = ComputeChecksum(buffer, PageHeader.HeaderSize, pageHeader.DataLength);
 
                 if (pageHeader.Checksum != computedChecksum)
@@ -175,12 +177,13 @@ public class MmfPager : IDisposable
             // 计算并设置校验和
             if (_enableChecksum)
             {
-                var pageHeader = PageHeader.FromBytes(data);
+                var pageHeader = PageHeader.Read(new ArrayPacket(data, 0, PageHeader.HeaderSize));
                 var checksum = ComputeChecksum(data, PageHeader.HeaderSize, pageHeader.DataLength);
                 pageHeader.Checksum = checksum;
 
-                var headerBytes = pageHeader.ToBytes();
-                Buffer.BlockCopy(headerBytes, 0, data, 0, PageHeader.HeaderSize);
+                using var headerPk = pageHeader.ToPacket();
+                if (headerPk.TryGetArray(out var headerSeg))
+                    Buffer.BlockCopy(headerSeg.Array!, headerSeg.Offset, data, 0, PageHeader.HeaderSize);
             }
 
             // 按需扩展文件

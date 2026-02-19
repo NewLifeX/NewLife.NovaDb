@@ -1,4 +1,7 @@
-﻿namespace NewLife.NovaDb.WAL;
+﻿using NewLife.Buffers;
+using NewLife.Data;
+
+namespace NewLife.NovaDb.WAL;
 
 /// <summary>
 /// WAL 记录类型
@@ -36,6 +39,9 @@ public enum WalRecordType : Byte
 /// </summary>
 public class WalRecord
 {
+    /// <summary>头部固定大小（37 字节）</summary>
+    public const Int32 RecordHeaderSize = 37;
+
     /// <summary>
     /// 日志序列号（LSN）
     /// </summary>
@@ -66,88 +72,72 @@ public class WalRecord
     /// </summary>
     public Int64 Timestamp { get; set; }
 
-    /// <summary>
-    /// 序列化为字节数组
-    /// </summary>
-    public Byte[] ToBytes()
+    /// <summary>序列化为数据包，使用后需 Dispose 归还到对象池</summary>
+    /// <returns>包含 WAL 记录数据的数据包</returns>
+    public IOwnerPacket ToPacket()
     {
         // 头部：LSN(8) + TxId(8) + RecordType(1) + PageId(8) + DataLength(4) + Timestamp(8) = 37 bytes
-        var headerSize = 37;
-        var buffer = new Byte[headerSize + Data.Length];
-        var offset = 0;
+        var pk = new OwnerPacket(RecordHeaderSize + Data.Length);
+        var writer = new SpanWriter(pk);
 
         // LSN
-        Buffer.BlockCopy(BitConverter.GetBytes(Lsn), 0, buffer, offset, 8);
-        offset += 8;
+        writer.Write(Lsn);
 
         // TxId
-        Buffer.BlockCopy(BitConverter.GetBytes(TxId), 0, buffer, offset, 8);
-        offset += 8;
+        writer.Write(TxId);
 
         // RecordType
-        buffer[offset++] = (Byte)RecordType;
+        writer.WriteByte((Byte)RecordType);
 
         // PageId
-        Buffer.BlockCopy(BitConverter.GetBytes(PageId), 0, buffer, offset, 8);
-        offset += 8;
+        writer.Write(PageId);
 
         // DataLength
-        Buffer.BlockCopy(BitConverter.GetBytes(Data.Length), 0, buffer, offset, 4);
-        offset += 4;
+        writer.Write(Data.Length);
 
         // Timestamp
-        Buffer.BlockCopy(BitConverter.GetBytes(Timestamp), 0, buffer, offset, 8);
-        offset += 8;
+        writer.Write(Timestamp);
 
         // Data
         if (Data.Length > 0)
-        {
-            Buffer.BlockCopy(Data, 0, buffer, offset, Data.Length);
-        }
+            writer.Write(Data);
 
-        return buffer;
+        return pk;
     }
 
-    /// <summary>
-    /// 从字节数组反序列化
-    /// </summary>
-    public static WalRecord FromBytes(Byte[] buffer)
+    /// <summary>从数据包反序列化</summary>
+    /// <param name="data">包含 WAL 记录数据的数据包</param>
+    /// <returns>反序列化的 WAL 记录</returns>
+    public static WalRecord Read(IPacket data)
     {
-        if (buffer.Length < 37)
-        {
+        if (data.Length < RecordHeaderSize)
             throw new ArgumentException("Buffer too short for WalRecord");
-        }
 
-        var offset = 0;
+        var reader = new SpanReader(data);
 
         // LSN
-        var lsn = BitConverter.ToUInt64(buffer, offset);
-        offset += 8;
+        var lsn = reader.ReadUInt64();
 
         // TxId
-        var txId = BitConverter.ToUInt64(buffer, offset);
-        offset += 8;
+        var txId = reader.ReadUInt64();
 
         // RecordType
-        var recordType = (WalRecordType)buffer[offset++];
+        var recordType = (WalRecordType)reader.ReadByte();
 
         // PageId
-        var pageId = BitConverter.ToUInt64(buffer, offset);
-        offset += 8;
+        var pageId = reader.ReadUInt64();
 
         // DataLength
-        var dataLength = BitConverter.ToInt32(buffer, offset);
-        offset += 4;
+        var dataLength = reader.ReadInt32();
 
         // Timestamp
-        var timestamp = BitConverter.ToInt64(buffer, offset);
-        offset += 8;
+        var timestamp = reader.ReadInt64();
 
         // Data
-        var data = new Byte[dataLength];
+        var recordData = new Byte[dataLength];
         if (dataLength > 0)
         {
-            Buffer.BlockCopy(buffer, offset, data, 0, dataLength);
+            reader.ReadBytes(dataLength).CopyTo(recordData);
         }
 
         return new WalRecord
@@ -156,7 +146,7 @@ public class WalRecord
             TxId = txId,
             RecordType = recordType,
             PageId = pageId,
-            Data = data,
+            Data = recordData,
             Timestamp = timestamp
         };
     }

@@ -1,3 +1,4 @@
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
@@ -117,6 +118,6 @@ public class WalRecovery
             return null;
         }
 
-        return WalRecord.FromBytes(data);
+        return WalRecord.Read(new ArrayPacket(data));
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using Xunit;
@@ -19,11 +20,12 @@ public class PageHeaderTests
             DataLength = 2048
         };
 
-        var bytes = header.ToBytes();
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
         Assert.Equal(PageHeader.HeaderSize, bytes.Length);
         Assert.Equal(32, bytes.Length);
 
-        var deserialized = PageHeader.FromBytes(bytes);
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(header.PageId, deserialized.PageId);
         Assert.Equal(header.PageType, deserialized.PageType);
@@ -35,14 +37,14 @@ public class PageHeaderTests
     [Fact]
     public void TestNullBuffer()
     {
-        Assert.Throws<ArgumentNullException>(() => PageHeader.FromBytes(null!));
+        Assert.Throws<ArgumentNullException>(() => PageHeader.Read(null!));
     }
 
     [Fact]
     public void TestBufferTooShort()
     {
         var bytes = new Byte[31]; // 少于 32 字节
-        var ex = Assert.Throws<ArgumentException>(() => PageHeader.FromBytes(bytes));
+        var ex = Assert.Throws<ArgumentException>(() => PageHeader.Read(new ArrayPacket(bytes)));
         Assert.Contains("too short", ex.Message);
     }
 
@@ -55,12 +57,13 @@ public class PageHeaderTests
             PageType = PageType.Data,
             DataLength = 100
         };
-        var bytes = header.ToBytes();
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
 
         // 设置无效的页类型（> 4）
         bytes[8] = 99;
 
-        var ex = Assert.Throws<NovaException>(() => PageHeader.FromBytes(bytes));
+        var ex = Assert.Throws<NovaException>(() => PageHeader.Read(new ArrayPacket(bytes)));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
         Assert.Contains("Invalid page type", ex.Message);
     }
@@ -77,8 +80,9 @@ public class PageHeaderTests
                 DataLength = 1024
             };
 
-            var bytes = header.ToBytes();
-            var deserialized = PageHeader.FromBytes(bytes);
+            using var pk = header.ToPacket();
+            var bytes = pk.GetSpan().ToArray();
+            var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
             Assert.Equal(type, deserialized.PageType);
         }
@@ -94,8 +98,9 @@ public class PageHeaderTests
             DataLength = 512
         };
 
-        var bytes = header.ToBytes();
-        var deserialized = PageHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(UInt64.MaxValue, deserialized.PageId);
     }
@@ -111,8 +116,9 @@ public class PageHeaderTests
             DataLength = 256
         };
 
-        var bytes = header.ToBytes();
-        var deserialized = PageHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(UInt64.MaxValue, deserialized.Lsn);
     }
@@ -128,8 +134,9 @@ public class PageHeaderTests
             DataLength = 128
         };
 
-        var bytes = header.ToBytes();
-        var deserialized = PageHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(UInt32.MaxValue, deserialized.Checksum);
     }
@@ -144,8 +151,9 @@ public class PageHeaderTests
             DataLength = UInt32.MaxValue
         };
 
-        var bytes = header.ToBytes();
-        var deserialized = PageHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(UInt32.MaxValue, deserialized.DataLength);
     }
@@ -162,8 +170,9 @@ public class PageHeaderTests
             DataLength = 0
         };
 
-        var bytes = header.ToBytes();
-        var deserialized = PageHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(0UL, deserialized.PageId);
         Assert.Equal(PageType.Empty, deserialized.PageType);
@@ -184,7 +193,8 @@ public class PageHeaderTests
             DataLength = 1000
         };
 
-        var bytes = header.ToBytes();
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
 
         // Reserved 3 bytes at offset 9-11
         Assert.Equal(0, bytes[9]);
@@ -214,8 +224,9 @@ public class PageHeaderTests
                 DataLength = (UInt32)random.Next()
             };
 
-            var bytes = header.ToBytes();
-            var deserialized = PageHeader.FromBytes(bytes);
+            using var pk = header.ToPacket();
+            var bytes = pk.GetSpan().ToArray();
+            var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
             Assert.Equal(header.PageId, deserialized.PageId);
             Assert.Equal(header.PageType, deserialized.PageType);
@@ -236,8 +247,9 @@ public class PageHeaderTests
             DataLength = 333
         };
 
-        var bytes = header.ToBytes();
-        var deserialized = PageHeader.FromBytes(bytes);
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(PageType.Metadata, deserialized.PageType);
     }

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using System.Linq;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using Xunit;
@@ -72,7 +73,7 @@ public class DatabaseDirectoryTests : IDisposable
         var metaBytes = File.ReadAllBytes(Path.Combine(_testPath, "nova.db"));
         Assert.Equal(FileHeader.HeaderSize, metaBytes.Length);
 
-        var header = FileHeader.FromBytes(metaBytes);
+        var header = FileHeader.Read(new ArrayPacket(metaBytes));
         Assert.Equal(1, header.Version);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
@@ -163,7 +164,7 @@ public class DatabaseDirectoryTests : IDisposable
         File.WriteAllBytes(metaPath, new Byte[10]); // 只有 10 字节
 
         var db = new DatabaseDirectory(_testPath, _options);
-        Assert.ThrowsAny<Exception>(() => db.Open()); // FileHeader.FromBytes 拒绝短 buffer
+        Assert.ThrowsAny<Exception>(() => db.Open()); // FileHeader.Read 拒绝短 buffer
     }
     #endregion
 

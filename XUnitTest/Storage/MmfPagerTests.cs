@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using Xunit;
@@ -107,7 +108,8 @@ public class MmfPagerTests : IDisposable
             DataLength = 100
         };
 
-        var headerBytes = pageHeader.ToBytes();
+        using var phPk = pageHeader.ToPacket();
+        var headerBytes = phPk.GetSpan().ToArray();
         Buffer.BlockCopy(headerBytes, 0, pageData, 0, PageHeader.HeaderSize);
 
         for (var i = 32; i < 132; i++)
@@ -240,7 +242,9 @@ public class MmfPagerTests : IDisposable
             DataLength = 50
         };
 
-        Buffer.BlockCopy(pageHeader.ToBytes(), 0, pageData, 0, PageHeader.HeaderSize);
+        using var phPk = pageHeader.ToPacket();
+        var phBytes = phPk.GetSpan().ToArray();
+        Buffer.BlockCopy(phBytes, 0, pageData, 0, PageHeader.HeaderSize);
         for (var i = 32; i < 82; i++)
         {
             pageData[i] = (Byte)(i * 3);
@@ -273,7 +277,9 @@ public class MmfPagerTests : IDisposable
                 DataLength = 10
             };
 
-            Buffer.BlockCopy(pageHeader.ToBytes(), 0, pageData, 0, PageHeader.HeaderSize);
+            using var phPk = pageHeader.ToPacket();
+            var phBytes = phPk.GetSpan().ToArray();
+            Buffer.BlockCopy(phBytes, 0, pageData, 0, PageHeader.HeaderSize);
             pager.WritePage(0, pageData);
         }
 
