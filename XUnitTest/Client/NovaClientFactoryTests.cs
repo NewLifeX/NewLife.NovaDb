@@ -233,4 +233,128 @@ public class NovaClientFactoryTests
     }
 
     #endregion
+
+    #region 多次创建独立实例
+
+    [Fact(DisplayName = "工厂-CreateCommand每次返回新实例")]
+    public void CreateCommand_ReturnsNewInstanceEachTime()
+    {
+        var factory = NovaClientFactory.Instance;
+        var a = factory.CreateCommand();
+        var b = factory.CreateCommand();
+
+        Assert.NotSame(a, b);
+    }
+
+    [Fact(DisplayName = "工厂-CreateConnection每次返回新实例")]
+    public void CreateConnection_ReturnsNewInstanceEachTime()
+    {
+        var factory = NovaClientFactory.Instance;
+        var a = factory.CreateConnection();
+        var b = factory.CreateConnection();
+
+        Assert.NotSame(a, b);
+    }
+
+    [Fact(DisplayName = "工厂-CreateParameter每次返回新实例")]
+    public void CreateParameter_ReturnsNewInstanceEachTime()
+    {
+        var factory = NovaClientFactory.Instance;
+        var a = factory.CreateParameter();
+        var b = factory.CreateParameter();
+
+        Assert.NotSame(a, b);
+    }
+
+    [Fact(DisplayName = "工厂-CreateConnectionStringBuilder每次返回新实例")]
+    public void CreateConnectionStringBuilder_ReturnsNewInstanceEachTime()
+    {
+        var factory = NovaClientFactory.Instance;
+        var a = factory.CreateConnectionStringBuilder();
+        var b = factory.CreateConnectionStringBuilder();
+
+        Assert.NotSame(a, b);
+    }
+
+    [Fact(DisplayName = "工厂-CreateDataAdapter每次返回新实例")]
+    public void CreateDataAdapter_ReturnsNewInstanceEachTime()
+    {
+        var factory = NovaClientFactory.Instance;
+        var a = factory.CreateDataAdapter();
+        var b = factory.CreateDataAdapter();
+
+        Assert.NotSame(a, b);
+    }
+
+    #endregion
+
+    #region 通过基类接口调用
+
+    [Fact(DisplayName = "工厂-通过DbProviderFactory创建命令")]
+    public void AsDbProviderFactory_CreateCommand()
+    {
+        DbProviderFactory factory = NovaClientFactory.Instance;
+
+        var cmd = factory.CreateCommand();
+
+        Assert.IsType<NovaCommand>(cmd);
+    }
+
+    [Fact(DisplayName = "工厂-通过DbProviderFactory创建连接")]
+    public void AsDbProviderFactory_CreateConnection()
+    {
+        DbProviderFactory factory = NovaClientFactory.Instance;
+
+        var conn = factory.CreateConnection();
+
+        Assert.IsType<NovaConnection>(conn);
+    }
+
+    [Fact(DisplayName = "工厂-通过DbProviderFactory创建参数")]
+    public void AsDbProviderFactory_CreateParameter()
+    {
+        DbProviderFactory factory = NovaClientFactory.Instance;
+
+        var param = factory.CreateParameter();
+
+        Assert.IsType<NovaParameter>(param);
+    }
+
+    [Fact(DisplayName = "工厂-通过DbProviderFactory创建连接字符串构建器")]
+    public void AsDbProviderFactory_CreateConnectionStringBuilder()
+    {
+        DbProviderFactory factory = NovaClientFactory.Instance;
+
+        var builder = factory.CreateConnectionStringBuilder();
+
+        Assert.IsType<NovaConnectionStringBuilder>(builder);
+    }
+
+    [Fact(DisplayName = "工厂-通过DbProviderFactory创建数据适配器")]
+    public void AsDbProviderFactory_CreateDataAdapter()
+    {
+        DbProviderFactory factory = NovaClientFactory.Instance;
+
+        var adapter = factory.CreateDataAdapter();
+
+        Assert.IsType<NovaDataAdapter>(adapter);
+    }
+
+    #endregion
+
+    #region 能力属性
+
+    [Fact(DisplayName = "工厂-CanCreateCommandBuilder为false")]
+    public void CanCreateCommandBuilder_ReturnsFalse()
+    {
+        Assert.False(NovaClientFactory.Instance.CanCreateCommandBuilder);
+    }
+
+    [Fact(DisplayName = "工厂-CanCreateDataAdapter为true")]
+    public void CanCreateDataAdapter_ReturnsTrue()
+    {
+        Assert.True(NovaClientFactory.Instance.CanCreateDataAdapter);
+    }
+
+    #endregion
 }

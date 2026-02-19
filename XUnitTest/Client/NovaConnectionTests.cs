@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data;
 using System.Threading.Tasks;
 using NewLife.NovaDb.Client;
@@ -244,4 +244,266 @@ public class NovaConnectionTests
         client.Close();
         Assert.False(client.IsConnected);
     }
+
+    #region 状态转换与边界测试
+
+    [Fact(DisplayName = "测试重复打开连接幂等")]
+    public void TestOpenIdempotent()
+    {
+        using var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+
+        conn.Open();
+        Assert.Equal(ConnectionState.Open, conn.State);
+
+        // 重复 Open 不应抛异常
+        conn.Open();
+        Assert.Equal(ConnectionState.Open, conn.State);
+    }
+
+    [Fact(DisplayName = "测试重复关闭连接幂等")]
+    public void TestCloseIdempotent()
+    {
+        using var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+
+        conn.Open();
+        conn.Close();
+        Assert.Equal(ConnectionState.Closed, conn.State);
+
+        // 重复 Close 不应抛异常
+        conn.Close();
+        Assert.Equal(ConnectionState.Closed, conn.State);
+    }
+
+    [Fact(DisplayName = "测试未Open就Close不抛异常")]
+    public void TestCloseWithoutOpen()
+    {
+        using var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+
+        // 未 Open 直接 Close 不应抛异常
+        conn.Close();
+        Assert.Equal(ConnectionState.Closed, conn.State);
+    }
+
+    [Fact(DisplayName = "测试Dispose释放资源")]
+    public void TestDispose()
+    {
+        var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+        conn.Open();
+        Assert.Equal(ConnectionState.Open, conn.State);
+
+        conn.Dispose();
+        // Dispose 后不应抛异常
+    }
+
+    [Fact(DisplayName = "测试Dispose重复调用不抛异常")]
+    public void TestDisposeMultipleTimes()
+    {
+        var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+        conn.Open();
+
+        conn.Dispose();
+        conn.Dispose();
+        // 多次 Dispose 不应抛异常
+    }
+
+    [Fact(DisplayName = "测试默认连接字符串包含默认值")]
+    public void TestDefaultConnectionString()
+    {
+        using var conn = new NovaConnection();
+        // NovaConnectionStringBuilder 默认构造会设置 Port/ConnectionTimeout/CommandTimeout
+        var connStr = conn.ConnectionString;
+        Assert.Contains("Port=3306", connStr, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ConnectionTimeout=15", connStr, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("CommandTimeout=30", connStr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact(DisplayName = "测试默认Factory不为空")]
+    public void TestDefaultFactory()
+    {
+        using var conn = new NovaConnection();
+        Assert.NotNull(conn.Factory);
+        Assert.Same(NovaClientFactory.Instance, conn.Factory);
+    }
+
+    [Fact(DisplayName = "测试默认State为Closed")]
+    public void TestDefaultState()
+    {
+        using var conn = new NovaConnection();
+        Assert.Equal(ConnectionState.Closed, conn.State);
+    }
+
+    [Fact(DisplayName = "测试默认Database为空")]
+    public void TestDefaultDatabase()
+    {
+        using var conn = new NovaConnection();
+        Assert.Equal(String.Empty, conn.Database);
+    }
+
+    [Fact(DisplayName = "测试ChangeDatabase保留新值")]
+    public void TestChangeDatabaseRetainsValue()
+    {
+        using var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db;Database=original"
+        };
+
+        Assert.Equal("original", conn.Database);
+        conn.ChangeDatabase("newdb");
+        Assert.Equal("newdb", conn.Database);
+    }
+
+    [Fact(DisplayName = "测试ConnectionString设置null变为空")]
+    public void TestConnectionStringSetNull()
+    {
+        using var conn = new NovaConnection("Data Source=./test.db");
+        conn.ConnectionString = null!;
+        Assert.Equal(String.Empty, conn.ConnectionString);
+    }
+
+    [Fact(DisplayName = "测试ConnectionTimeout来自Setting")]
+    public void TestConnectionTimeoutFromSetting()
+    {
+        using var conn = new NovaConnection("Data Source=./test.db;ConnectionTimeout=45");
+        Assert.Equal(45, conn.ConnectionTimeout);
+    }
+
+    [Fact(DisplayName = "测试嵌入模式Open后SqlEngine不为空")]
+    public void TestEmbeddedModeHasSqlEngine()
+    {
+        using var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+        conn.Open();
+
+        Assert.NotNull(conn.SqlEngine);
+        Assert.Null(conn.Client);
+    }
+
+    [Fact(DisplayName = "测试嵌入模式Close后SqlEngine为空")]
+    public void TestEmbeddedModeCloseReleaseSqlEngine()
+    {
+        using var conn = new NovaConnection
+        {
+            ConnectionString = "Data Source=./test.db"
+        };
+        conn.Open();
+        Assert.NotNull(conn.SqlEngine);
+
+        conn.Close();
+        Assert.Null(conn.SqlEngine);
+    }
+
+    #endregion
+
+    #region 参数集合边界测试
+
+    [Fact(DisplayName = "测试参数集合Insert操作")]
+    public void TestParameterCollectionInsert()
+    {
+        var collection = new NovaParameterCollection();
+
+        var p1 = new NovaParameter { ParameterName = "@a", Value = 1 };
+        var p2 = new NovaParameter { ParameterName = "@b", Value = 2 };
+        var p3 = new NovaParameter { ParameterName = "@c", Value = 3 };
+
+        collection.Add(p1);
+        collection.Add(p3);
+        collection.Insert(1, p2);
+
+        Assert.Equal(3, collection.Count);
+        Assert.Equal(1, collection.IndexOf("@b"));
+    }
+
+    [Fact(DisplayName = "测试参数集合Remove操作")]
+    public void TestParameterCollectionRemove()
+    {
+        var collection = new NovaParameterCollection();
+
+        var p1 = new NovaParameter { ParameterName = "@a", Value = 1 };
+        var p2 = new NovaParameter { ParameterName = "@b", Value = 2 };
+
+        collection.Add(p1);
+        collection.Add(p2);
+
+        collection.Remove(p1);
+        Assert.Equal(1, collection.Count);
+        Assert.False(collection.Contains(p1));
+        Assert.True(collection.Contains(p2));
+    }
+
+    [Fact(DisplayName = "测试参数集合IndexOf返回-1未找到")]
+    public void TestParameterCollectionIndexOfNotFound()
+    {
+        var collection = new NovaParameterCollection();
+        Assert.Equal(-1, collection.IndexOf("@nonexistent"));
+    }
+
+    [Fact(DisplayName = "测试参数集合AddRange操作")]
+    public void TestParameterCollectionAddRange()
+    {
+        var collection = new NovaParameterCollection();
+
+        var parameters = new NovaParameter[]
+        {
+            new() { ParameterName = "@a", Value = 1 },
+            new() { ParameterName = "@b", Value = 2 },
+            new() { ParameterName = "@c", Value = 3 }
+        };
+
+        collection.AddRange(parameters);
+        Assert.Equal(3, collection.Count);
+    }
+
+    [Fact(DisplayName = "测试参数集合CopyTo操作")]
+    public void TestParameterCollectionCopyTo()
+    {
+        var collection = new NovaParameterCollection();
+        collection.Add(new NovaParameter { ParameterName = "@a" });
+        collection.Add(new NovaParameter { ParameterName = "@b" });
+
+        var arr = new Object[2];
+        collection.CopyTo(arr, 0);
+        Assert.Equal(2, arr.Length);
+        Assert.NotNull(arr[0]);
+        Assert.NotNull(arr[1]);
+    }
+
+    [Fact(DisplayName = "测试参数集合SyncRoot不为空")]
+    public void TestParameterCollectionSyncRoot()
+    {
+        var collection = new NovaParameterCollection();
+        Assert.NotNull(collection.SyncRoot);
+    }
+
+    [Fact(DisplayName = "测试参数集合IsFixedSize为false")]
+    public void TestParameterCollectionIsFixedSize()
+    {
+        var collection = new NovaParameterCollection();
+        Assert.False(collection.IsFixedSize);
+    }
+
+    [Fact(DisplayName = "测试参数集合IsReadOnly为false")]
+    public void TestParameterCollectionIsReadOnly()
+    {
+        var collection = new NovaParameterCollection();
+        Assert.False(collection.IsReadOnly);
+    }
+
+    #endregion
 }
