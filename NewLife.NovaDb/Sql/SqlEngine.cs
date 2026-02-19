@@ -181,35 +181,12 @@ public class SqlEngine : IDisposable
 
     private SqlResult ExecuteTruncateTable(TruncateTableStatement stmt)
     {
-        lock (_lock)
-        {
-            if (!_schemas.TryGetValue(stmt.TableName, out var schema))
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+        var table = GetTable(stmt.TableName);
 
-            // 关闭旧表实例
-            if (_tables.TryGetValue(stmt.TableName, out var oldTable))
-            {
-                oldTable.Dispose();
-                _tables.Remove(stmt.TableName);
-            }
+        // 直接清空表数据，比逐行 DELETE 更快
+        table.Truncate();
 
-            // 删除表的所有数据文件
-            var fileManager = new TableFileManager(_dbPath, stmt.TableName, _options);
-            try
-            {
-                fileManager.DeleteAllFiles();
-            }
-            catch
-            {
-                // 忽略文件系统错误
-            }
-
-            // 使用同一 Schema 重建表实例
-            var newTable = new NovaTable(schema, _dbPath, _options, _txManager);
-            _tables[stmt.TableName] = newTable;
-
-            return new SqlResult { AffectedRows = 0 };
-        }
+        return new SqlResult { AffectedRows = 0 };
     }
 
     #endregion

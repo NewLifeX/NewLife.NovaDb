@@ -353,6 +353,15 @@ public class NovaTable : IDisposable
         }
     }
 
+    /// <summary>清空表中所有数据，保留表结构</summary>
+    public void Truncate()
+    {
+        lock (_lock)
+        {
+            _primaryIndex.Clear();
+        }
+    }
+
     #region 辅助
 
     /// <summary>序列化行数据</summary>
