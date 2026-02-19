@@ -1,40 +1,37 @@
-using System.Data;
+﻿using System.Data;
 using System.Data.Common;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 
 namespace NewLife.NovaDb.Client;
 
-/// <summary>NovaDb ADO.NET 连接</summary>
+/// <summary>NovaDb ADO.NET 连接。支持嵌入模式和服务器模式</summary>
 public class NovaConnection : DbConnection
 {
-    private String _connectionString = String.Empty;
+    #region 属性
     private ConnectionState _state = ConnectionState.Closed;
     private String _database = String.Empty;
     private NovaClient? _client;
     private SqlEngine? _sqlEngine;
 
+    /// <summary>连接字符串设置</summary>
+    public NovaConnectionStringBuilder Setting { get; } = new();
+
     /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
     public override String ConnectionString
     {
-        get => _connectionString;
-        set => _connectionString = value ?? String.Empty;
+        get => Setting.ConnectionString;
+        set => Setting.ConnectionString = value ?? String.Empty;
     }
 
     /// <summary>数据库名称</summary>
-    public override String Database => _database;
+    public override String Database => !String.IsNullOrEmpty(_database) ? _database : Setting.Database ?? String.Empty;
 
     /// <summary>数据源</summary>
-    public override String DataSource
-    {
-        get
-        {
-            if (IsEmbedded)
-                return ParseValue("Data Source");
+    public override String DataSource => IsEmbedded ? Setting.DataSource ?? String.Empty : Setting.Server ?? String.Empty;
 
-            return ParseValue("Server");
-        }
-    }
+    /// <summary>连接超时</summary>
+    public override Int32 ConnectionTimeout => Setting.ConnectionTimeout;
 
     /// <summary>服务器版本</summary>
     public override String ServerVersion => "1.0";
@@ -43,7 +40,7 @@ public class NovaConnection : DbConnection
     public override ConnectionState State => _state;
 
     /// <summary>是否为嵌入模式</summary>
-    public Boolean IsEmbedded => _connectionString.Contains("Data Source=", StringComparison.OrdinalIgnoreCase);
+    public Boolean IsEmbedded => Setting.IsEmbedded;
 
     /// <summary>远程客户端（服务器模式）</summary>
     public NovaClient? Client => _client;
@@ -51,12 +48,33 @@ public class NovaConnection : DbConnection
     /// <summary>SQL 执行引擎（嵌入模式）</summary>
     public SqlEngine? SqlEngine => _sqlEngine;
 
+    /// <summary>客户端工厂</summary>
+    public NovaClientFactory Factory { get; set; } = NovaClientFactory.Instance;
+
+    /// <summary>提供者工厂</summary>
+    protected override DbProviderFactory DbProviderFactory => Factory;
+    #endregion
+
+    #region 构造
+    /// <summary>实例化</summary>
+    public NovaConnection() { }
+
+    /// <summary>使用连接字符串实例化</summary>
+    /// <param name="connectionString">连接字符串</param>
+    public NovaConnection(String connectionString) => ConnectionString = connectionString;
+    #endregion
+
+    #region 打开关闭
     /// <summary>打开连接</summary>
     public override void Open()
     {
+        if (_state == ConnectionState.Open) return;
+
+        _state = ConnectionState.Connecting;
+
         if (IsEmbedded)
         {
-            var dataSource = ParseValue("Data Source");
+            var dataSource = Setting.DataSource;
             if (!String.IsNullOrEmpty(dataSource))
             {
                 var options = new DbOptions { Path = dataSource, WalMode = WalMode.None };
@@ -65,9 +83,8 @@ public class NovaConnection : DbConnection
         }
         else
         {
-            var server = ParseValue("Server");
-            var portStr = ParseValue("Port");
-            var port = Int32.TryParse(portStr, out var p) ? p : 3306;
+            var server = Setting.Server;
+            var port = Setting.Port;
             _client = new NovaClient($"tcp://{server}:{port}");
             _client.Open();
         }
@@ -78,6 +95,8 @@ public class NovaConnection : DbConnection
     /// <summary>关闭连接</summary>
     public override void Close()
     {
+        if (_state == ConnectionState.Closed) return;
+
         _client?.Close("Connection.Close");
         _client = null;
 
@@ -86,7 +105,9 @@ public class NovaConnection : DbConnection
 
         _state = ConnectionState.Closed;
     }
+    #endregion
 
+    #region 方法
     /// <summary>切换数据库</summary>
     /// <param name="databaseName">数据库名称</param>
     public override void ChangeDatabase(String databaseName) => _database = databaseName;
@@ -100,6 +121,18 @@ public class NovaConnection : DbConnection
     /// <returns>命令实例</returns>
     protected override DbCommand CreateDbCommand() => new NovaCommand { Connection = this };
 
+    /// <summary>执行 SQL 语句</summary>
+    /// <param name="sql">SQL 语句</param>
+    /// <returns>受影响行数</returns>
+    public Int32 ExecuteNonQuery(String sql)
+    {
+        using var cmd = CreateCommand();
+        cmd.CommandText = sql;
+        return cmd.ExecuteNonQuery();
+    }
+    #endregion
+
+    #region 释放
     /// <summary>释放资源</summary>
     /// <param name="disposing">是否由 Dispose 调用</param>
     protected override void Dispose(Boolean disposing)
@@ -113,23 +146,5 @@ public class NovaConnection : DbConnection
         _sqlEngine?.Dispose();
         _sqlEngine = null;
     }
-
-    #region 辅助
-
-    /// <summary>从连接字符串中解析指定键的值</summary>
-    private String ParseValue(String key)
-    {
-        if (String.IsNullOrEmpty(_connectionString)) return String.Empty;
-
-        foreach (var part in _connectionString.Split(';'))
-        {
-            var trimmed = part.Trim();
-            if (trimmed.StartsWith(key + "=", StringComparison.OrdinalIgnoreCase))
-                return trimmed[(key.Length + 1)..].Trim();
-        }
-
-        return String.Empty;
-    }
-
     #endregion
 }

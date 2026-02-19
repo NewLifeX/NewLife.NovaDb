@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFrameworks>net45;net8.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>net45;net6.0;net8.0;net10.0</TargetFrameworks>
     <AssemblyName>NovaServer</AssemblyName>
     <AssemblyTitle>新生命Nova数据库</AssemblyTitle>
     <Description>流星数据库</Description>
