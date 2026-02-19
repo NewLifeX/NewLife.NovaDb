@@ -94,6 +94,9 @@ public enum ErrorCode
     /// <summary>无效参数</summary>
     InvalidArgument = 5001,
 
+    /// <summary>只读模式下禁止写操作</summary>
+    ReadOnlyViolation = 5002,
+
     /// <summary>I/O 错误</summary>
     IoError = 6000,
 

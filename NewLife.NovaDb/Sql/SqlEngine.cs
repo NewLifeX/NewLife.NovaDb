@@ -47,7 +47,8 @@ public class SqlEngine : IDisposable
         _txManager = new TransactionManager();
         Metrics = new NovaMetrics { StartTime = DateTime.Now };
 
-        if (!Directory.Exists(_dbPath))
+        // 只读模式下不自动创建目录
+        if (!_options.ReadOnly && !Directory.Exists(_dbPath))
             Directory.CreateDirectory(_dbPath);
     }
 
@@ -61,6 +62,10 @@ public class SqlEngine : IDisposable
 
         var parser = new SqlParser(sql);
         var stmt = parser.Parse();
+
+        // 只读模式下拦截所有写操作
+        if (_options.ReadOnly && stmt is not SelectStatement)
+            throw new NovaException(ErrorCode.ReadOnlyViolation, "Database is opened in read-only mode, write operations are not allowed");
 
         return stmt switch
         {

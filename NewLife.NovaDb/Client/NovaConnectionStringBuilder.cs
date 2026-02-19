@@ -5,6 +5,7 @@ namespace NewLife.NovaDb.Client;
 /// <summary>NovaDb 连接字符串构建器。支持嵌入模式和服务器模式</summary>
 /// <remarks>
 /// 嵌入模式连接字符串：Data Source=../data/member
+/// 嵌入模式完整连接字符串：Data Source=../data/member;WalMode=Full;ReadOnly=true
 /// 服务器模式连接字符串：Server=localhost;Port=3306;Database=member;UserId=root;Password=root
 /// </remarks>
 public class NovaConnectionStringBuilder : DbConnectionStringBuilder
@@ -46,6 +47,16 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
     /// <summary>密码（服务器模式）</summary>
     public String? Password { get => this[nameof(Password)] as String; set => this[nameof(Password)] = value; }
 
+    /// <summary>WAL 模式（嵌入模式）。可选值：Full/Normal/None，默认 Normal</summary>
+    public String? WalMode { get => this[nameof(WalMode)] as String; set => this[nameof(WalMode)] = value; }
+
+    /// <summary>是否只读模式（嵌入模式）。只读模式下禁止写操作，可提升读取性能并避免多进程写冲突</summary>
+    public Boolean ReadOnly
+    {
+        get => Boolean.TryParse(this[nameof(ReadOnly)]?.ToString(), out var v) && v;
+        set => this[nameof(ReadOnly)] = value;
+    }
+
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => !String.IsNullOrEmpty(DataSource);
     #endregion
@@ -65,6 +76,8 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
             [nameof(CommandTimeout)] = ["commandtimeout", "command timeout", "default command timeout"],
             [nameof(UserId)] = ["userid", "user id", "uid"],
             [nameof(Password)] = ["password", "pwd"],
+            [nameof(WalMode)] = ["walmode", "wal mode", "wal"],
+            [nameof(ReadOnly)] = ["readonly", "read only"],
         };
 
         _options = dic;
