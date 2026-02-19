@@ -345,6 +345,8 @@ public class SqlParser
         }
 
         return stmt;
+    }
+
     private TruncateTableStatement ParseTruncate()
     {
         Expect(SqlTokenType.Truncate);
