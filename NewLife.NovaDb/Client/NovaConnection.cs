@@ -15,7 +15,7 @@ public class NovaConnection : DbConnection
     private SqlEngine? _sqlEngine;
 
     /// <summary>连接字符串设置</summary>
-    public NovaConnectionStringBuilder Setting { get; } = new();
+    public NovaConnectionStringBuilder Setting { get; } = [];
 
     /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
     public override String ConnectionString

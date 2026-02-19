@@ -4,8 +4,8 @@ namespace NewLife.NovaDb.Client;
 
 /// <summary>NovaDb 连接字符串构建器。支持嵌入模式和服务器模式</summary>
 /// <remarks>
-/// 嵌入模式连接字符串：Data Source=/path/to/db;Database=mydb
-/// 服务器模式连接字符串：Server=localhost;Port=3306;Database=mydb
+/// 嵌入模式连接字符串：Data Source=../data/member
+/// 服务器模式连接字符串：Server=localhost;Port=3306;Database=member;UserId=root;Password=root
 /// </remarks>
 public class NovaConnectionStringBuilder : DbConnectionStringBuilder
 {
@@ -40,6 +40,12 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
         set => this[nameof(CommandTimeout)] = value;
     }
 
+    /// <summary>用户名（服务器模式）</summary>
+    public String? UserId { get => this[nameof(UserId)] as String; set => this[nameof(UserId)] = value; }
+
+    /// <summary>密码（服务器模式）</summary>
+    public String? Password { get => this[nameof(Password)] as String; set => this[nameof(Password)] = value; }
+
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => !String.IsNullOrEmpty(DataSource);
     #endregion
@@ -57,6 +63,8 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
             [nameof(Database)] = ["database"],
             [nameof(ConnectionTimeout)] = ["connectiontimeout", "connection timeout"],
             [nameof(CommandTimeout)] = ["commandtimeout", "command timeout", "default command timeout"],
+            [nameof(UserId)] = ["userid", "user id", "uid"],
+            [nameof(Password)] = ["password", "pwd"],
         };
 
         _options = dic;

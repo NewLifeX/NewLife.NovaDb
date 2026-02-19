@@ -124,7 +124,7 @@ public class NovaBatch : DbBatch
     /// <summary>超时时间（秒）</summary>
     public override Int32 Timeout { get; set; } = 30;
 
-    private readonly NovaBatchCommandCollection _commands = new();
+    private readonly NovaBatchCommandCollection _commands = [];
 
     /// <summary>命令集合</summary>
     protected override DbBatchCommandCollection DbBatchCommands => _commands;
