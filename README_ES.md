@@ -51,7 +51,7 @@ Subconjunto SQL estándar implementado, cubriendo aproximadamente el 60% de los 
 | Característica | Estado | Descripción |
 |----------------|--------|-------------|
 | DDL | ✅ | CREATE/DROP TABLE/INDEX, con IF NOT EXISTS, PRIMARY KEY, UNIQUE |
-| DML | ✅ | INSERT (múltiples filas), UPDATE, DELETE, UPSERT |
+| DML | ✅ | INSERT (múltiples filas), UPDATE, DELETE, UPSERT (ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
 | Consulta | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | Agregación | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), admite alias de tabla |

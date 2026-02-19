@@ -51,7 +51,7 @@ Implementierte Standard-SQL-Teilmenge, die etwa 60% der gängigen Geschäftsszen
 | Funktion | Status | Beschreibung |
 |----------|--------|--------------|
 | DDL | ✅ | CREATE/DROP TABLE/INDEX, mit IF NOT EXISTS, PRIMARY KEY, UNIQUE |
-| DML | ✅ | INSERT (mehrere Zeilen), UPDATE, DELETE, UPSERT |
+| DML | ✅ | INSERT (mehrere Zeilen), UPDATE, DELETE, UPSERT (ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
 | Abfrage | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | Aggregation | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), unterstützt Tabellenaliase |

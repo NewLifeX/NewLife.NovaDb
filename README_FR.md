@@ -51,7 +51,7 @@ Sous-ensemble SQL standard implémenté, couvrant environ 60% des scénarios com
 | Fonctionnalité | Statut | Description |
 |----------------|--------|-------------|
 | DDL | ✅ | CREATE/DROP TABLE/INDEX, avec IF NOT EXISTS, PRIMARY KEY, UNIQUE |
-| DML | ✅ | INSERT (plusieurs lignes), UPDATE, DELETE, UPSERT |
+| DML | ✅ | INSERT (plusieurs lignes), UPDATE, DELETE, UPSERT (ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
 | Requête | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | Agrégation | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), prend en charge les alias de table |

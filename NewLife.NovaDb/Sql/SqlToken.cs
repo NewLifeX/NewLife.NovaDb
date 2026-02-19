@@ -128,6 +128,8 @@ public enum SqlTokenType
     Comment,
     /// <summary>TRUNCATE</summary>
     Truncate,
+    /// <summary>DUPLICATE</summary>
+    Duplicate,
 
     // 标识符与字面量
     /// <summary>标识符</summary>
