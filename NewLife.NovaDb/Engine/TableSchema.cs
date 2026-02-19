@@ -20,6 +20,9 @@ public class ColumnDefinition
     /// <summary>列序号（从 0 开始）</summary>
     public Int32 Ordinal { get; set; }
 
+    /// <summary>列注释</summary>
+    public String? Comment { get; set; }
+
     /// <summary>创建列定义</summary>
     /// <param name="name">列名</param>
     /// <param name="dataType">数据类型</param>
@@ -50,6 +53,12 @@ public class TableSchema
     /// <summary>主键列索引（如果没有主键则为 null）</summary>
     public Int32? PrimaryKeyIndex => _primaryKeyIndex;
 
+    /// <summary>表注释</summary>
+    public String? Comment { get; set; }
+
+    /// <summary>存储引擎名称（默认 Nova）</summary>
+    public String EngineName { get; set; } = "Nova";
+
     /// <summary>创建表架构</summary>
     /// <param name="tableName">表名</param>
     public TableSchema(String tableName)
@@ -77,6 +86,61 @@ public class TableSchema
                 throw new NovaException(ErrorCode.InvalidArgument, "Table can only have one primary key");
 
             _primaryKeyIndex = column.Ordinal;
+        }
+    }
+
+    /// <summary>删除列</summary>
+    /// <param name="columnName">列名</param>
+    public void RemoveColumn(String columnName)
+    {
+        if (columnName == null) throw new ArgumentNullException(nameof(columnName));
+
+        if (!_columnIndexes.TryGetValue(columnName, out var index))
+            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
+
+        var column = _columns[index];
+        if (column.IsPrimaryKey)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Cannot drop primary key column '{columnName}'");
+
+        _columns.RemoveAt(index);
+        _columnIndexes.Remove(columnName);
+
+        // 重建索引映射
+        RebuildColumnIndexes();
+    }
+
+    /// <summary>修改列定义</summary>
+    /// <param name="columnName">列名</param>
+    /// <param name="newDataType">新数据类型</param>
+    /// <param name="nullable">是否允许为空</param>
+    /// <param name="comment">列注释</param>
+    public void ModifyColumn(String columnName, DataType newDataType, Boolean nullable, String? comment = null)
+    {
+        if (columnName == null) throw new ArgumentNullException(nameof(columnName));
+
+        if (!_columnIndexes.TryGetValue(columnName, out var index))
+            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
+
+        var column = _columns[index];
+        column.DataType = newDataType;
+        column.Nullable = nullable;
+        if (comment != null)
+            column.Comment = comment;
+    }
+
+    /// <summary>重建列索引映射</summary>
+    private void RebuildColumnIndexes()
+    {
+        _columnIndexes.Clear();
+        _primaryKeyIndex = null;
+
+        for (var i = 0; i < _columns.Count; i++)
+        {
+            _columns[i].Ordinal = i;
+            _columnIndexes[_columns[i].Name] = i;
+
+            if (_columns[i].IsPrimaryKey)
+                _primaryKeyIndex = i;
         }
     }
 

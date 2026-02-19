@@ -67,6 +67,12 @@ public class SqlLexer
         ["GROUP_CONCAT"] = SqlTokenType.GroupConcat,
         ["STDDEV"] = SqlTokenType.Stddev,
         ["VARIANCE"] = SqlTokenType.Variance,
+        ["DATABASE"] = SqlTokenType.Database,
+        ["ALTER"] = SqlTokenType.Alter,
+        ["ADD"] = SqlTokenType.Add,
+        ["COLUMN"] = SqlTokenType.Column,
+        ["MODIFY"] = SqlTokenType.Modify,
+        ["COMMENT"] = SqlTokenType.Comment,
     };
 
     /// <summary>创建词法分析器</summary>

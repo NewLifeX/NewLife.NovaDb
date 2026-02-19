@@ -79,6 +79,9 @@ public class SqlEngine : IDisposable
             DropTableStatement drop => TrackDdl(ExecuteDropTable(drop)),
             CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx)),
             DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx)),
+            CreateDatabaseStatement createDb => TrackDdl(ExecuteCreateDatabase(createDb)),
+            DropDatabaseStatement dropDb => TrackDdl(ExecuteDropDatabase(dropDb)),
+            AlterTableStatement alter => TrackDdl(ExecuteAlterTable(alter)),
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters)),
             UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters)),
             DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters)),
@@ -107,10 +110,20 @@ public class SqlEngine : IDisposable
 
             var schema = new TableSchema(stmt.TableName);
 
+            // 设置引擎名称，未指定时默认为 Nova
+            schema.EngineName = stmt.EngineName ?? "Nova";
+
+            // 设置表注释
+            if (stmt.Comment != null)
+                schema.Comment = stmt.Comment;
+
             foreach (var colDef in stmt.Columns)
             {
                 var dataType = ParseDataType(colDef.DataTypeName);
-                schema.AddColumn(new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey));
+                var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey);
+                if (colDef.Comment != null)
+                    column.Comment = colDef.Comment;
+                schema.AddColumn(column);
             }
 
             var table = new NovaTable(schema, _dbPath, _options, _txManager);
@@ -173,6 +186,83 @@ public class SqlEngine : IDisposable
         {
             if (!_schemas.ContainsKey(stmt.TableName))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+
+            return new SqlResult { AffectedRows = 0 };
+        }
+    }
+
+    private SqlResult ExecuteCreateDatabase(CreateDatabaseStatement stmt)
+    {
+        var dbPath = Path.Combine(Path.GetDirectoryName(_dbPath) ?? ".", stmt.DatabaseName);
+        if (Directory.Exists(dbPath))
+        {
+            if (stmt.IfNotExists) return new SqlResult { AffectedRows = 0 };
+            throw new NovaException(ErrorCode.DatabaseExists, $"Database '{stmt.DatabaseName}' already exists");
+        }
+
+        Directory.CreateDirectory(dbPath);
+        return new SqlResult { AffectedRows = 0 };
+    }
+
+    private SqlResult ExecuteDropDatabase(DropDatabaseStatement stmt)
+    {
+        var dbPath = Path.Combine(Path.GetDirectoryName(_dbPath) ?? ".", stmt.DatabaseName);
+        if (!Directory.Exists(dbPath))
+        {
+            if (stmt.IfExists) return new SqlResult { AffectedRows = 0 };
+            throw new NovaException(ErrorCode.DatabaseNotFound, $"Database '{stmt.DatabaseName}' not found");
+        }
+
+        Directory.Delete(dbPath, recursive: true);
+        return new SqlResult { AffectedRows = 0 };
+    }
+
+    private SqlResult ExecuteAlterTable(AlterTableStatement stmt)
+    {
+        lock (_lock)
+        {
+            if (!_schemas.TryGetValue(stmt.TableName, out var schema))
+                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+
+            switch (stmt.Action)
+            {
+                case AlterTableAction.AddColumn:
+                    {
+                        var colDef = stmt.ColumnDef!;
+                        var dataType = ParseDataType(colDef.DataTypeName);
+                        var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey);
+                        if (colDef.Comment != null)
+                            column.Comment = colDef.Comment;
+                        schema.AddColumn(column);
+                        break;
+                    }
+
+                case AlterTableAction.ModifyColumn:
+                    {
+                        var colDef = stmt.ColumnDef!;
+                        var dataType = ParseDataType(colDef.DataTypeName);
+                        schema.ModifyColumn(colDef.Name, dataType, !colDef.NotNull, colDef.Comment);
+                        break;
+                    }
+
+                case AlterTableAction.DropColumn:
+                    schema.RemoveColumn(stmt.ColumnName!);
+                    break;
+
+                case AlterTableAction.AddTableComment:
+                    schema.Comment = stmt.Comment;
+                    break;
+
+                case AlterTableAction.AddColumnComment:
+                    {
+                        var col = schema.GetColumn(stmt.ColumnName!);
+                        col.Comment = stmt.Comment;
+                        break;
+                    }
+
+                default:
+                    throw new NovaException(ErrorCode.NotSupported, $"Unsupported ALTER TABLE action: {stmt.Action}");
+            }
 
             return new SqlResult { AffectedRows = 0 };
         }
