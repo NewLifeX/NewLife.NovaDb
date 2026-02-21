@@ -181,7 +181,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.False(info.IsExternal);
         Assert.Equal(1, info.Version);
         Assert.Equal(4096u, info.PageSize);
-        Assert.True(info.CreatedAt > 0);
+        Assert.True(info.CreateTime.Year >= 2020);
         Assert.True(info.LastSeenAt > 0);
     }
 

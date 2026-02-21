@@ -8,7 +8,8 @@ namespace NewLife.NovaDb.Storage;
 /// 页头布局（32 字节）：
 /// - 0-7: PageId (页 ID)
 /// - 8: PageType (0=Empty, 1=Data, 2=Index, 3=Directory, 4=Metadata)
-/// - 9-11: Reserved (预留)
+/// - 9: Flags (页级标志：bit0=已加密, bit1=已压缩, bit2=脏页)
+/// - 10-11: Reserved (预留)
 /// - 12-19: LSN (日志序列号)
 /// - 20-23: Checksum (CRC32 校验和)
 /// - 24-27: DataLength (页内有效数据长度)
@@ -24,6 +25,9 @@ public class PageHeader
 
     /// <summary>页类型</summary>
     public PageType PageType { get; set; }
+
+    /// <summary>页级标志。bit0=已加密, bit1=已压缩, bit2=脏页，其余位预留</summary>
+    public PageFlags Flags { get; set; }
 
     /// <summary>日志序列号（LSN）</summary>
     public UInt64 Lsn { get; set; }
@@ -47,8 +51,11 @@ public class PageHeader
         // PageType (1 byte)
         writer.WriteByte((Byte)PageType);
 
-        // Reserved (3 bytes)
-        writer.FillZero(3);
+        // Flags (1 byte)
+        writer.WriteByte((Byte)Flags);
+
+        // Reserved (2 bytes)
+        writer.FillZero(2);
 
         // Lsn (8 bytes)
         writer.Write(Lsn);
@@ -91,8 +98,11 @@ public class PageHeader
 
         var pageType = (PageType)pageTypeByte;
 
+        // Flags
+        var flags = (PageFlags)reader.ReadByte();
+
         // Reserved
-        reader.Advance(3);
+        reader.Advance(2);
 
         // Lsn
         var lsn = reader.ReadUInt64();
@@ -107,6 +117,7 @@ public class PageHeader
         {
             PageId = pageId,
             PageType = pageType,
+            Flags = flags,
             Lsn = lsn,
             Checksum = checksum,
             DataLength = dataLength
@@ -131,4 +142,21 @@ public enum PageType : Byte
 
     /// <summary>元数据页</summary>
     Metadata = 4
+}
+
+/// <summary>页级特性标志</summary>
+[Flags]
+public enum PageFlags : Byte
+{
+    /// <summary>无特殊标志</summary>
+    None = 0,
+
+    /// <summary>页已加密</summary>
+    Encrypted = 1,
+
+    /// <summary>页已压缩</summary>
+    Compressed = 2,
+
+    /// <summary>脏页（已修改未刷盘）</summary>
+    Dirty = 4
 }

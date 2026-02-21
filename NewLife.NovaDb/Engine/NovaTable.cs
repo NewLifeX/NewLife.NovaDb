@@ -62,7 +62,7 @@ public class NovaTable : IDisposable
             Version = 1,
             FileType = FileType.Data,
             PageSize = (UInt32)_options.PageSize,
-            CreatedAt = DateTime.UtcNow.Ticks,
+            CreateTime = DateTime.Now,
         };
         _dataPager.Open(dataHeader);
 

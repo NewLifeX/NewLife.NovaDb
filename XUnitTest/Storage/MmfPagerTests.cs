@@ -47,7 +47,7 @@ public class MmfPagerTests : IDisposable
         {
             FileType = FileType.Data,
             PageSize = 4096,
-            CreatedAt = DateTime.UtcNow.Ticks
+            CreateTime = DateTime.Now
         };
 
         using var pager = new MmfPager(_testFile, 4096);
@@ -92,7 +92,7 @@ public class MmfPagerTests : IDisposable
         {
             FileType = FileType.Data,
             PageSize = 4096,
-            CreatedAt = DateTime.UtcNow.Ticks
+            CreateTime = DateTime.Now
         };
 
         using var pager = new MmfPager(_testFile, 4096, enableChecksum: false);
@@ -309,7 +309,7 @@ public class MmfPagerTests : IDisposable
         {
             FileType = FileType.Data,
             PageSize = 4096,
-            CreatedAt = DateTime.UtcNow.Ticks
+            CreateTime = DateTime.Now
         };
 
         using var pager = new MmfPager(_testFile, 4096, enableChecksum: false);

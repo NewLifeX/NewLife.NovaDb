@@ -29,6 +29,7 @@ public class PageHeaderTests
 
         Assert.Equal(header.PageId, deserialized.PageId);
         Assert.Equal(header.PageType, deserialized.PageType);
+        Assert.Equal(header.Flags, deserialized.Flags);
         Assert.Equal(header.Lsn, deserialized.Lsn);
         Assert.Equal(header.Checksum, deserialized.Checksum);
         Assert.Equal(header.DataLength, deserialized.DataLength);
@@ -196,8 +197,7 @@ public class PageHeaderTests
         using var pk = header.ToPacket();
         var bytes = pk.GetSpan().ToArray();
 
-        // Reserved 3 bytes at offset 9-11
-        Assert.Equal(0, bytes[9]);
+        // Reserved 2 bytes at offset 10-11
         Assert.Equal(0, bytes[10]);
         Assert.Equal(0, bytes[11]);
 
@@ -230,6 +230,7 @@ public class PageHeaderTests
 
             Assert.Equal(header.PageId, deserialized.PageId);
             Assert.Equal(header.PageType, deserialized.PageType);
+            Assert.Equal(header.Flags, deserialized.Flags);
             Assert.Equal(header.Lsn, deserialized.Lsn);
             Assert.Equal(header.Checksum, deserialized.Checksum);
             Assert.Equal(header.DataLength, deserialized.DataLength);
@@ -252,5 +253,26 @@ public class PageHeaderTests
         var deserialized = PageHeader.Read(new ArrayPacket(bytes));
 
         Assert.Equal(PageType.Metadata, deserialized.PageType);
+    }
+
+    [Fact]
+    public void TestFlagsPersistence()
+    {
+        var header = new PageHeader
+        {
+            PageId = 1,
+            PageType = PageType.Data,
+            Flags = PageFlags.Encrypted | PageFlags.Compressed,
+            DataLength = 100
+        };
+
+        using var pk = header.ToPacket();
+        var bytes = pk.GetSpan().ToArray();
+
+        // Flags 在 offset 9
+        Assert.Equal((Byte)(PageFlags.Encrypted | PageFlags.Compressed), bytes[9]);
+
+        var deserialized = PageHeader.Read(new ArrayPacket(bytes));
+        Assert.Equal(PageFlags.Encrypted | PageFlags.Compressed, deserialized.Flags);
     }
 }

@@ -21,8 +21,8 @@ public class DatabaseInfo
     /// <summary>页大小（字节）</summary>
     public UInt32 PageSize { get; set; }
 
-    /// <summary>创建时间（UTC Ticks，来自 FileHeader）</summary>
-    public Int64 CreatedAt { get; set; }
+    /// <summary>创建时间（来自 FileHeader）</summary>
+    public DateTime CreateTime { get; set; }
 
     /// <summary>最后一次扫描发现的时间（UTC Ticks）</summary>
     public Int64 LastSeenAt { get; set; }

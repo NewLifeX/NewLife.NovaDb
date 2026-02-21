@@ -171,7 +171,7 @@ public class DatabaseManager
                 IsExternal = false,
                 Version = header.Version,
                 PageSize = header.PageSize,
-                CreatedAt = header.CreatedAt,
+                CreateTime = header.CreateTime,
                 LastSeenAt = nowTicks
             };
 
@@ -294,7 +294,7 @@ public class DatabaseManager
             IsExternal = isExternal,
             Version = header.Version,
             PageSize = header.PageSize,
-            CreatedAt = header.CreatedAt,
+            CreateTime = header.CreateTime,
             LastSeenAt = nowTicks
         };
 

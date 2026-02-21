@@ -47,8 +47,7 @@ public class DatabaseDirectory
             Version = 1,
             FileType = FileType.Data,
             PageSize = (UInt32)_options.PageSize,
-            CreatedAt = DateTime.UtcNow.Ticks,
-            OptionsHash = ComputeOptionsHash(_options)
+            CreateTime = DateTime.Now
         };
 
         using var pk = header.ToPacket();
@@ -77,9 +76,8 @@ public class DatabaseDirectory
         if (header.Version > 1)
             throw new NovaException(ErrorCode.IncompatibleFileFormat, $"Unsupported database version: {header.Version}");
 
-        // 配置一致性警告
-        var currentHash = ComputeOptionsHash(_options);
-        if (header.OptionsHash != currentHash && header.PageSize != _options.PageSize)
+        // PageSize 一致性检查
+        if (header.PageSize != _options.PageSize)
         {
             NewLife.Log.XTrace.WriteLine($"Warning: Database options mismatch. " +
                 $"File PageSize={header.PageSize}, Current PageSize={_options.PageSize}");
@@ -137,9 +135,4 @@ public class DatabaseDirectory
         if (Directory.Exists(_basePath))
             Directory.Delete(_basePath, recursive: true);
     }
-
-    /// <summary>计算配置哈希</summary>
-    /// <param name="options">数据库配置</param>
-    /// <returns>配置哈希值</returns>
-    private UInt32 ComputeOptionsHash(DbOptions options) => (UInt32)options.PageSize;
 }

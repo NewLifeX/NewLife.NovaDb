@@ -5,6 +5,7 @@ using NewLife;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
+using NewLife.Security;
 using Xunit;
 
 namespace XUnitTest.Storage;
@@ -78,7 +79,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Equal(1, header.Version);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
-        Assert.True(header.CreatedAt > 0);
+        Assert.True(header.CreateTime.Year >= 2020);
     }
 
     [Fact]
@@ -173,10 +174,11 @@ public class DatabaseDirectoryTests : IDisposable
         var db = new DatabaseDirectory(_testPath, _options);
         db.Create();
 
-        // 篡改版本号为 99
+        // 篡改版本号为 99（offset 4，1 字节）并重新计算 Checksum
         var metaPath = Path.Combine(_testPath, "nova.db");
         var metaBytes = File.ReadAllBytes(metaPath);
-        BitConverter.GetBytes((UInt16)99).CopyTo(metaBytes, 4);
+        metaBytes[4] = 99;
+        BitConverter.GetBytes(Crc32.Compute(metaBytes.AsSpan(0, 16))).CopyTo(metaBytes, 16);
         File.WriteAllBytes(metaPath, metaBytes);
 
         var db2 = new DatabaseDirectory(_testPath, _options);

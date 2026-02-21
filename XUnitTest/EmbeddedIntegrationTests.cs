@@ -100,10 +100,10 @@ public class EmbeddedIntegrationTests : IDisposable
 
         // 验证 .data 文件头内容
         var header = ReadFileHeader(dataFile);
-        Assert.Equal((UInt16)1, header.Version);
+        Assert.Equal((Byte)1, header.Version);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
-        Assert.True(header.CreatedAt > 0, "CreatedAt 应为有效的 UTC Ticks");
+        Assert.True(header.CreateTime.Year >= 2020, "CreateTime 应为有效时间");
 
         // .data 文件大小应至少包含一个 32 字节的文件头
         Assert.True(new FileInfo(dataFile).Length >= FileHeader.HeaderSize, ".data 文件大小应不小于文件头 32 字节");
