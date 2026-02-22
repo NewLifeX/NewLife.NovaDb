@@ -178,7 +178,7 @@ public class DatabaseDirectoryTests : IDisposable
         var metaPath = Path.Combine(_testPath, "nova.db");
         var metaBytes = File.ReadAllBytes(metaPath);
         metaBytes[4] = 99;
-        BitConverter.GetBytes(Crc32.Compute(metaBytes.AsSpan(0, 16))).CopyTo(metaBytes, 16);
+        BitConverter.GetBytes(Crc32.Compute(metaBytes.AsSpan(0, 28))).CopyTo(metaBytes, 28);
         File.WriteAllBytes(metaPath, metaBytes);
 
         var db2 = new DatabaseDirectory(_testPath, _options);

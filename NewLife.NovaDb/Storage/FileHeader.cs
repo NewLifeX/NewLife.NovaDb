@@ -13,8 +13,8 @@ namespace NewLife.NovaDb.Storage;
 /// - 6: PageSizeShift (页大小位移，实际页大小 = 1 &lt;&lt; shift)
 /// - 7: Flags (特性标志：bit0=加密, bit1=压缩, bit2=只读)
 /// - 8-15: CreateTime (创建时间，UTC 毫秒)
-/// - 16-19: Checksum (CRC32 校验和，覆盖 bytes[0-15])
-/// - 20-31: Reserved (预留扩展)
+/// - 16-27: Reserved (预留扩展)
+/// - 28-31: Checksum (CRC32 校验和，覆盖 bytes[0-27])
 /// </remarks>
 public class FileHeader
 {
@@ -39,7 +39,7 @@ public class FileHeader
     /// <summary>特性标志。bit0=加密, bit1=压缩, bit2=只读，其余位预留</summary>
     public FileFlags Flags { get; set; }
 
-    /// <summary>文件头校验和（CRC32，覆盖 bytes[0-15]）</summary>
+    /// <summary>文件头校验和（CRC32，覆盖 bytes[0-27]）</summary>
     public UInt32 Checksum { get; set; }
 
     /// <summary>序列化为数据包（固定 32 字节），使用后需 Dispose 归还到对象池</summary>
@@ -67,15 +67,15 @@ public class FileHeader
         // CreateTime (8 bytes, UTC 毫秒)
         writer.Write(CreateTime.ToUniversalTime().ToLong());
 
-        // 计算 Checksum（CRC32 of bytes[0-15]）
+        // Reserved (12 bytes) - 预留扩展
+        writer.FillZero(12);
+
+        // 计算 Checksum（CRC32 of bytes[0-27]）
         var span = pk.GetSpan();
-        var crc = Crc32.Compute(span[..16]);
+        var crc = Crc32.Compute(span[..28]);
 
         // Checksum (4 bytes)
         writer.Write(crc);
-
-        // Reserved (12 bytes) - 预留扩展
-        writer.FillZero(12);
 
         return pk;
     }
@@ -124,10 +124,13 @@ public class FileHeader
         // CreateTime
         var createTimeMs = reader.ReadInt64();
 
+        // Reserved (12 bytes)
+        reader.Advance(12);
+
         // Checksum 验证
         var storedChecksum = reader.ReadUInt32();
         var span = data.GetSpan();
-        var computedChecksum = Crc32.Compute(span[..16]);
+        var computedChecksum = Crc32.Compute(span[..28]);
         if (storedChecksum != computedChecksum)
             throw new Core.NovaException(Core.ErrorCode.ChecksumFailed, $"FileHeader checksum mismatch: stored=0x{storedChecksum:X8}, computed=0x{computedChecksum:X8}");
 

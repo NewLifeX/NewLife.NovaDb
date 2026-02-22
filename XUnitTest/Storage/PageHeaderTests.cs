@@ -201,8 +201,8 @@ public class PageHeaderTests
         Assert.Equal(0, bytes[10]);
         Assert.Equal(0, bytes[11]);
 
-        // Reserved 4 bytes at offset 28-31
-        for (var i = 28; i < 32; i++)
+        // Reserved 4 bytes at offset 24-27
+        for (var i = 24; i < 28; i++)
         {
             Assert.Equal(0, bytes[i]);
         }
