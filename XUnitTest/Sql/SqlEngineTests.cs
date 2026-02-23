@@ -581,7 +581,7 @@ public class SqlEngineTests : IDisposable
 
         var result = _engine.Execute("SELECT * FROM _sys.tables WHERE name = 'users'");
 
-        Assert.Equal(1, result.Rows.Count);
+        Assert.Single(result.Rows);
         Assert.Equal("users", result.Rows[0][0]);
     }
 
@@ -649,7 +649,7 @@ public class SqlEngineTests : IDisposable
 
         var result = _engine.Execute("SELECT * FROM _sys.metrics WHERE metric = 'insert_count'");
 
-        Assert.Equal(1, result.Rows.Count);
+        Assert.Single(result.Rows);
         Assert.Equal("insert_count", result.Rows[0][0]);
     }
 
@@ -659,7 +659,7 @@ public class SqlEngineTests : IDisposable
         var result = _engine.Execute("SELECT * FROM _sys.version");
 
         Assert.True(result.IsQuery);
-        Assert.Equal(1, result.Rows.Count);
+        Assert.Single(result.Rows);
         Assert.Equal(3, result.ColumnNames!.Length);
         Assert.Equal("version", result.ColumnNames[0]);
         Assert.Equal("platform", result.ColumnNames[1]);

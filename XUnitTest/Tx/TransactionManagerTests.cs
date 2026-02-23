@@ -144,7 +144,7 @@ public class TransactionManagerTests
     }
 
     [Fact(DisplayName = "测试并发事务提交")]
-    public void TestConcurrentCommit()
+    public async Task TestConcurrentCommit()
     {
         var manager = new TransactionManager();
         var commitTsList = new List<UInt64>();
@@ -167,7 +167,7 @@ public class TransactionManagerTests
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks.ToArray());
 
         // 验证提交时间戳唯一且递增
         Assert.Equal(10, commitTsList.Count);
