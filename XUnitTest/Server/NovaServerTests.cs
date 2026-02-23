@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.IO;
 using NewLife.NovaDb.Server;
 using Xunit;
 
@@ -8,14 +9,26 @@ namespace XUnitTest.Server;
 [Collection("IntegrationTests")]
 public class NovaServerTests : IDisposable
 {
+    private readonly String _dbPath;
     private readonly NovaServer _server;
 
     public NovaServerTests()
     {
-        _server = new NovaServer(0);
+        _dbPath = Path.Combine(Path.GetTempPath(), $"NovaServer_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_dbPath);
+        _server = new NovaServer(0) { DbPath = _dbPath };
     }
 
-    public void Dispose() => _server.Dispose();
+    public void Dispose()
+    {
+        _server.Dispose();
+
+        if (!String.IsNullOrEmpty(_dbPath) && Directory.Exists(_dbPath))
+        {
+            try { Directory.Delete(_dbPath, recursive: true); }
+            catch { }
+        }
+    }
 
     [Fact(DisplayName = "测试创建服务器")]
     public void TestCreateServer()

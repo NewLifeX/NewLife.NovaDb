@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Data;
+using System.IO;
 using System.Threading.Tasks;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Server;
@@ -207,7 +208,9 @@ public class NovaConnectionTests
     public async Task TestClientServerEndToEnd()
     {
         // Start a server on a random port
-        using var server = new NovaServer(0);
+        var dbPath = Path.Combine(Path.GetTempPath(), $"NovaConnTest_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(dbPath);
+        using var server = new NovaServer(0) { DbPath = dbPath };
         server.Start();
         var port = server.Port;
         Assert.True(port > 0);
@@ -243,6 +246,10 @@ public class NovaConnectionTests
         // Close
         client.Close();
         Assert.False(client.IsConnected);
+
+        server.Stop();
+        try { Directory.Delete(dbPath, recursive: true); }
+        catch { }
     }
 
     #region 状态转换与边界测试
