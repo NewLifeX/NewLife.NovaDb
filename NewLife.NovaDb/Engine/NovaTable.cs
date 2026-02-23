@@ -117,7 +117,7 @@ public class NovaTable : IDisposable
             else
             {
                 // 检查是否有可见的版本（主键冲突）
-                foreach (var ver in versions)
+                foreach (var ver in versions!)
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
                         throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Primary key '{pkValue}' already exists");
@@ -147,7 +147,7 @@ public class NovaTable : IDisposable
                 {
                     if (_primaryIndex.TryGetValue(comparableKey, out var vers))
                     {
-                        vers.Remove(rowVersion);
+                        vers!.Remove(rowVersion);
                     }
                 }
             });
@@ -174,7 +174,7 @@ public class NovaTable : IDisposable
 
             // 查找对当前事务可见的最新版本
             RowVersion? visibleVersion = null;
-            foreach (var ver in versions)
+            foreach (var ver in versions!)
             {
                 if (ver.IsVisible(_txManager, tx.TxId))
                 {
@@ -216,7 +216,7 @@ public class NovaTable : IDisposable
 
             // 查找对当前事务可见的版本
             RowVersion? visibleVersion = null;
-            foreach (var ver in versions)
+            foreach (var ver in versions!)
             {
                 if (ver.IsVisible(_txManager, tx.TxId))
                 {
@@ -258,7 +258,7 @@ public class NovaTable : IDisposable
                     visibleVersion.DeletedByTx = oldDeletedByTx;
                     if (_primaryIndex.TryGetValue(comparableKey, out var vers))
                     {
-                        vers.Remove(newVersion);
+                        vers!.Remove(newVersion);
                     }
                 }
             });
@@ -287,7 +287,7 @@ public class NovaTable : IDisposable
 
             // 查找对当前事务可见的版本
             RowVersion? visibleVersion = null;
-            foreach (var ver in versions)
+            foreach (var ver in versions!)
             {
                 if (ver.IsVisible(_txManager, tx.TxId))
                 {
