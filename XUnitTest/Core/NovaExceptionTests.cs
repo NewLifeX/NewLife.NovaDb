@@ -2,6 +2,8 @@
 using NewLife.NovaDb.Core;
 using Xunit;
 
+#nullable enable
+
 namespace XUnitTest.Core;
 
 /// <summary>NovaException 异常测试</summary>

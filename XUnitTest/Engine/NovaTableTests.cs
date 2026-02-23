@@ -6,6 +6,8 @@ using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
 
+#nullable enable
+
 namespace XUnitTest.Engine;
 
 /// <summary>

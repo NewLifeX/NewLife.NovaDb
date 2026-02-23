@@ -5,6 +5,8 @@ using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 using Xunit;
 
+#nullable enable
+
 namespace XUnitTest.Sql;
 
 /// <summary>SQL 执行引擎单元测试</summary>
