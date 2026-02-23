@@ -4,6 +4,8 @@ using System.Data.Common;
 
 namespace NewLife.NovaDb.Client;
 
+#pragma warning disable CS8765 // Nullability of parameter doesn't match overridden member
+
 /// <summary>NovaDb ADO.NET 参数</summary>
 public class NovaParameter : DbParameter
 {

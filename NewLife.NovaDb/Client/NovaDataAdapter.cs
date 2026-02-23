@@ -4,18 +4,20 @@ using System.Data.Common;
 
 namespace NewLife.NovaDb.Client;
 
+#pragma warning disable CS8765 // Nullability of parameter doesn't match overridden member
+
 /// <summary>行更新前事件参数</summary>
 public sealed class NovaRowUpdatingEventArgs(DataRow row, IDbCommand command, StatementType statementType, DataTableMapping tableMapping) : RowUpdatingEventArgs(row, command, statementType, tableMapping)
 {
     /// <summary>获取或设置要执行的 NovaCommand</summary>
-    public new NovaCommand Command { get => (NovaCommand)base.Command; set => base.Command = value; }
+    public new NovaCommand Command { get => (NovaCommand)base.Command!; set => base.Command = value; }
 }
 
 /// <summary>行更新后事件参数</summary>
 public sealed class NovaRowUpdatedEventArgs(DataRow row, IDbCommand command, StatementType statementType, DataTableMapping tableMapping) : RowUpdatedEventArgs(row, command, statementType, tableMapping)
 {
     /// <summary>获取执行的 NovaCommand</summary>
-    public new NovaCommand Command => (NovaCommand)base.Command;
+    public new NovaCommand Command => (NovaCommand)base.Command!;
 }
 
 /// <summary>行更新前事件处理程序</summary>

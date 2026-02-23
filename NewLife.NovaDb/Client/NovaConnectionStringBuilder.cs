@@ -2,6 +2,8 @@
 
 namespace NewLife.NovaDb.Client;
 
+#pragma warning disable CS8764 // Nullability of return type doesn't match overridden member
+
 /// <summary>NovaDb 连接字符串构建器。支持嵌入模式和服务器模式</summary>
 /// <remarks>
 /// 嵌入模式连接字符串：Data Source=../data/member

@@ -5,6 +5,8 @@ using NewLife.NovaDb.Sql;
 
 namespace NewLife.NovaDb.Client;
 
+#pragma warning disable CS8765 // Nullability of parameter doesn't match overridden member
+
 /// <summary>NovaDb ADO.NET 连接。支持嵌入模式和服务器模式</summary>
 public class NovaConnection : DbConnection
 {
