@@ -67,6 +67,9 @@ public enum ErrorCode
     /// <summary>约束违反</summary>
     ConstraintViolation = 4003,
 
+    /// <summary>唯一约束违反</summary>
+    UniqueConstraintViolation = 4009,
+
     /// <summary>分片未找到</summary>
     ShardNotFound = 4004,
 
