@@ -126,8 +126,8 @@
 |------|------|------|------|
 | `CHARINDEX` | `CHARINDEX(substr, s [, start])` | 子串位置（0=不存在），SQL Server 风格 | ✅ |
 | `INSTR` | `INSTR(s, substr)` | 子串位置，MySQL 风格 | ✅ |
-| `CHAR` | `CHAR(num)` | ASCII/Unicode 码转字符 | ❌ |
-| `ASCII` | `ASCII(s)` | 首字符 ASCII 码 | ❌ |
+| `CHAR` | `CHAR(num)` | ASCII/Unicode 码转字符 | ✅ |
+| `ASCII` | `ASCII(s)` | 首字符 ASCII 码 | ✅ |
 
 ### 3.3 数值扩展
 
@@ -148,8 +148,8 @@
 | `TIME_BUCKET` | `TIME_BUCKET(bucket, dt)` | 时序聚合，bucket 如 `'1 hour'` | ❌ |
 | `WEEKDAY` | `WEEKDAY(dt)` | 0=周日~6=周六 | ✅ |
 | `DAYOFWEEK` | `DAYOFWEEK(dt)` | 1=周日~7=周六 | ✅ |
-| `QUARTER` | `QUARTER(dt)` | 1~4 | ❌ |
-| `WEEK` | `WEEK(dt)` | 0~53 | ❌ |
+| `QUARTER` | `QUARTER(dt)` | 1~4 | ✅ |
+| `WEEK` | `WEEK(dt)` | 0~53 | ✅ |
 
 ### 3.5 NULL 扩展
 
@@ -245,19 +245,15 @@
 | 优先级 | 总数 | 已实现 | 未实现 | 完成率 |
 |--------|------|--------|--------|--------|
 | P0 | 38 | 38 | 0 | 100% |
-| P1 | 27 | 20 | 7 | 74% |
+| P1 | 27 | 24 | 3 | 89% |
 | P2 | 14 | 12 | 2 | 86% |
-| **合计** | **79** | **70** | **9** | **89%** |
+| **合计** | **79** | **74** | **5** | **94%** |
 
 ### 待实现函数清单
 
 | 优先级 | 函数 | 类别 | 说明 |
 |--------|------|------|------|
-| P1 | `CHAR` | 字符串 | ASCII/Unicode 码转字符 |
-| P1 | `ASCII` | 字符串 | 首字符 ASCII 码 |
 | P1 | `TIME_BUCKET` | 日期时间 | 时序聚合分桶 |
-| P1 | `QUARTER` | 日期时间 | 季度提取 |
-| P1 | `WEEK` | 日期时间 | 周数提取 |
 | P1 | `DISTANCE_KM` | 地理 | 公里级距离 |
 | P1 | `WITHIN_POLYGON` | 地理 | 多边形内判断 |
 | P1 | `VECTOR_NEAREST` | 向量 | Top-K KNN 查询 |

@@ -22,6 +22,12 @@ public partial class NovaTable : IDisposable
     private readonly Object _lock = new();
     private Boolean _disposed;
 
+    // 冷热分离索引管理器
+    private readonly HotIndexManager _hotIndexManager;
+
+    // 分片管理器
+    private readonly ShardManager _shardManager;
+
     /// <summary>表架构</summary>
     public TableSchema Schema => _schema;
 
@@ -30,6 +36,12 @@ public partial class NovaTable : IDisposable
 
     /// <summary>表文件管理器</summary>
     public TableFileManager FileManager => _fileManager;
+
+    /// <summary>热索引管理器</summary>
+    public HotIndexManager HotIndex => _hotIndexManager;
+
+    /// <summary>分片管理器</summary>
+    public ShardManager Shards => _shardManager;
 
     /// <summary>创建 NovaTable 实例</summary>
     /// <param name="schema">表架构</param>
@@ -76,6 +88,18 @@ public partial class NovaTable : IDisposable
 
         // 初始化主键索引
         _primaryIndex = new SkipList<ComparableObject, List<RowVersion>>();
+
+        // 初始化冷热分离索引管理器
+        _hotIndexManager = new HotIndexManager(new HotSegmentConfig());
+
+        // 初始化分片管理器
+        _shardManager = new ShardManager(_options, _dbPath);
+        _shardManager.AddShard(new ShardInfo
+        {
+            ShardId = 0,
+            DataFilePath = _fileManager.GetDataFilePath(),
+            CreatedAt = DateTime.UtcNow
+        });
 
         // 打开行日志并恢复数据
         OpenRowLog();
@@ -129,6 +153,9 @@ public partial class NovaTable : IDisposable
 
             // 添加新版本
             versions.Add(rowVersion);
+
+            // 更新分片统计
+            _shardManager.RecordWrite(0, payload.Length);
 
             // 注册提交动作：事务提交时才持久化到行日志
             var persistPayload = payload;
@@ -193,6 +220,9 @@ public partial class NovaTable : IDisposable
             if (visibleVersion == null)
                 return null;
 
+            // 记录热度访问
+            _hotIndexManager.AccessKey(key);
+
             // 反序列化行数据
             return DeserializeRow(visibleVersion.Payload!);
         }
@@ -243,6 +273,9 @@ public partial class NovaTable : IDisposable
             var payload = SerializeRow(newRow);
             var newVersion = new RowVersion(tx.TxId, key, payload);
             versions.Add(newVersion);
+
+            // 更新分片统计
+            _shardManager.RecordWrite(0, payload.Length);
 
             // 注册提交动作：事务提交时才持久化新版本
             var persistPayload = payload;
@@ -381,6 +414,7 @@ public partial class NovaTable : IDisposable
         lock (_lock)
         {
             _primaryIndex.Clear();
+            _hotIndexManager.Clear();
             TruncateRowLog();
         }
     }

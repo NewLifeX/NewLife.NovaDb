@@ -269,4 +269,53 @@ public class NovaTableTests : IDisposable
         var walPath = Path.Combine(_testDir, "users.wal");
         Assert.True(File.Exists(walPath));
     }
+
+    [Fact(DisplayName = "测试冷热分离索引管理器集成")]
+    public void TestHotIndexManagerIntegration()
+    {
+        var schema = CreateTestSchema();
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+
+        // 验证 HotIndexManager 已初始化
+        Assert.NotNull(table.HotIndex);
+
+        // 插入数据
+        using var tx1 = txManager.BeginTransaction();
+        table.Insert(tx1, new Object?[] { 1, "Alice", 25 });
+        tx1.Commit();
+
+        // 读取触发热度追踪
+        using var tx2 = txManager.BeginTransaction();
+        var row = table.Get(tx2, 1);
+        Assert.NotNull(row);
+        tx2.Commit();
+    }
+
+    [Fact(DisplayName = "测试分片管理器集成")]
+    public void TestShardManagerIntegration()
+    {
+        var schema = CreateTestSchema();
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+
+        // 验证 ShardManager 已初始化，且有默认分片
+        Assert.NotNull(table.Shards);
+        Assert.Equal(1, table.Shards.ShardCount);
+
+        // 插入数据后分片统计应更新
+        using var tx = txManager.BeginTransaction();
+        table.Insert(tx, new Object?[] { 1, "Alice", 25 });
+        table.Insert(tx, new Object?[] { 2, "Bob", 30 });
+        tx.Commit();
+
+        var writeShard = table.Shards.GetWriteShard();
+        Assert.NotNull(writeShard);
+        Assert.Equal(2, writeShard!.RowCount);
+        Assert.True(writeShard.SizeBytes > 0);
+    }
 }
