@@ -392,7 +392,7 @@ partial class SqlEngine
             // RIGHT JOIN：右行无匹配时补 NULL
             if (join.Type == JoinType.Right)
             {
-                var leftWidth = currentRows.Count > 0 ? currentRows[0].Length - rightSchema.Columns.Count : 0;
+                var leftWidth = rightColStart;
                 foreach (var rightRow in rightRows)
                 {
                     var hasMatch = false;

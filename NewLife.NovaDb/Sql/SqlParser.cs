@@ -138,6 +138,15 @@ public class SqlParser
             DataTypeName = ExpectIdentifier()
         };
 
+        // 跳过可选的类型长度参数，如 VARCHAR(255)、DECIMAL(10,2)
+        if (Peek().Type == SqlTokenType.LeftParen)
+        {
+            Advance();
+            while (Peek().Type != SqlTokenType.RightParen && Peek().Type != SqlTokenType.Eof)
+                Advance();
+            Expect(SqlTokenType.RightParen);
+        }
+
         // 解析列约束
         while (Peek().Type != SqlTokenType.Comma && Peek().Type != SqlTokenType.RightParen && Peek().Type != SqlTokenType.Eof)
         {
