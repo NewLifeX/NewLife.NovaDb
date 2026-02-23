@@ -151,7 +151,7 @@ public class NovaConnectionTests
         param.DbType = DbType.Int32;
 
         cmd.Parameters.Add(param);
-        Assert.Equal(1, cmd.Parameters.Count);
+        Assert.Single(cmd.Parameters);
     }
 
     [Fact(DisplayName = "测试数据读取器")]

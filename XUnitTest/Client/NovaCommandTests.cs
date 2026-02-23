@@ -124,14 +124,14 @@ public class NovaCommandTests : IDisposable
         param.DbType = DbType.Int32;
 
         cmd.Parameters.Add(param);
-        Assert.Equal(1, cmd.Parameters.Count);
+        Assert.Single(cmd.Parameters);
     }
 
     [Fact(DisplayName = "命令-Parameters默认为空")]
     public void Parameters_DefaultEmpty()
     {
         using var cmd = new NovaCommand();
-        Assert.Equal(0, cmd.Parameters.Count);
+        Assert.Empty(cmd.Parameters);
     }
 
     #endregion
