@@ -5,6 +5,8 @@ using Xunit;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux;
 
+#nullable enable
+
 namespace XUnitTest.Engine.Flux;
 
 /// <summary>FluxEngine 单元测试</summary>
