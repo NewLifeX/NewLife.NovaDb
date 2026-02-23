@@ -82,10 +82,37 @@ partial class SqlEngine
     {
         using var _ = _metaLock.AcquireWrite();
         {
-            if (!_schemas.ContainsKey(stmt.TableName))
+            if (!_schemas.TryGetValue(stmt.TableName, out var schema))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
 
-            // 当前实现仅记录索引元数据，实际索引由 NovaTable 的 SkipList 主键索引处理
+            // 验证索引列存在
+            foreach (var col in stmt.Columns)
+            {
+                if (!schema.HasColumn(col))
+                    throw new NovaException(ErrorCode.InvalidArgument, $"Column '{col}' not found in table '{stmt.TableName}'");
+            }
+
+            // 创建索引定义并注册到 Schema
+            var indexDef = new IndexDefinition(stmt.IndexName, stmt.Columns, stmt.IsUnique);
+            schema.AddIndex(indexDef);
+
+            // 在 NovaTable 上构建二级索引
+            if (_tables.TryGetValue(stmt.TableName, out var table))
+            {
+                var tx = _txManager.BeginTransaction();
+                try
+                {
+                    table.CreateSecondaryIndex(indexDef, tx);
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    schema.RemoveIndex(stmt.IndexName);
+                    throw;
+                }
+            }
+
             return new SqlResult { AffectedRows = 0 };
         }
     }
@@ -94,8 +121,15 @@ partial class SqlEngine
     {
         using var _ = _metaLock.AcquireWrite();
         {
-            if (!_schemas.ContainsKey(stmt.TableName))
+            if (!_schemas.TryGetValue(stmt.TableName, out var schema))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+
+            // 从 Schema 移除索引定义
+            schema.RemoveIndex(stmt.IndexName);
+
+            // 从 NovaTable 删除二级索引
+            if (_tables.TryGetValue(stmt.TableName, out var table))
+                table.DropSecondaryIndex(stmt.IndexName);
 
             return new SqlResult { AffectedRows = 0 };
         }

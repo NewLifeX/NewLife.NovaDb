@@ -22,6 +22,9 @@ public partial class NovaTable : IDisposable
     private readonly Object _lock = new();
     private Boolean _disposed;
 
+    // 二级索引：索引名 → SkipList<索引键, 主键列表>
+    private readonly Dictionary<String, SkipList<ComparableObject, List<ComparableObject>>> _secondaryIndexes = new(StringComparer.OrdinalIgnoreCase);
+
     // 冷热分离索引管理器
     private readonly HotIndexManager _hotIndexManager;
 
@@ -157,6 +160,10 @@ public partial class NovaTable : IDisposable
             // 添加新版本
             versions.Add(rowVersion);
 
+            // 维护二级索引
+            if (_secondaryIndexes.Count > 0)
+                InsertIntoSecondaryIndexes(row, comparableKey);
+
             // 更新分片统计
             _shardManager.RecordWrite(DefaultShardId, payload.Length);
 
@@ -186,6 +193,9 @@ public partial class NovaTable : IDisposable
                     {
                         vers!.Remove(rowVersion);
                     }
+                    // 回滚时从二级索引移除
+                    if (_secondaryIndexes.Count > 0)
+                        RemoveFromSecondaryIndexes(row, comparableKey);
                 }
             });
         }
@@ -268,6 +278,14 @@ public partial class NovaTable : IDisposable
             if (visibleVersion == null)
                 return false;
 
+            // 更新二级索引：先移除旧值，后面再插入新值
+            Object?[]? oldRow = null;
+            if (_secondaryIndexes.Count > 0)
+            {
+                oldRow = DeserializeRow(visibleVersion.Payload!);
+                RemoveFromSecondaryIndexes(oldRow, comparableKey);
+            }
+
             // 标记旧版本为已删除
             var oldDeletedByTx = visibleVersion.DeletedByTx;
             visibleVersion.MarkDeleted(tx.TxId);
@@ -276,6 +294,10 @@ public partial class NovaTable : IDisposable
             var payload = SerializeRow(newRow);
             var newVersion = new RowVersion(tx.TxId, key, payload);
             versions.Add(newVersion);
+
+            // 维护二级索引：插入新值
+            if (_secondaryIndexes.Count > 0)
+                InsertIntoSecondaryIndexes(newRow, comparableKey);
 
             // 更新分片统计
             _shardManager.RecordWrite(DefaultShardId, payload.Length);
@@ -298,6 +320,7 @@ public partial class NovaTable : IDisposable
             }
 
             // 注册回滚动作
+            var rollbackOldRow = oldRow;
             tx.RegisterRollbackAction(() =>
             {
                 lock (_lock)
@@ -306,6 +329,13 @@ public partial class NovaTable : IDisposable
                     if (_primaryIndex.TryGetValue(comparableKey, out var vers))
                     {
                         vers!.Remove(newVersion);
+                    }
+                    // 回滚二级索引
+                    if (_secondaryIndexes.Count > 0)
+                    {
+                        RemoveFromSecondaryIndexes(newRow, comparableKey);
+                        if (rollbackOldRow != null)
+                            InsertIntoSecondaryIndexes(rollbackOldRow, comparableKey);
                     }
                 }
             });
@@ -346,6 +376,14 @@ public partial class NovaTable : IDisposable
             if (visibleVersion == null)
                 return false;
 
+            // 从二级索引移除
+            Object?[]? deletedRow = null;
+            if (_secondaryIndexes.Count > 0)
+            {
+                deletedRow = DeserializeRow(visibleVersion.Payload!);
+                RemoveFromSecondaryIndexes(deletedRow, comparableKey);
+            }
+
             // 标记为已删除
             var oldDeletedByTx = visibleVersion.DeletedByTx;
             visibleVersion.MarkDeleted(tx.TxId);
@@ -368,11 +406,15 @@ public partial class NovaTable : IDisposable
             }
 
             // 注册回滚动作
+            var rollbackDeletedRow = deletedRow;
             tx.RegisterRollbackAction(() =>
             {
                 lock (_lock)
                 {
                     visibleVersion.DeletedByTx = oldDeletedByTx;
+                    // 回滚时重新插入二级索引
+                    if (_secondaryIndexes.Count > 0 && rollbackDeletedRow != null)
+                        InsertIntoSecondaryIndexes(rollbackDeletedRow, comparableKey);
                 }
             });
 
@@ -419,8 +461,181 @@ public partial class NovaTable : IDisposable
             _primaryIndex.Clear();
             _hotIndexManager.Clear();
             TruncateRowLog();
+
+            // 清空所有二级索引
+            foreach (var idx in _secondaryIndexes.Values)
+                idx.Clear();
         }
     }
+
+    #region 二级索引
+
+    /// <summary>创建二级索引并为已有数据构建索引</summary>
+    /// <param name="indexDef">索引定义</param>
+    /// <param name="tx">事务</param>
+    public void CreateSecondaryIndex(IndexDefinition indexDef, Transaction tx)
+    {
+        if (indexDef == null) throw new ArgumentNullException(nameof(indexDef));
+        if (tx == null) throw new ArgumentNullException(nameof(tx));
+
+        lock (_lock)
+        {
+            if (_secondaryIndexes.ContainsKey(indexDef.IndexName))
+                throw new NovaException(ErrorCode.InvalidArgument, $"Index '{indexDef.IndexName}' already exists");
+
+            var idx = new SkipList<ComparableObject, List<ComparableObject>>();
+            _secondaryIndexes[indexDef.IndexName] = idx;
+
+            // 获取索引列的序号
+            var colOrdinals = new Int32[indexDef.Columns.Count];
+            for (var i = 0; i < indexDef.Columns.Count; i++)
+                colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
+
+            var pkCol = _schema.GetPrimaryKeyColumn()!;
+
+            // 为已有数据构建索引
+            var allEntries = _primaryIndex.GetAll();
+            foreach (var entry in allEntries)
+            {
+                var versions = entry.Value;
+                foreach (var ver in versions)
+                {
+                    if (ver.IsVisible(_txManager, tx.TxId))
+                    {
+                        var row = DeserializeRow(ver.Payload!);
+                        var indexKey = BuildIndexKey(row, colOrdinals);
+                        var pk = new ComparableObject(row[pkCol.Ordinal]!);
+
+                        if (!idx.TryGetValue(indexKey, out var pkList))
+                        {
+                            pkList = [];
+                            idx.Insert(indexKey, pkList);
+                        }
+                        else if (indexDef.IsUnique && pkList!.Count > 0)
+                        {
+                            throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Duplicate key in unique index '{indexDef.IndexName}'");
+                        }
+
+                        pkList!.Add(pk);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>删除二级索引</summary>
+    /// <param name="indexName">索引名</param>
+    public void DropSecondaryIndex(String indexName)
+    {
+        lock (_lock)
+        {
+            _secondaryIndexes.Remove(indexName);
+        }
+    }
+
+    /// <summary>通过二级索引查询匹配的主键列表</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="indexKeyValues">索引键值</param>
+    /// <returns>匹配的主键值列表</returns>
+    public List<Object>? LookupByIndex(String indexName, Object?[] indexKeyValues)
+    {
+        lock (_lock)
+        {
+            if (!_secondaryIndexes.TryGetValue(indexName, out var idx))
+                return null;
+
+            var indexKey = new ComparableObject(indexKeyValues.Length == 1 ? indexKeyValues[0]! : indexKeyValues);
+            if (!idx.TryGetValue(indexKey, out var pkList))
+                return null;
+
+            var result = new List<Object>();
+            foreach (var pk in pkList!)
+                result.Add(pk.Value!);
+
+            return result;
+        }
+    }
+
+    /// <summary>构建索引键</summary>
+    private static ComparableObject BuildIndexKey(Object?[] row, Int32[] colOrdinals)
+    {
+        if (colOrdinals.Length == 1)
+            return new ComparableObject(row[colOrdinals[0]]!);
+
+        // 联合索引：用数组作为键
+        var keyValues = new Object?[colOrdinals.Length];
+        for (var i = 0; i < colOrdinals.Length; i++)
+            keyValues[i] = row[colOrdinals[i]];
+
+        return new ComparableObject(keyValues);
+    }
+
+    /// <summary>向所有二级索引插入条目</summary>
+    private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk)
+    {
+        foreach (var kvp in _secondaryIndexes)
+        {
+            var indexDef = _schema.GetIndex(kvp.Key);
+            if (indexDef == null) continue;
+
+            var colOrdinals = new Int32[indexDef.Columns.Count];
+            for (var i = 0; i < indexDef.Columns.Count; i++)
+                colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
+
+            var indexKey = BuildIndexKey(row, colOrdinals);
+            var idx = kvp.Value;
+
+            if (!idx.TryGetValue(indexKey, out var pkList))
+            {
+                pkList = [];
+                idx.Insert(indexKey, pkList);
+            }
+            else if (indexDef.IsUnique && pkList!.Count > 0)
+            {
+                throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Duplicate key in unique index '{indexDef.IndexName}'");
+            }
+
+            pkList!.Add(pk);
+        }
+    }
+
+    /// <summary>从所有二级索引删除条目</summary>
+    private void RemoveFromSecondaryIndexes(Object?[] row, ComparableObject pk)
+    {
+        foreach (var kvp in _secondaryIndexes)
+        {
+            var indexDef = _schema.GetIndex(kvp.Key);
+            if (indexDef == null) continue;
+
+            var colOrdinals = new Int32[indexDef.Columns.Count];
+            for (var i = 0; i < indexDef.Columns.Count; i++)
+                colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
+
+            var indexKey = BuildIndexKey(row, colOrdinals);
+            var idx = kvp.Value;
+
+            if (idx.TryGetValue(indexKey, out var pkList))
+            {
+                for (var i = pkList!.Count - 1; i >= 0; i--)
+                {
+                    if (CompareKeys(pkList[i], pk) == 0)
+                    {
+                        pkList.RemoveAt(i);
+                        break;
+                    }
+                }
+
+                if (pkList.Count == 0)
+                    idx.Remove(indexKey);
+            }
+        }
+    }
+
+    /// <summary>比较两个索引键</summary>
+    private static Int32 CompareKeys(ComparableObject a, ComparableObject b) => a.CompareTo(b);
+
+    #endregion
 
     #region 辅助
 

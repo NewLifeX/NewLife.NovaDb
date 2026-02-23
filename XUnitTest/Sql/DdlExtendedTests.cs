@@ -412,4 +412,144 @@ public class DdlExtendedTests : IDisposable
     }
 
     #endregion
+
+    #region 二级索引
+
+    [Fact(DisplayName = "CREATE INDEX 创建普通二级索引")]
+    public void TestCreateSecondaryIndex()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Bob', 25)");
+
+        var result = _engine.Execute("CREATE INDEX idx_name ON users (name)");
+        Assert.Equal(0, result.AffectedRows);
+
+        // 验证索引出现在系统表中
+        var sysResult = _engine.Execute("SELECT * FROM _sys.indexes WHERE table_name = 'users'");
+        Assert.True(sysResult.Rows.Count >= 2); // pk + idx_name
+        var idxRow = sysResult.Rows.Find(r => Convert.ToString(r[1]) == "idx_name");
+        Assert.NotNull(idxRow);
+        Assert.Equal(false, idxRow![2]); // is_unique = false
+        Assert.Equal("name", idxRow[3]); // columns
+    }
+
+    [Fact(DisplayName = "CREATE UNIQUE INDEX 创建唯一索引")]
+    public void TestCreateUniqueIndex()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Bob', 25)");
+
+        var result = _engine.Execute("CREATE UNIQUE INDEX idx_name_unique ON users (name)");
+        Assert.Equal(0, result.AffectedRows);
+
+        // 验证索引出现在系统表中
+        var sysResult = _engine.Execute("SELECT * FROM _sys.indexes WHERE table_name = 'users'");
+        var idxRow = sysResult.Rows.Find(r => Convert.ToString(r[1]) == "idx_name_unique");
+        Assert.NotNull(idxRow);
+        Assert.Equal(true, idxRow![2]); // is_unique = true
+    }
+
+    [Fact(DisplayName = "唯一索引阻止重复值插入")]
+    public void TestUniqueIndexPreventsDuplicates()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("CREATE UNIQUE INDEX idx_name_unique ON users (name)");
+
+        // 插入重复名称应抛出异常
+        Assert.Throws<NovaException>(() =>
+            _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Alice', 25)"));
+    }
+
+    [Fact(DisplayName = "DROP INDEX 删除二级索引")]
+    public void TestDropSecondaryIndex()
+    {
+        CreateUsersTable();
+        _engine.Execute("CREATE INDEX idx_name ON users (name)");
+
+        var result = _engine.Execute("DROP INDEX idx_name ON users");
+        Assert.Equal(0, result.AffectedRows);
+
+        // 验证索引已从系统表移除
+        var sysResult = _engine.Execute("SELECT * FROM _sys.indexes WHERE table_name = 'users'");
+        var idxRow = sysResult.Rows.Find(r => Convert.ToString(r[1]) == "idx_name");
+        Assert.Null(idxRow);
+    }
+
+    [Fact(DisplayName = "二级索引随 INSERT/DELETE 自动维护")]
+    public void TestSecondaryIndexMaintenanceOnInsertDelete()
+    {
+        CreateUsersTable();
+        _engine.Execute("CREATE INDEX idx_age ON users (age)");
+
+        // 插入数据
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Bob', 25)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (3, 'Charlie', 30)");
+
+        // 查询验证数据正确
+        var result = _engine.Execute("SELECT * FROM users WHERE age = 30");
+        Assert.Equal(2, result.Rows.Count);
+
+        // 删除一条后查询
+        _engine.Execute("DELETE FROM users WHERE id = 1");
+        result = _engine.Execute("SELECT * FROM users WHERE age = 30");
+        Assert.Single(result.Rows);
+    }
+
+    [Fact(DisplayName = "二级索引随 UPDATE 自动维护")]
+    public void TestSecondaryIndexMaintenanceOnUpdate()
+    {
+        CreateUsersTable();
+        _engine.Execute("CREATE UNIQUE INDEX idx_name_unique ON users (name)");
+
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Bob', 25)");
+
+        // 更新名称
+        _engine.Execute("UPDATE users SET name = 'AliceNew' WHERE id = 1");
+
+        // 旧名称应不再被唯一索引阻止
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (3, 'Alice', 35)");
+        var result = _engine.Execute("SELECT * FROM users WHERE name = 'Alice'");
+        Assert.Single(result.Rows);
+    }
+
+    [Fact(DisplayName = "联合索引 CREATE INDEX")]
+    public void TestCompositeIndex()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Bob', 25)");
+
+        var result = _engine.Execute("CREATE INDEX idx_name_age ON users (name, age)");
+        Assert.Equal(0, result.AffectedRows);
+
+        // 验证系统表中列信息
+        var sysResult = _engine.Execute("SELECT * FROM _sys.indexes WHERE table_name = 'users'");
+        var idxRow = sysResult.Rows.Find(r => Convert.ToString(r[1]) == "idx_name_age");
+        Assert.NotNull(idxRow);
+        Assert.Equal("name,age", idxRow![3]); // 联合索引列
+    }
+
+    [Fact(DisplayName = "CREATE INDEX 列不存在异常")]
+    public void TestCreateIndexColumnNotFound()
+    {
+        CreateUsersTable();
+        Assert.Throws<NovaException>(() =>
+            _engine.Execute("CREATE INDEX idx_bad ON users (nonexistent)"));
+    }
+
+    [Fact(DisplayName = "CREATE INDEX 索引名重复异常")]
+    public void TestCreateDuplicateIndex()
+    {
+        CreateUsersTable();
+        _engine.Execute("CREATE INDEX idx_name ON users (name)");
+        Assert.Throws<NovaException>(() =>
+            _engine.Execute("CREATE INDEX idx_name ON users (age)"));
+    }
+
+    #endregion
 }

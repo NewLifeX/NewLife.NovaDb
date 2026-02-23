@@ -209,6 +209,15 @@ partial class SqlEngine
                         tableName, $"pk_{tableName}", true, pkCol.Name
                     });
                 }
+
+                // 二级索引
+                foreach (var idx in tableSchema.Indexes)
+                {
+                    rows.Add(new Object?[]
+                    {
+                        tableName, idx.IndexName, idx.IsUnique, String.Join(",", idx.Columns)
+                    });
+                }
             }
         }
 

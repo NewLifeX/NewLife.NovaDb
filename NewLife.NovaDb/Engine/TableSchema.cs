@@ -2,6 +2,30 @@
 
 namespace NewLife.NovaDb.Engine;
 
+/// <summary>索引定义</summary>
+public class IndexDefinition
+{
+    /// <summary>索引名</summary>
+    public String IndexName { get; set; } = String.Empty;
+
+    /// <summary>索引列名列表</summary>
+    public List<String> Columns { get; set; } = [];
+
+    /// <summary>是否唯一索引</summary>
+    public Boolean IsUnique { get; set; }
+
+    /// <summary>创建索引定义</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="columns">索引列</param>
+    /// <param name="isUnique">是否唯一</param>
+    public IndexDefinition(String indexName, List<String> columns, Boolean isUnique = false)
+    {
+        IndexName = indexName ?? throw new ArgumentNullException(nameof(indexName));
+        Columns = columns ?? throw new ArgumentNullException(nameof(columns));
+        IsUnique = isUnique;
+    }
+}
+
 /// <summary>列定义</summary>
 public class ColumnDefinition
 {
@@ -43,6 +67,7 @@ public class TableSchema
     private readonly List<ColumnDefinition> _columns = [];
     private readonly Dictionary<String, Int32> _columnIndexes = [];
     private Int32? _primaryKeyIndex;
+    private readonly List<IndexDefinition> _indexes = [];
 
     /// <summary>表名</summary>
     public String TableName { get; set; } = String.Empty;
@@ -52,6 +77,9 @@ public class TableSchema
 
     /// <summary>主键列索引（如果没有主键则为 null）</summary>
     public Int32? PrimaryKeyIndex => _primaryKeyIndex;
+
+    /// <summary>二级索引列表</summary>
+    public IReadOnlyList<IndexDefinition> Indexes => _indexes;
 
     /// <summary>表注释</summary>
     public String? Comment { get; set; }
@@ -186,5 +214,62 @@ public class TableSchema
             return false;
 
         return _columnIndexes.ContainsKey(columnName);
+    }
+
+    /// <summary>添加二级索引</summary>
+    /// <param name="index">索引定义</param>
+    public void AddIndex(IndexDefinition index)
+    {
+        if (index == null) throw new ArgumentNullException(nameof(index));
+
+        // 检查索引名是否重复
+        foreach (var existing in _indexes)
+        {
+            if (String.Equals(existing.IndexName, index.IndexName, StringComparison.OrdinalIgnoreCase))
+                throw new NovaException(ErrorCode.InvalidArgument, $"Index '{index.IndexName}' already exists");
+        }
+
+        // 验证索引列是否都存在
+        foreach (var col in index.Columns)
+        {
+            if (!_columnIndexes.ContainsKey(col))
+                throw new NovaException(ErrorCode.InvalidArgument, $"Column '{col}' not found in table '{TableName}'");
+        }
+
+        _indexes.Add(index);
+    }
+
+    /// <summary>删除二级索引</summary>
+    /// <param name="indexName">索引名</param>
+    public void RemoveIndex(String indexName)
+    {
+        if (indexName == null) throw new ArgumentNullException(nameof(indexName));
+
+        var removed = false;
+        for (var i = _indexes.Count - 1; i >= 0; i--)
+        {
+            if (String.Equals(_indexes[i].IndexName, indexName, StringComparison.OrdinalIgnoreCase))
+            {
+                _indexes.RemoveAt(i);
+                removed = true;
+                break;
+            }
+        }
+
+        if (!removed)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Index '{indexName}' not found");
+    }
+
+    /// <summary>根据索引名获取索引定义</summary>
+    /// <param name="indexName">索引名</param>
+    /// <returns>索引定义，不存在返回 null</returns>
+    public IndexDefinition? GetIndex(String indexName)
+    {
+        foreach (var idx in _indexes)
+        {
+            if (String.Equals(idx.IndexName, indexName, StringComparison.OrdinalIgnoreCase))
+                return idx;
+        }
+        return null;
     }
 }
