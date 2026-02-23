@@ -392,6 +392,7 @@ partial class SqlEngine
             // RIGHT JOIN：右行无匹配时补 NULL
             if (join.Type == JoinType.Right)
             {
+                // rightColStart 即为左侧列总宽度（右列起始位置 = 左侧列数）
                 var leftWidth = rightColStart;
                 foreach (var rightRow in rightRows)
                 {
