@@ -183,7 +183,7 @@
 | `DISTANCE` | `DISTANCE(p1, p2)` | 两点距离（米），Haversine | ✅ |
 | `DISTANCE_KM` | `DISTANCE_KM(p1, p2)` | 两点距离（公里） | ✅ |
 | `WITHIN_RADIUS` | `WITHIN_RADIUS(p, center, radius)` | 是否在半径内（米） | ✅ |
-| `WITHIN_POLYGON` | `WITHIN_POLYGON(p, polygon_wkt)` | 是否在多边形内 | ❌ |
+| `WITHIN_POLYGON` | `WITHIN_POLYGON(p, polygon_wkt)` | 是否在多边形内，射线法判断 | ✅ |
 
 ### 3.9 Vector 向量（NovaDb 扩展）
 
@@ -193,7 +193,7 @@
 | `COSINE_SIMILARITY` | `COSINE_SIMILARITY(v1, v2)` | 余弦相似度 [-1, 1] | ✅ |
 | `EUCLIDEAN_DISTANCE` | `EUCLIDEAN_DISTANCE(v1, v2)` | L2 距离 | ✅ |
 | `DOT_PRODUCT` | `DOT_PRODUCT(v1, v2)` | 内积 | ✅ |
-| `VECTOR_NEAREST` | `VECTOR_NEAREST(query, table, k, metric)` | Top-K KNN 查询 | ❌ |
+| `VECTOR_NEAREST` | `VECTOR_NEAREST(query, table, k, metric)` | Top-K KNN 查询，支持 cosine/euclidean/dot_product | ✅ |
 
 ---
 
@@ -245,16 +245,13 @@
 | 优先级 | 总数 | 已实现 | 未实现 | 完成率 |
 |--------|------|--------|--------|--------|
 | P0 | 38 | 38 | 0 | 100% |
-| P1 | 27 | 26 | 1 | 96% |
-| P2 | 14 | 13 | 1 | 93% |
-| **合计** | **79** | **77** | **2** | **97%** |
+| P1 | 27 | 27 | 0 | 100% |
+| P2 | 14 | 14 | 0 | 100% |
+| **合计** | **79** | **79** | **0** | **100%** |
 
 ### 待实现函数清单
 
-| 优先级 | 函数 | 类别 | 说明 |
-|--------|------|------|------|
-| P1 | `WITHIN_POLYGON` | 地理 | 多边形内判断 |
-| P1 | `VECTOR_NEAREST` | 向量 | Top-K KNN 查询 |
+所有函数均已实现。
 
 ---
 

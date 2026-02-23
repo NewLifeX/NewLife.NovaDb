@@ -125,6 +125,72 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
     /// <returns>是否在范围内</returns>
     public Boolean WithinRadius(GeoPoint center, Double radiusMeters) => Distance(center) <= radiusMeters;
 
+    /// <summary>判断点是否在多边形内，使用射线法（Ray Casting）</summary>
+    /// <param name="polygon">多边形顶点数组，首尾自动闭合</param>
+    /// <returns>是否在多边形内</returns>
+    public Boolean WithinPolygon(GeoPoint[] polygon)
+    {
+        if (polygon == null || polygon.Length < 3) return false;
+
+        var inside = false;
+        var n = polygon.Length;
+
+        for (Int32 i = 0, j = n - 1; i < n; j = i++)
+        {
+            var yi = polygon[i].Latitude;
+            var xi = polygon[i].Longitude;
+            var yj = polygon[j].Latitude;
+            var xj = polygon[j].Longitude;
+
+            // 射线法：从测试点向右发射水平射线，统计与多边形边的交点数
+            if ((yi > Latitude) != (yj > Latitude) &&
+                Longitude < (xj - xi) * (Latitude - yi) / (yj - yi) + xi)
+            {
+                inside = !inside;
+            }
+        }
+
+        return inside;
+    }
+
+    /// <summary>从 WKT 格式的多边形字符串解析顶点数组</summary>
+    /// <param name="wkt">WKT 格式字符串，如 "POLYGON((lon1 lat1, lon2 lat2, ...))"</param>
+    /// <returns>顶点数组</returns>
+    public static GeoPoint[] ParsePolygonWkt(String wkt)
+    {
+        if (wkt == null) throw new ArgumentNullException(nameof(wkt));
+
+        var trimmed = wkt.Trim();
+
+        // 支持 POLYGON((lon lat, lon lat, ...)) 格式
+        if (trimmed.StartsWith("POLYGON", StringComparison.OrdinalIgnoreCase))
+        {
+            var start = trimmed.IndexOf("((", StringComparison.Ordinal);
+            var end = trimmed.LastIndexOf("))", StringComparison.Ordinal);
+            if (start < 0 || end < 0)
+                throw new FormatException($"Invalid POLYGON WKT format: '{wkt}'");
+
+            trimmed = trimmed.Substring(start + 2, end - start - 2);
+        }
+
+        var pointStrings = trimmed.Split(',');
+        var points = new GeoPoint[pointStrings.Length];
+
+        for (var i = 0; i < pointStrings.Length; i++)
+        {
+            var parts = pointStrings[i].Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2)
+                throw new FormatException($"Invalid coordinate in polygon: '{pointStrings[i]}'");
+
+            // WKT 标准格式为 "经度 纬度"
+            var lon = Double.Parse(parts[0].Trim());
+            var lat = Double.Parse(parts[1].Trim());
+            points[i] = new GeoPoint(lat, lon);
+        }
+
+        return points;
+    }
+
     /// <summary>从字符串解析坐标点，格式为 "(lat, lon)"</summary>
     /// <param name="s">字符串</param>
     /// <returns>坐标点</returns>

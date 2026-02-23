@@ -635,6 +635,11 @@ partial class SqlEngine
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
                 return ((GeoPoint)args[0]!).WithinRadius((GeoPoint)args[1]!, Convert.ToDouble(args[2]));
 
+            case "WITHIN_POLYGON":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                var polygonPoints = GeoPoint.ParsePolygonWkt(Convert.ToString(args[1])!);
+                return ((GeoPoint)args[0]!).WithinPolygon(polygonPoints);
+
             // Vector 函数
             case "VECTOR":
                 var vec = new Single[args.Count];
@@ -655,6 +660,9 @@ partial class SqlEngine
             case "DOT_PRODUCT":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
                 return DotProduct((Single[])args[0]!, (Single[])args[1]!);
+
+            case "VECTOR_NEAREST":
+                return EvaluateVectorNearest(func, row, schema, parameters);
 
             default:
                 throw new NovaException(ErrorCode.NotSupported, $"Unsupported function: {func.FunctionName}");

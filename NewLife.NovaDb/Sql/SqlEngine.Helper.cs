@@ -325,6 +325,93 @@ partial class SqlEngine
         return sum;
     }
 
+    /// <summary>执行 VECTOR_NEAREST 函数：在指定表中查找与查询向量最相似的 Top-K 行</summary>
+    /// <param name="func">函数表达式</param>
+    /// <param name="row">当前行上下文</param>
+    /// <param name="schema">当前查询的表架构</param>
+    /// <param name="parameters">SQL 参数</param>
+    /// <returns>JSON 格式的结果字符串，包含主键和相似度分数</returns>
+    private Object? EvaluateVectorNearest(FunctionExpression func, Object?[]? row, TableSchema? schema, Dictionary<String, Object?>? parameters)
+    {
+        // VECTOR_NEAREST(query_vector, 'table_name', k, 'metric')
+        // query_vector: 查询向量
+        // table_name: 目标表名（字符串字面量）
+        // k: 返回前 K 个最相似结果
+        // metric: 距离度量方式，可选 'cosine'（默认）、'euclidean'、'dot_product'
+        var args = new List<Object?>();
+        foreach (var argExpr in func.Arguments)
+        {
+            args.Add(EvaluateExpression(argExpr, row, schema, parameters));
+        }
+
+        if (args.Count < 3) throw new NovaException(ErrorCode.InvalidArgument, "VECTOR_NEAREST requires at least 3 arguments (query, table, k)");
+        if (args[0] == null) return null;
+
+        var queryVec = (Single[])args[0]!;
+        var tableName = Convert.ToString(args[1])!;
+        var k = Convert.ToInt32(args[2]);
+        var metric = args.Count > 3 && args[3] != null ? Convert.ToString(args[3])!.ToLower() : "cosine";
+
+        if (k <= 0) throw new NovaException(ErrorCode.InvalidArgument, "VECTOR_NEAREST k must be positive");
+
+        // 获取目标表和架构
+        var targetTable = GetTable(tableName);
+        var targetSchema = GetSchema(tableName);
+
+        // 查找第一个 Vector 类型的列
+        var vectorColIdx = -1;
+        for (var i = 0; i < targetSchema.Columns.Count; i++)
+        {
+            if (targetSchema.Columns[i].DataType == DataType.Vector)
+            {
+                vectorColIdx = i;
+                break;
+            }
+        }
+        if (vectorColIdx < 0)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Table '{tableName}' has no Vector column");
+
+        // 获取主键列索引
+        var pkIdx = targetSchema.PrimaryKeyIndex ?? 0;
+
+        // 扫描所有行，计算相似度
+        using var tx = _txManager.BeginTransaction();
+        var allRows = targetTable.GetAll(tx);
+
+        var scored = new List<(Object? PrimaryKey, Double Score)>();
+        foreach (var r in allRows)
+        {
+            if (r[vectorColIdx] is not Single[] vec) continue;
+            if (vec.Length != queryVec.Length) continue;
+
+            Double score = metric switch
+            {
+                "cosine" => CosineSimilarity(queryVec, vec),
+                "euclidean" => -EuclideanDistance(queryVec, vec), // 取负使得距离越小排名越高
+                "dot_product" or "dot" => DotProduct(queryVec, vec),
+                _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown metric: {metric}")
+            };
+
+            scored.Add((r[pkIdx], score));
+        }
+
+        // 按分数降序排列，取 Top-K
+        scored.Sort((a, b) => b.Score.CompareTo(a.Score));
+        if (scored.Count > k) scored.RemoveRange(k, scored.Count - k);
+
+        // 构建结果字符串："pk1:score1,pk2:score2,..."
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < scored.Count; i++)
+        {
+            if (i > 0) sb.Append(',');
+            sb.Append(scored[i].PrimaryKey);
+            sb.Append(':');
+            sb.Append(scored[i].Score.ToString("F6"));
+        }
+
+        return sb.ToString();
+    }
+
     private static Object? ArithmeticOp(Object? left, Object? right, Func<Double, Double, Double> op)
     {
         if (left == null || right == null) return null;

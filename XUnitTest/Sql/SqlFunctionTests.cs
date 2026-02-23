@@ -634,6 +634,37 @@ public class SqlFunctionTests : IDisposable
         Assert.Equal(false, r.Rows[0][0]);
     }
 
+    [Fact(DisplayName = "WITHIN_POLYGON 点在多边形内")]
+    public void TestWithinPolygonInside()
+    {
+        // 构造一个包围北京天安门附近的矩形多边形（WKT 格式：经度 纬度）
+        var r = _engine.Execute("SELECT WITHIN_POLYGON(GEOPOINT(39.9042, 116.4074), 'POLYGON((116.0 39.0, 117.0 39.0, 117.0 40.5, 116.0 40.5, 116.0 39.0))')");
+        Assert.Equal(true, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "WITHIN_POLYGON 点在多边形外")]
+    public void TestWithinPolygonOutside()
+    {
+        // 上海的点不在北京的多边形内
+        var r = _engine.Execute("SELECT WITHIN_POLYGON(GEOPOINT(31.2304, 121.4737), 'POLYGON((116.0 39.0, 117.0 39.0, 117.0 40.5, 116.0 40.5, 116.0 39.0))')");
+        Assert.Equal(false, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "WITHIN_POLYGON 三角形多边形")]
+    public void TestWithinPolygonTriangle()
+    {
+        // 三角形：(0,0)-(10,0)-(5,10)
+        var r = _engine.Execute("SELECT WITHIN_POLYGON(GEOPOINT(3.0, 5.0), 'POLYGON((0 0, 10 0, 5 10, 0 0))')");
+        Assert.Equal(true, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "WITHIN_POLYGON NULL 参数返回 NULL")]
+    public void TestWithinPolygonNull()
+    {
+        var r = _engine.Execute("SELECT WITHIN_POLYGON(NULL, 'POLYGON((0 0, 10 0, 10 10, 0 10, 0 0))')");
+        Assert.Null(r.Rows[0][0]);
+    }
+
     #endregion
 
     #region Vector 函数
@@ -693,6 +724,81 @@ public class SqlFunctionTests : IDisposable
     {
         var r = _engine.Execute("SELECT DOT_PRODUCT(NULL, VECTOR(1, 2, 3))");
         Assert.Null(r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "VECTOR_NEAREST 余弦相似度 Top-K")]
+    public void TestVectorNearestCosine()
+    {
+        // 创建带向量列的表
+        _engine.Execute("CREATE TABLE vec_test (id INT PRIMARY KEY, embedding VECTOR)");
+        _engine.Execute("INSERT INTO vec_test (id, embedding) VALUES (1, VECTOR(1, 0, 0))");
+        _engine.Execute("INSERT INTO vec_test (id, embedding) VALUES (2, VECTOR(0, 1, 0))");
+        _engine.Execute("INSERT INTO vec_test (id, embedding) VALUES (3, VECTOR(0.9, 0.1, 0))");
+        _engine.Execute("INSERT INTO vec_test (id, embedding) VALUES (4, VECTOR(0, 0, 1))");
+
+        // 查询与 (1,0,0) 最相似的前 2 个
+        var r = _engine.Execute("SELECT VECTOR_NEAREST(VECTOR(1, 0, 0), 'vec_test', 2, 'cosine')");
+        var result = Convert.ToString(r.Rows[0][0])!;
+
+        // 结果应包含 id=1（完全匹配）和 id=3（最接近）
+        Assert.Contains("1:", result);
+        Assert.Contains("3:", result);
+        // 不应包含 id=4（正交向量）
+        Assert.DoesNotContain("4:", result);
+    }
+
+    [Fact(DisplayName = "VECTOR_NEAREST 欧氏距离 Top-K")]
+    public void TestVectorNearestEuclidean()
+    {
+        _engine.Execute("CREATE TABLE vec_euc (id INT PRIMARY KEY, embedding VECTOR)");
+        _engine.Execute("INSERT INTO vec_euc (id, embedding) VALUES (1, VECTOR(1, 0, 0))");
+        _engine.Execute("INSERT INTO vec_euc (id, embedding) VALUES (2, VECTOR(0, 1, 0))");
+        _engine.Execute("INSERT INTO vec_euc (id, embedding) VALUES (3, VECTOR(1.1, 0.1, 0))");
+
+        var r = _engine.Execute("SELECT VECTOR_NEAREST(VECTOR(1, 0, 0), 'vec_euc', 1, 'euclidean')");
+        var result = Convert.ToString(r.Rows[0][0])!;
+
+        // 距离最近的应该是 id=1（完全匹配）
+        Assert.StartsWith("1:", result);
+    }
+
+    [Fact(DisplayName = "VECTOR_NEAREST 点积 Top-K")]
+    public void TestVectorNearestDotProduct()
+    {
+        _engine.Execute("CREATE TABLE vec_dot (id INT PRIMARY KEY, embedding VECTOR)");
+        _engine.Execute("INSERT INTO vec_dot (id, embedding) VALUES (1, VECTOR(1, 0, 0))");
+        _engine.Execute("INSERT INTO vec_dot (id, embedding) VALUES (2, VECTOR(2, 0, 0))");
+        _engine.Execute("INSERT INTO vec_dot (id, embedding) VALUES (3, VECTOR(0, 1, 0))");
+
+        var r = _engine.Execute("SELECT VECTOR_NEAREST(VECTOR(1, 0, 0), 'vec_dot', 1, 'dot_product')");
+        var result = Convert.ToString(r.Rows[0][0])!;
+
+        // 点积最大的应该是 id=2（向量 (2,0,0) 与 (1,0,0) 的点积=2）
+        Assert.StartsWith("2:", result);
+    }
+
+    [Fact(DisplayName = "VECTOR_NEAREST NULL 查询向量返回 NULL")]
+    public void TestVectorNearestNull()
+    {
+        _engine.Execute("CREATE TABLE vec_null (id INT PRIMARY KEY, embedding VECTOR)");
+        _engine.Execute("INSERT INTO vec_null (id, embedding) VALUES (1, VECTOR(1, 0, 0))");
+
+        var r = _engine.Execute("SELECT VECTOR_NEAREST(NULL, 'vec_null', 2, 'cosine')");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "VECTOR_NEAREST 默认使用余弦相似度")]
+    public void TestVectorNearestDefaultMetric()
+    {
+        _engine.Execute("CREATE TABLE vec_def (id INT PRIMARY KEY, embedding VECTOR)");
+        _engine.Execute("INSERT INTO vec_def (id, embedding) VALUES (1, VECTOR(1, 0, 0))");
+        _engine.Execute("INSERT INTO vec_def (id, embedding) VALUES (2, VECTOR(0, 1, 0))");
+
+        // 不指定第四个参数，默认 cosine
+        var r = _engine.Execute("SELECT VECTOR_NEAREST(VECTOR(1, 0, 0), 'vec_def', 1)");
+        var result = Convert.ToString(r.Rows[0][0])!;
+
+        Assert.StartsWith("1:", result);
     }
 
     #endregion
