@@ -11,9 +11,9 @@ namespace NewLife.NovaDb.Storage;
 /// - 9: Flags (页级标志：bit0=已加密, bit1=已压缩, bit2=脏页)
 /// - 10-11: Reserved (预留)
 /// - 12-19: LSN (日志序列号)
-/// - 20-23: Checksum (CRC32 校验和)
-/// - 24-27: DataLength (页内有效数据长度)
-/// - 28-31: Reserved (预留扩展)
+/// - 20-23: DataLength (页内有效数据长度)
+/// - 24-27: Reserved (预留扩展)
+/// - 28-31: Checksum (CRC32 校验和)
 /// </remarks>
 public class PageHeader
 {
@@ -60,14 +60,14 @@ public class PageHeader
         // Lsn (8 bytes)
         writer.Write(Lsn);
 
-        // Checksum (4 bytes)
-        writer.Write(Checksum);
-
         // DataLength (4 bytes)
         writer.Write(DataLength);
 
-        // Reserved (4 bytes) - 显式填零
+        // Reserved (4 bytes) - 预留扩展
         writer.FillZero(4);
+
+        // Checksum (4 bytes)
+        writer.Write(Checksum);
 
         return pk;
     }
@@ -107,11 +107,14 @@ public class PageHeader
         // Lsn
         var lsn = reader.ReadUInt64();
 
-        // Checksum
-        var checksum = reader.ReadUInt32();
-
         // DataLength
         var dataLength = reader.ReadUInt32();
+
+        // Reserved
+        reader.Advance(4);
+
+        // Checksum
+        var checksum = reader.ReadUInt32();
 
         return new PageHeader
         {

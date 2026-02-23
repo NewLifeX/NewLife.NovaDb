@@ -12,8 +12,8 @@ public class FileHeaderTests
     /// <summary>篡改字节后重新计算 Checksum，使校验和仍有效以测试其它验证逻辑</summary>
     private static void RecomputeChecksum(Byte[] bytes)
     {
-        var crc = Crc32.Compute(bytes.AsSpan(0, 16));
-        BitConverter.GetBytes(crc).CopyTo(bytes, 16);
+        var crc = Crc32.Compute(bytes.AsSpan(0, 28));
+        BitConverter.GetBytes(crc).CopyTo(bytes, 28);
     }
 
     [Fact]
@@ -75,8 +75,8 @@ public class FileHeaderTests
         using var pk = header.ToPacket();
         var bytes = pk.GetSpan().ToArray();
 
-        // 篡改 Checksum（offset 16-19）
-        bytes[16] ^= 0xFF;
+        // 篡改 Checksum（offset 28-31）
+        bytes[28] ^= 0xFF;
 
         var ex = Assert.Throws<NovaException>(() => FileHeader.Read(new ArrayPacket(bytes)));
         Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
@@ -290,8 +290,8 @@ public class FileHeaderTests
         using var pk = header.ToPacket();
         var bytes = pk.GetSpan().ToArray();
 
-        // Reserved 12 bytes at offset 20-31
-        for (var i = 20; i < 32; i++)
+        // Reserved 12 bytes at offset 16-27
+        for (var i = 16; i < 28; i++)
         {
             Assert.Equal(0, bytes[i]);
         }
