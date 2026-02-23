@@ -12,6 +12,9 @@ public class WalRecovery
     /// <summary>最后一个已提交事务的 LSN</summary>
     public UInt64 LastCommittedLsn { get; private set; }
 
+    /// <summary>实例化 WAL 恢复管理器</summary>
+    /// <param name="walPath">WAL 文件路径</param>
+    /// <param name="applyPageUpdate">应用页更新的回调方法</param>
     public WalRecovery(String walPath, Action<UInt64, Byte[]> applyPageUpdate)
     {
         _walPath = walPath ?? throw new ArgumentNullException(nameof(walPath));

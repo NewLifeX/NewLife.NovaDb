@@ -32,6 +32,9 @@ public class WalWriter : IDisposable
         }
     }
 
+    /// <summary>实例化 WAL 写入器</summary>
+    /// <param name="walPath">WAL 文件路径</param>
+    /// <param name="mode">WAL 模式</param>
     public WalWriter(String walPath, WalMode mode)
     {
         _walPath = walPath ?? throw new ArgumentNullException(nameof(walPath));
@@ -198,6 +201,7 @@ public class WalWriter : IDisposable
         return maxLsn;
     }
 
+    /// <summary>释放资源</summary>
     public void Dispose()
     {
         lock (_lock)
