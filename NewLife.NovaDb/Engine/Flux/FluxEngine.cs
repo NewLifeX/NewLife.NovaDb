@@ -207,6 +207,59 @@ public partial class FluxEngine : IDisposable
         }
     }
 
+    /// <summary>对指定时间范围的数据执行降采样聚合</summary>
+    /// <param name="startTicks">起始时间 Ticks</param>
+    /// <param name="endTicks">结束时间 Ticks</param>
+    /// <param name="bucketTicks">分桶大小 Ticks（如 1 小时 = TimeSpan.FromHours(1).Ticks）</param>
+    /// <param name="fieldName">聚合字段名</param>
+    /// <param name="aggregation">聚合方式：avg/sum/min/max/count</param>
+    /// <returns>降采样结果列表，每个结果包含桶起始时间和聚合值</returns>
+    public List<DownsampleResult> Downsample(Int64 startTicks, Int64 endTicks, Int64 bucketTicks, String fieldName, String aggregation)
+    {
+        if (bucketTicks <= 0) throw new ArgumentException("Bucket size must be positive", nameof(bucketTicks));
+        if (fieldName == null) throw new ArgumentNullException(nameof(fieldName));
+
+        var entries = QueryRange(startTicks, endTicks);
+        var buckets = new SortedDictionary<Int64, List<Double>>();
+
+        // 按桶分组
+        foreach (var entry in entries)
+        {
+            if (!entry.Fields.TryGetValue(fieldName, out var val) || val == null) continue;
+
+            var bucketStart = (entry.Timestamp - startTicks) / bucketTicks * bucketTicks + startTicks;
+            if (!buckets.TryGetValue(bucketStart, out var list))
+            {
+                list = [];
+                buckets[bucketStart] = list;
+            }
+
+            list.Add(Convert.ToDouble(val));
+        }
+
+        // 执行聚合
+        var agg = aggregation.ToLower();
+        var results = new List<DownsampleResult>();
+
+        foreach (var kvp in buckets)
+        {
+            var values = kvp.Value;
+            Double aggValue = agg switch
+            {
+                "avg" or "average" => values.Sum() / values.Count,
+                "sum" => values.Sum(),
+                "min" => values.Min(),
+                "max" => values.Max(),
+                "count" => values.Count,
+                _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown aggregation: {aggregation}")
+            };
+
+            results.Add(new DownsampleResult(kvp.Key, aggValue));
+        }
+
+        return results;
+    }
+
     /// <summary>释放资源</summary>
     public void Dispose()
     {

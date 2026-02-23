@@ -217,4 +217,127 @@ public class FluxEngineTests : IDisposable
         // 5 小时应对齐到 4 小时
         Assert.NotEqual(engine.GetPartitionKey(dt1.Ticks), engine.GetPartitionKey(dt3.Ticks));
     }
+
+    #region 降采样
+
+    [Fact(DisplayName = "降采样 AVG 聚合")]
+    public void TestDownsampleAvg()
+    {
+        using var engine = CreateEngine();
+        var baseTime = new DateTime(2025, 7, 15, 10, 0, 0, DateTimeKind.Utc);
+
+        // 每10分钟一条数据，值分别为 10, 20, 30, 40, 50, 60
+        for (var i = 0; i < 6; i++)
+        {
+            engine.Append(new FluxEntry
+            {
+                Timestamp = baseTime.AddMinutes(i * 10).Ticks,
+                Fields = new Dictionary<String, Object?> { ["value"] = (Double)(i + 1) * 10 }
+            });
+        }
+
+        // 按 30 分钟分桶
+        var bucket30Min = TimeSpan.FromMinutes(30).Ticks;
+        var results = engine.Downsample(baseTime.Ticks, baseTime.AddHours(1).Ticks, bucket30Min, "value", "avg");
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(20.0, results[0].Value, 1); // (10+20+30)/3
+        Assert.Equal(50.0, results[1].Value, 1); // (40+50+60)/3
+    }
+
+    [Fact(DisplayName = "降采样 SUM 聚合")]
+    public void TestDownsampleSum()
+    {
+        using var engine = CreateEngine();
+        var baseTime = new DateTime(2025, 7, 15, 10, 0, 0, DateTimeKind.Utc);
+
+        for (var i = 0; i < 4; i++)
+        {
+            engine.Append(new FluxEntry
+            {
+                Timestamp = baseTime.AddMinutes(i * 15).Ticks,
+                Fields = new Dictionary<String, Object?> { ["value"] = 100.0 }
+            });
+        }
+
+        var bucket1Hr = TimeSpan.FromHours(1).Ticks;
+        var results = engine.Downsample(baseTime.Ticks, baseTime.AddHours(1).Ticks, bucket1Hr, "value", "sum");
+
+        Assert.Single(results);
+        Assert.Equal(400.0, results[0].Value, 1);
+    }
+
+    [Fact(DisplayName = "降采样 MIN/MAX 聚合")]
+    public void TestDownsampleMinMax()
+    {
+        using var engine = CreateEngine();
+        var baseTime = new DateTime(2025, 7, 15, 10, 0, 0, DateTimeKind.Utc);
+
+        var values = new[] { 5.0, 15.0, 3.0, 25.0, 8.0 };
+        for (var i = 0; i < values.Length; i++)
+        {
+            engine.Append(new FluxEntry
+            {
+                Timestamp = baseTime.AddMinutes(i * 10).Ticks,
+                Fields = new Dictionary<String, Object?> { ["temp"] = values[i] }
+            });
+        }
+
+        var bucket1Hr = TimeSpan.FromHours(1).Ticks;
+        var minResults = engine.Downsample(baseTime.Ticks, baseTime.AddHours(1).Ticks, bucket1Hr, "temp", "min");
+        var maxResults = engine.Downsample(baseTime.Ticks, baseTime.AddHours(1).Ticks, bucket1Hr, "temp", "max");
+
+        Assert.Single(minResults);
+        Assert.Equal(3.0, minResults[0].Value, 1);
+        Assert.Single(maxResults);
+        Assert.Equal(25.0, maxResults[0].Value, 1);
+    }
+
+    [Fact(DisplayName = "降采样 COUNT 聚合")]
+    public void TestDownsampleCount()
+    {
+        using var engine = CreateEngine();
+        var baseTime = new DateTime(2025, 7, 15, 10, 0, 0, DateTimeKind.Utc);
+
+        for (var i = 0; i < 5; i++)
+        {
+            engine.Append(new FluxEntry
+            {
+                Timestamp = baseTime.AddMinutes(i * 5).Ticks,
+                Fields = new Dictionary<String, Object?> { ["value"] = (Double)i }
+            });
+        }
+
+        var bucket1Hr = TimeSpan.FromHours(1).Ticks;
+        var results = engine.Downsample(baseTime.Ticks, baseTime.AddHours(1).Ticks, bucket1Hr, "value", "count");
+
+        Assert.Single(results);
+        Assert.Equal(5.0, results[0].Value, 1);
+    }
+
+    [Fact(DisplayName = "降采样跳过字段不存在的条目")]
+    public void TestDownsampleSkipsMissingField()
+    {
+        using var engine = CreateEngine();
+        var baseTime = new DateTime(2025, 7, 15, 10, 0, 0, DateTimeKind.Utc);
+
+        engine.Append(new FluxEntry
+        {
+            Timestamp = baseTime.Ticks,
+            Fields = new Dictionary<String, Object?> { ["value"] = 100.0 }
+        });
+        engine.Append(new FluxEntry
+        {
+            Timestamp = baseTime.AddMinutes(10).Ticks,
+            Fields = new Dictionary<String, Object?> { ["other"] = 200.0 }
+        });
+
+        var bucket1Hr = TimeSpan.FromHours(1).Ticks;
+        var results = engine.Downsample(baseTime.Ticks, baseTime.AddHours(1).Ticks, bucket1Hr, "value", "avg");
+
+        Assert.Single(results);
+        Assert.Equal(100.0, results[0].Value, 1);
+    }
+
+    #endregion
 }
