@@ -483,7 +483,7 @@ partial class SqlEngine
             case "CHAR":
                 if (args.Count < 1 || args[0] == null) return null;
                 var charCode = Convert.ToInt32(args[0]);
-                return charCode is >= 0 and <= 0x10FFFF ? ((Char)charCode).ToString() : (Object?)null;
+                return charCode is >= 0 and <= 0xFFFF ? ((Char)charCode).ToString() : (Object?)null;
 
             case "LAST_DAY":
                 if (args.Count < 1 || args[0] == null) return null;

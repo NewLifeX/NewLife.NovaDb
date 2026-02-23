@@ -28,6 +28,9 @@ public partial class NovaTable : IDisposable
     // 分片管理器
     private readonly ShardManager _shardManager;
 
+    // 默认分片 ID
+    private const Int32 DefaultShardId = 0;
+
     /// <summary>表架构</summary>
     public TableSchema Schema => _schema;
 
@@ -96,7 +99,7 @@ public partial class NovaTable : IDisposable
         _shardManager = new ShardManager(_options, _dbPath);
         _shardManager.AddShard(new ShardInfo
         {
-            ShardId = 0,
+            ShardId = DefaultShardId,
             DataFilePath = _fileManager.GetDataFilePath(),
             CreatedAt = DateTime.UtcNow
         });
@@ -155,7 +158,7 @@ public partial class NovaTable : IDisposable
             versions.Add(rowVersion);
 
             // 更新分片统计
-            _shardManager.RecordWrite(0, payload.Length);
+            _shardManager.RecordWrite(DefaultShardId, payload.Length);
 
             // 注册提交动作：事务提交时才持久化到行日志
             var persistPayload = payload;
@@ -275,7 +278,7 @@ public partial class NovaTable : IDisposable
             versions.Add(newVersion);
 
             // 更新分片统计
-            _shardManager.RecordWrite(0, payload.Length);
+            _shardManager.RecordWrite(DefaultShardId, payload.Length);
 
             // 注册提交动作：事务提交时才持久化新版本
             var persistPayload = payload;

@@ -149,7 +149,7 @@ public class NovaCommand : DbCommand
         // CommandTimeout 为 0 表示不超时
         if (CommandTimeout <= 0) return action();
 
-        _cts = new CancellationTokenSource(TimeSpan.FromSeconds(CommandTimeout));
+        _cts = new CancellationTokenSource();
         try
         {
             var task = Task.Run(action, _cts.Token);
