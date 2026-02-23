@@ -130,6 +130,8 @@ public enum SqlTokenType
     Truncate,
     /// <summary>DUPLICATE</summary>
     Duplicate,
+    /// <summary>EXPLAIN</summary>
+    Explain,
 
     // 标识符与字面量
     /// <summary>标识符</summary>

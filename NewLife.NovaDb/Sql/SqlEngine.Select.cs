@@ -91,6 +91,7 @@ partial class SqlEngine
             "indexes" => BuildSysIndexesData(),
             "metrics" => BuildSysMetricsData(),
             "version" => BuildSysVersionData(),
+            "binlog" => BuildSysBinlogData(),
             _ => throw new NovaException(ErrorCode.TableNotFound, $"System table '{stmt.TableName}' not found")
         };
 
@@ -129,7 +130,7 @@ partial class SqlEngine
         schema.AddColumn(new ColumnDefinition("row_count", DataType.Int32, false));
 
         var rows = new List<Object?[]>();
-        lock (_lock)
+        using var rl1 = _metaLock.AcquireRead();
         {
             foreach (var kvp in _schemas)
             {
@@ -163,7 +164,7 @@ partial class SqlEngine
         schema.AddColumn(new ColumnDefinition("ordinal_position", DataType.Int32, false));
 
         var rows = new List<Object?[]>();
-        lock (_lock)
+        using var rl2 = _metaLock.AcquireRead();
         {
             foreach (var kvp in _schemas)
             {
@@ -192,7 +193,7 @@ partial class SqlEngine
         schema.AddColumn(new ColumnDefinition("columns", DataType.String, false));
 
         var rows = new List<Object?[]>();
-        lock (_lock)
+        using var rl3 = _metaLock.AcquireRead();
         {
             foreach (var kvp in _schemas)
             {
@@ -221,7 +222,7 @@ partial class SqlEngine
         schema.AddColumn(new ColumnDefinition("value", DataType.String, false));
 
         // 更新表计数
-        lock (_lock)
+        using (var rl4 = _metaLock.AcquireRead())
         {
             Metrics.TableCount = _schemas.Count;
         }
@@ -260,6 +261,27 @@ partial class SqlEngine
         {
             new Object?[] { version, platform, startTime }
         };
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysBinlogData()
+    {
+        var schema = new TableSchema("_sys.binlog");
+        schema.AddColumn(new ColumnDefinition("file_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("file_size", DataType.Int64, false));
+        schema.AddColumn(new ColumnDefinition("current", DataType.Boolean, false));
+
+        var rows = new List<Object?[]>();
+
+        if (Binlog != null)
+        {
+            foreach (var (fileName, size) in Binlog.ListFiles())
+            {
+                var isCurrent = fileName.EndsWith($".{Binlog.FileIndex:D6}");
+                rows.Add(new Object?[] { fileName, size, isCurrent });
+            }
+        }
 
         return (schema, rows);
     }

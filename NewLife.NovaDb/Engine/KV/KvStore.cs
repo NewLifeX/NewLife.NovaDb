@@ -4,12 +4,13 @@ using NewLife.NovaDb.Core;
 namespace NewLife.NovaDb.Engine.KV;
 
 /// <summary>KV 键值存储引擎，支持按行 TTL</summary>
-public class KvStore
+public partial class KvStore
 {
     private readonly Dictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
     private readonly Object _lock = new();
     private readonly DbOptions? _options;
     private readonly TimeSpan _defaultTtl;
+    private readonly String? _storePath;
 
     /// <summary>非过期键的数量</summary>
     public Int32 Count
@@ -31,10 +32,16 @@ public class KvStore
 
     /// <summary>创建 KvStore 实例</summary>
     /// <param name="options">数据库选项，可为 null</param>
-    public KvStore(DbOptions? options = null)
+    /// <param name="storePath">持久化存储目录路径，null 表示纯内存模式</param>
+    public KvStore(DbOptions? options = null, String? storePath = null)
     {
         _options = options;
         _defaultTtl = options?.DefaultKvTtl ?? TimeSpan.Zero;
+        _storePath = storePath;
+
+        // 如果提供了存储路径，打开日志并恢复数据
+        if (!String.IsNullOrEmpty(_storePath))
+            OpenKvLog();
     }
 
     /// <summary>设置键值对</summary>
@@ -68,6 +75,9 @@ public class KvStore
                     ModifiedAt = now,
                 };
             }
+
+            // 持久化
+            PersistKvSet(key, value, effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : (DateTime?)null);
         }
     }
 
@@ -103,7 +113,10 @@ public class KvStore
 
         lock (_lock)
         {
-            return _data.Remove(key);
+            var removed = _data.Remove(key);
+            if (removed)
+                PersistKvDelete(key);
+            return removed;
         }
     }
 
@@ -175,6 +188,10 @@ public class KvStore
                 CreatedAt = now,
                 ModifiedAt = now,
             };
+
+            // 持久化
+            PersistKvSet(key, value, now.Add(ttl));
+
             return true;
         }
     }
@@ -212,20 +229,28 @@ public class KvStore
                 newValue = current + delta;
                 entry.Value = Encoding.UTF8.GetBytes(newValue.ToString());
                 entry.ModifiedAt = now;
+
+                // 持久化更新后的值
+                PersistKvSet(key, entry.Value, entry.ExpiresAt);
             }
             else
             {
                 // key 不存在或已过期，初始化为 delta
                 newValue = delta;
                 var effectiveTtl = ttl ?? (_defaultTtl > TimeSpan.Zero ? _defaultTtl : (TimeSpan?)null);
+                var expiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : (DateTime?)null;
+                var valueBytes = Encoding.UTF8.GetBytes(newValue.ToString());
                 _data[key] = new KvEntry
                 {
                     Key = key,
-                    Value = Encoding.UTF8.GetBytes(newValue.ToString()),
-                    ExpiresAt = effectiveTtl.HasValue ? now.Add(effectiveTtl.Value) : null,
+                    Value = valueBytes,
+                    ExpiresAt = expiresAt,
                     CreatedAt = now,
                     ModifiedAt = now,
                 };
+
+                // 持久化新值
+                PersistKvSet(key, valueBytes, expiresAt);
             }
 
             return newValue;

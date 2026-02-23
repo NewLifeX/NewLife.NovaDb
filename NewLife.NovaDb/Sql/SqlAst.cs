@@ -30,7 +30,9 @@ public enum SqlStatementType
     /// <summary>TRUNCATE TABLE</summary>
     TruncateTable,
     /// <summary>UPSERT（INSERT ... ON DUPLICATE KEY UPDATE）</summary>
-    Upsert
+    Upsert,
+    /// <summary>EXPLAIN 查询计划</summary>
+    Explain
 }
 
 /// <summary>SQL 语句基类</summary>
@@ -102,6 +104,16 @@ public class TruncateTableStatement : SqlStatement
 
     /// <summary>表名</summary>
     public String TableName { get; set; } = String.Empty;
+}
+
+/// <summary>EXPLAIN 语句（查询计划解释）</summary>
+public class ExplainStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.Explain;
+
+    /// <summary>被解释的内部语句</summary>
+    public SqlStatement InnerStatement { get; set; } = null!;
 }
 
 /// <summary>CREATE INDEX 语句</summary>

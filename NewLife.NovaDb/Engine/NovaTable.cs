@@ -6,7 +6,7 @@ using NewLife.NovaDb.WAL;
 namespace NewLife.NovaDb.Engine;
 
 /// <summary>Nova 表实例，支持 MVCC 的单表引擎</summary>
-public class NovaTable : IDisposable
+public partial class NovaTable : IDisposable
 {
     private readonly TableSchema _schema;
     private readonly String _dbPath;
@@ -76,6 +76,9 @@ public class NovaTable : IDisposable
 
         // 初始化主键索引
         _primaryIndex = new SkipList<ComparableObject, List<RowVersion>>();
+
+        // 打开行日志并恢复数据
+        OpenRowLog();
     }
 
     /// <summary>插入行</summary>
@@ -126,6 +129,10 @@ public class NovaTable : IDisposable
 
             // 添加新版本
             versions.Add(rowVersion);
+
+            // 注册提交动作：事务提交时才持久化到行日志
+            var persistPayload = payload;
+            tx.RegisterCommitAction(() => PersistPut(persistPayload));
 
             // 记录 WAL（如果启用）
             if (_walWriter != null)
@@ -237,6 +244,10 @@ public class NovaTable : IDisposable
             var newVersion = new RowVersion(tx.TxId, key, payload);
             versions.Add(newVersion);
 
+            // 注册提交动作：事务提交时才持久化新版本
+            var persistPayload = payload;
+            tx.RegisterCommitAction(() => PersistPut(persistPayload));
+
             // 记录 WAL
             if (_walWriter != null)
             {
@@ -303,6 +314,10 @@ public class NovaTable : IDisposable
             var oldDeletedByTx = visibleVersion.DeletedByTx;
             visibleVersion.MarkDeleted(tx.TxId);
 
+            // 注册提交动作：事务提交时才持久化删除记录
+            var persistKey = key;
+            tx.RegisterCommitAction(() => PersistDelete(persistKey));
+
             // 记录 WAL
             if (_walWriter != null)
             {
@@ -366,6 +381,7 @@ public class NovaTable : IDisposable
         lock (_lock)
         {
             _primaryIndex.Clear();
+            TruncateRowLog();
         }
     }
 
@@ -422,6 +438,7 @@ public class NovaTable : IDisposable
 
         _walWriter?.Dispose();
         _dataPager?.Dispose();
+        _rowLogStream?.Dispose();
         _disposed = true;
     }
 }

@@ -103,6 +103,9 @@ public enum ErrorCode
     /// <summary>磁盘空间不足</summary>
     DiskFull = 6001,
 
+    /// <summary>文件被其他进程锁定</summary>
+    FileLocked = 6002,
+
     /// <summary>连接失败</summary>
     ConnectionFailed = 7000,
 

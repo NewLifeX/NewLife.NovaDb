@@ -34,6 +34,7 @@ public class SqlParser
             SqlTokenType.Drop => ParseDrop(),
             SqlTokenType.Alter => ParseAlter(),
             SqlTokenType.Truncate => ParseTruncate(),
+            SqlTokenType.Explain => ParseExplain(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -42,6 +43,15 @@ public class SqlParser
             Advance();
 
         return stmt;
+    }
+
+    private ExplainStatement ParseExplain()
+    {
+        Expect(SqlTokenType.Explain);
+
+        // 递归解析内部语句
+        var inner = Parse();
+        return new ExplainStatement { InnerStatement = inner };
     }
 
     #region DDL

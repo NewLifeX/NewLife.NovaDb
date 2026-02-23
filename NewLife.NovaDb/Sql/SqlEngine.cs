@@ -1,6 +1,8 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Diagnostics;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
+using NewLife.NovaDb.WAL;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -13,7 +15,7 @@ public partial class SqlEngine : IDisposable
     private readonly TransactionManager _txManager;
     private readonly Dictionary<String, NovaTable> _tables = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<String, TableSchema> _schemas = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Object _lock = new();
+    private readonly MetadataLock _metaLock = new();
     private Boolean _disposed;
     private Int32 _lastAffectedRows;
 
@@ -26,15 +28,19 @@ public partial class SqlEngine : IDisposable
     /// <summary>运行时指标</summary>
     public NovaMetrics Metrics { get; }
 
+    /// <summary>慢查询日志</summary>
+    public SlowQueryLog SlowQuery { get; }
+
+    /// <summary>Binlog 写入器（可选，启用后记录已提交的 SQL 变更）</summary>
+    public BinlogWriter? Binlog { get; set; }
+
     /// <summary>获取所有表名</summary>
     public IReadOnlyCollection<String> TableNames
     {
         get
         {
-            lock (_lock)
-            {
-                return _schemas.Keys.ToList().AsReadOnly();
-            }
+            using var _ = _metaLock.AcquireRead();
+            return _schemas.Keys.ToList().AsReadOnly();
         }
     }
     #endregion
@@ -49,6 +55,7 @@ public partial class SqlEngine : IDisposable
         _options = options ?? new DbOptions { Path = dbPath };
         _txManager = new TransactionManager();
         Metrics = new NovaMetrics { StartTime = DateTime.Now };
+        SlowQuery = new SlowQueryLog();
 
         // 只读模式下不自动创建目录
         if (!_options.ReadOnly && !Directory.Exists(_dbPath))
@@ -65,6 +72,8 @@ public partial class SqlEngine : IDisposable
     {
         if (sql == null) throw new ArgumentNullException(nameof(sql));
 
+        var sw = Stopwatch.StartNew();
+
         var parser = new SqlParser(sql);
         var stmt = parser.Parse();
 
@@ -72,36 +81,46 @@ public partial class SqlEngine : IDisposable
         if (_options.ReadOnly && stmt is not SelectStatement)
             throw new NovaException(ErrorCode.ReadOnlyViolation, "Database is opened in read-only mode, write operations are not allowed");
 
-        return stmt switch
+        var result = stmt switch
         {
             // DDL 语句
-            CreateDatabaseStatement createDb => TrackDdl(ExecuteCreateDatabase(createDb)),
-            DropDatabaseStatement dropDb => TrackDdl(ExecuteDropDatabase(dropDb)),
-            CreateTableStatement create => TrackDdl(ExecuteCreateTable(create)),
-            DropTableStatement drop => TrackDdl(ExecuteDropTable(drop)),
-            AlterTableStatement alter => TrackDdl(ExecuteAlterTable(alter)),
-            TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate)),
-            CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx)),
-            DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx)),
+            CreateDatabaseStatement createDb => TrackDdl(ExecuteCreateDatabase(createDb), sql),
+            DropDatabaseStatement dropDb => TrackDdl(ExecuteDropDatabase(dropDb), sql),
+            CreateTableStatement create => TrackDdl(ExecuteCreateTable(create), sql),
+            DropTableStatement drop => TrackDdl(ExecuteDropTable(drop), sql),
+            AlterTableStatement alter => TrackDdl(ExecuteAlterTable(alter), sql),
+            TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate), sql),
+            CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx), sql),
+            DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx), sql),
 
             // DML 语句
-            InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters)),
-            UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters)),
-            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters)),
-            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters)),
+            InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters), sql),
+            UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters), sql),
+            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters), sql),
+            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters), sql),
 
             // 查询语句
             SelectStatement select => TrackQuery(ExecuteSelect(select, parameters)),
 
+            // 查询计划
+            ExplainStatement explain => ExecuteExplain(explain, parameters),
+
             _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
         };
+
+        sw.Stop();
+
+        // 记录慢查询
+        SlowQuery.Record(sql, sw.ElapsedMilliseconds, result.AffectedRows);
+
+        return result;
     }
 
-    private SqlResult TrackDdl(SqlResult result) { Metrics.ExecuteCount++; Metrics.DdlCount++; _lastAffectedRows = result.AffectedRows; return result; }
+    private SqlResult TrackDdl(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.DdlCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Ddl, sql, result.AffectedRows); return result; }
     private SqlResult TrackQuery(SqlResult result) { Metrics.ExecuteCount++; Metrics.QueryCount++; _lastAffectedRows = result.AffectedRows; return result; }
-    private SqlResult TrackInsert(SqlResult result) { Metrics.ExecuteCount++; Metrics.InsertCount++; _lastAffectedRows = result.AffectedRows; return result; }
-    private SqlResult TrackUpdate(SqlResult result) { Metrics.ExecuteCount++; Metrics.UpdateCount++; _lastAffectedRows = result.AffectedRows; return result; }
-    private SqlResult TrackDelete(SqlResult result) { Metrics.ExecuteCount++; Metrics.DeleteCount++; _lastAffectedRows = result.AffectedRows; return result; }
+    private SqlResult TrackInsert(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.InsertCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Insert, sql, result.AffectedRows); return result; }
+    private SqlResult TrackUpdate(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.UpdateCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Update, sql, result.AffectedRows); return result; }
+    private SqlResult TrackDelete(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.DeleteCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Delete, sql, result.AffectedRows); return result; }
 
     #region 释放
     /// <summary>释放资源</summary>
@@ -109,15 +128,13 @@ public partial class SqlEngine : IDisposable
     {
         if (_disposed) return;
 
-        lock (_lock)
+        using var _ = _metaLock.AcquireWrite();
+        foreach (var table in _tables.Values)
         {
-            foreach (var table in _tables.Values)
-            {
-                table.Dispose();
-            }
-            _tables.Clear();
-            _schemas.Clear();
+            table.Dispose();
         }
+        _tables.Clear();
+        _schemas.Clear();
 
         _disposed = true;
     }

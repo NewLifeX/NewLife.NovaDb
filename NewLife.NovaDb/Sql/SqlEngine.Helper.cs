@@ -171,22 +171,26 @@ partial class SqlEngine
 
     private NovaTable GetTable(String tableName)
     {
-        lock (_lock)
-        {
-            if (!_tables.TryGetValue(tableName, out var table))
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
-            return table;
-        }
+        using var _ = _metaLock.AcquireRead();
+        if (!_tables.TryGetValue(tableName, out var table))
+            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+        return table;
+    }
+
+    /// <summary>在已持有写锁的上下文中获取表引用（不再加锁）</summary>
+    private NovaTable GetTableInternal(String tableName)
+    {
+        if (!_tables.TryGetValue(tableName, out var table))
+            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+        return table;
     }
 
     private TableSchema GetSchema(String tableName)
     {
-        lock (_lock)
-        {
-            if (!_schemas.TryGetValue(tableName, out var schema))
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
-            return schema;
-        }
+        using var _ = _metaLock.AcquireRead();
+        if (!_schemas.TryGetValue(tableName, out var schema))
+            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+        return schema;
     }
 
     /// <summary>获取表的架构定义</summary>
@@ -194,11 +198,9 @@ partial class SqlEngine
     /// <returns>架构定义，不存在时返回 null</returns>
     public TableSchema? GetTableSchema(String tableName)
     {
-        lock (_lock)
-        {
-            _schemas.TryGetValue(tableName, out var schema);
-            return schema;
-        }
+        using var _ = _metaLock.AcquireRead();
+        _schemas.TryGetValue(tableName, out var schema);
+        return schema;
     }
 
     private static DataType ParseDataType(String typeName)

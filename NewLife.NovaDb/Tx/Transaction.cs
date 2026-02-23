@@ -24,6 +24,7 @@ public class Transaction : IDisposable
     private UInt64 _commitTs;
     private readonly Object _lock = new();
     private readonly List<Action> _rollbackActions = [];
+    private readonly List<Action> _commitActions = [];
     private Boolean _disposed;
 
     /// <summary>事务 ID</summary>
@@ -79,7 +80,21 @@ public class Transaction : IDisposable
             _commitTs = _manager.AllocateCommitTs();
             _state = TransactionState.Committed;
 
-            // 清除回滚动作
+            // 执行提交动作（如持久化行日志）
+            for (var i = 0; i < _commitActions.Count; i++)
+            {
+                try
+                {
+                    _commitActions[i]();
+                }
+                catch
+                {
+                    // 提交动作异常不影响事务状态
+                }
+            }
+
+            // 清除动作列表
+            _commitActions.Clear();
             _rollbackActions.Clear();
 
             // 从活跃事务列表移除
@@ -112,10 +127,27 @@ public class Transaction : IDisposable
             }
 
             _state = TransactionState.Aborted;
+            _commitActions.Clear();
             _rollbackActions.Clear();
 
             // 从活跃事务列表移除
             _manager.RemoveTransaction(_txId);
+        }
+    }
+
+    /// <summary>注册提交动作（在事务提交时执行，用于持久化等操作）</summary>
+    /// <param name="action">提交动作</param>
+    public void RegisterCommitAction(Action action)
+    {
+        if (action == null)
+            throw new ArgumentNullException(nameof(action));
+
+        lock (_lock)
+        {
+            if (_state != TransactionState.Active)
+                throw new NovaException(ErrorCode.TransactionError, $"Cannot register commit action on non-active transaction {_txId}");
+
+            _commitActions.Add(action);
         }
     }
 

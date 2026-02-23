@@ -38,7 +38,7 @@ public static class NovaDbTool
         sb.AppendLine($"NovaDb v{GetVersion()}");
         sb.AppendLine($"Path: {engine.DbPath}");
         sb.AppendLine($"Tables: {engine.TableNames.Count}");
-        sb.AppendLine($"Uptime: {metrics.Uptime:hh\\:mm\\:ss}");
+        sb.AppendLine($"Uptime: {(Int32)metrics.Uptime.TotalHours:D2}:{metrics.Uptime.Minutes:D2}:{metrics.Uptime.Seconds:D2}");
         sb.AppendLine($"Executes: {metrics.ExecuteCount}");
         sb.AppendLine($"Queries: {metrics.QueryCount}");
         sb.AppendLine($"Inserts: {metrics.InsertCount}");

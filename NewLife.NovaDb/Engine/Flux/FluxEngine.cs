@@ -3,7 +3,7 @@ using NewLife.NovaDb.Core;
 namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>Append-only 时序分区存储引擎</summary>
-public class FluxEngine : IDisposable
+public partial class FluxEngine : IDisposable
 {
     private readonly String _basePath;
     private readonly DbOptions _options;
@@ -21,6 +21,9 @@ public class FluxEngine : IDisposable
 
         if (!Directory.Exists(_basePath))
             Directory.CreateDirectory(_basePath);
+
+        // 打开时序日志并恢复数据
+        OpenFluxLog();
     }
 
     /// <summary>追加单条时序条目</summary>
@@ -42,6 +45,9 @@ public class FluxEngine : IDisposable
             var mid = MessageId.Auto(list, entry.Timestamp);
             entry.SequenceId = mid.Sequence;
             list.Add(entry);
+
+            // 持久化
+            PersistFluxAppend(entry);
         }
     }
 
@@ -65,6 +71,9 @@ public class FluxEngine : IDisposable
                 var mid = MessageId.Auto(list, entry.Timestamp);
                 entry.SequenceId = mid.Sequence;
                 list.Add(entry);
+
+                // 持久化
+                PersistFluxAppend(entry);
             }
         }
     }
@@ -132,6 +141,10 @@ public class FluxEngine : IDisposable
             }
         }
 
+        // 持久化清理记录
+        if (toRemove.Count > 0)
+            PersistFluxPurge(cutoffKey);
+
         return toRemove.Count;
     }
 
@@ -190,6 +203,7 @@ public class FluxEngine : IDisposable
         lock (_lock)
         {
             _partitions.Clear();
+            TruncateFluxLog();
         }
     }
 
@@ -197,7 +211,8 @@ public class FluxEngine : IDisposable
     public void Dispose()
     {
         if (_disposed) return;
-        Clear();
+        CloseFluxLog();
+        _partitions.Clear();
         _disposed = true;
     }
 }

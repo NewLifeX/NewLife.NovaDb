@@ -10,7 +10,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteCreateTable(CreateTableStatement stmt)
     {
-        lock (_lock)
+        using var _ = _metaLock.AcquireWrite();
         {
             if (_schemas.ContainsKey(stmt.TableName))
             {
@@ -47,7 +47,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteDropTable(DropTableStatement stmt)
     {
-        lock (_lock)
+        using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.ContainsKey(stmt.TableName))
             {
@@ -80,7 +80,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteCreateIndex(CreateIndexStatement stmt)
     {
-        lock (_lock)
+        using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.ContainsKey(stmt.TableName))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
@@ -92,7 +92,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteDropIndex(DropIndexStatement stmt)
     {
-        lock (_lock)
+        using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.ContainsKey(stmt.TableName))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
@@ -103,6 +103,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteCreateDatabase(CreateDatabaseStatement stmt)
     {
+        using var _ = _metaLock.AcquireWrite();
         var dbPath = Path.Combine(Path.GetDirectoryName(_dbPath) ?? ".", stmt.DatabaseName);
         if (Directory.Exists(dbPath))
         {
@@ -116,6 +117,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteDropDatabase(DropDatabaseStatement stmt)
     {
+        using var _ = _metaLock.AcquireWrite();
         var dbPath = Path.Combine(Path.GetDirectoryName(_dbPath) ?? ".", stmt.DatabaseName);
         if (!Directory.Exists(dbPath))
         {
@@ -129,7 +131,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteAlterTable(AlterTableStatement stmt)
     {
-        lock (_lock)
+        using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.TryGetValue(stmt.TableName, out var schema))
                 throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
@@ -180,7 +182,8 @@ partial class SqlEngine
 
     private SqlResult ExecuteTruncateTable(TruncateTableStatement stmt)
     {
-        var table = GetTable(stmt.TableName);
+        using var _ = _metaLock.AcquireWrite();
+        var table = GetTableInternal(stmt.TableName);
 
         // 直接清空表数据，比逐行 DELETE 更快
         table.Truncate();
