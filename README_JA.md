@@ -50,35 +50,369 @@
 
 | 機能 | ステータス | 説明 |
 |------|----------|------|
-| DDL | ✅ | CREATE/DROP TABLE/INDEX、IF NOT EXISTS、PRIMARY KEY、UNIQUE を含む |
+| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE、ALTER TABLE（ADD/MODIFY/DROP COLUMN、COMMENT）、IF NOT EXISTS、PRIMARY KEY、UNIQUE、ENGINE を含む |
 | DML | ✅ | INSERT（複数行）、UPDATE、DELETE、UPSERT（ON DUPLICATE KEY UPDATE）、TRUNCATE TABLE |
 | クエリ | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | 集計 | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN（Nested Loop）、テーブルエイリアスをサポート |
 | パラメータ化 | ✅ | @param プレースホルダー |
 | トランザクション | ✅ | MVCC、Read Committed、COMMIT/ROLLBACK |
-| SQL 関数 | ⚠️ | 文字列/数値/日付/変換/条件関数（予定） |
-| サブクエリ | ⚠️ | IN/EXISTS（予定） |
+| SQL 関数 | ✅ | 文字列/数値/日付/変換/条件/ハッシュ（60以上の関数） |
+| サブクエリ | ✅ | IN/EXISTS サブクエリ |
 | 高度 | ❌ | ビュー/トリガー/ストアドプロシージャ/ウィンドウ関数なし |
 
-### MQ 機能（Flux Engine）
+---
 
-Redis Stream のコンシューマグループモデルに基づく:
+## 使用ガイド
+
+### インストール
+
+NuGet 経由で NovaDb コアパッケージをインストール:
+
+```shell
+dotnet add package NewLife.NovaDb
+```
+
+### アクセス方法
+
+NovaDb は異なるシナリオ向けに2つのクライアントアクセス方法を提供します:
+
+| アクセス方法 | 対象エンジン | 説明 |
+|-------------|-------------|------|
+| **ADO.NET + SQL** | Nova（リレーショナル）、Flux（時系列） | 標準 `DbConnection`/`DbCommand`/`DbDataReader`、すべての ORM と互換 |
+| **NovaClient** | MQ（メッセージキュー）、KV（キーバリューストア） | RPC クライアント、メッセージ発行/消費/確認および KV 読み書き API を提供 |
+
+---
+
+### 1. リレーショナルデータベース（ADO.NET + SQL）
+
+リレーショナルエンジン（Nova Engine）は標準 ADO.NET インターフェースを通じてアクセスします。接続文字列の `Data Source` は組み込みモード、`Server` はサーバーモードを示します。
+
+#### 1.1 組み込みモード（5分クイックスタート）
+
+組み込みモードはスタンドアロンサービスが不要で、デスクトップアプリ、IoT デバイス、ユニットテストに最適です。
+
+```csharp
+using NewLife.NovaDb.Client;
+
+// 接続の作成（組み込みモード、フォルダ＝データベース）
+using var conn = new NovaConnection { ConnectionString = "Data Source=./mydb" };
+conn.Open();
+
+// テーブルの作成
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"CREATE TABLE IF NOT EXISTS users (
+    id   INT PRIMARY KEY AUTO_INCREMENT,
+    name STRING(50) NOT NULL,
+    age  INT DEFAULT 0,
+    created DATETIME
+)";
+cmd.ExecuteNonQuery();
+
+// データの挿入
+cmd.CommandText = "INSERT INTO users (name, age, created) VALUES ('Alice', 25, NOW())";
+cmd.ExecuteNonQuery();
+
+// バッチ挿入
+cmd.CommandText = @"INSERT INTO users (name, age) VALUES
+    ('Bob', 30),
+    ('Charlie', 28)";
+cmd.ExecuteNonQuery();
+
+// データのクエリ
+cmd.CommandText = "SELECT * FROM users WHERE age >= 25 ORDER BY age";
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"id={reader["id"]}, name={reader["name"]}, age={reader["age"]}");
+}
+```
+
+#### 1.2 サーバーモード
+
+サーバーモードは TCP 経由でリモートアクセスを提供し、複数の同時クライアント接続をサポートします。
+
+**サーバーの起動:**
+
+```csharp
+using NewLife.NovaDb.Server;
+
+var svr = new NovaServer(3306) { DbPath = "./data" };
+svr.Start();
+Console.ReadLine();
+svr.Stop("Manual shutdown");
+```
+
+**ADO.NET クライアント接続（組み込みモードと同一の API）:**
+
+```csharp
+using var conn = new NovaConnection
+{
+    ConnectionString = "Server=127.0.0.1;Port=3306;Database=mydb"
+};
+conn.Open();
+
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT * FROM users WHERE age > 20";
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"name={reader["name"]}");
+}
+```
+
+#### 1.3 パラメータ化クエリ
+
+パラメータ化クエリは `@name` 名前付きパラメータを使用して SQL インジェクションを防止します:
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT * FROM users WHERE age > @minAge AND name LIKE @pattern";
+cmd.Parameters.Add(new NovaParameter("@minAge", 18));
+cmd.Parameters.Add(new NovaParameter("@pattern", "A%"));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"{reader["name"]}, {reader["age"]}");
+}
+```
+
+#### 1.4 トランザクション
+
+NovaDb は MVCC ベースのトランザクション分離を実装しており、デフォルトの分離レベルは Read Committed です:
+
+```csharp
+using var conn = new NovaConnection { ConnectionString = "Data Source=./mydb" };
+conn.Open();
+
+using var tx = conn.BeginTransaction();
+try
+{
+    using var cmd = conn.CreateCommand();
+    cmd.Transaction = tx;
+
+    cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
+    var affected = cmd.ExecuteNonQuery();
+    if (affected == 0) throw new InvalidOperationException("Insufficient stock");
+
+    cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
+    cmd.ExecuteNonQuery();
+
+    tx.Commit();
+}
+catch
+{
+    tx.Rollback();
+    throw;
+}
+```
+
+#### 1.5 JOIN クエリ
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    SELECT o.id, u.name, o.total
+    FROM orders o
+    INNER JOIN users u ON o.user_id = u.id
+    WHERE o.total > @minTotal
+    ORDER BY o.total DESC
+    LIMIT 10";
+cmd.Parameters.Add(new NovaParameter("@minTotal", 100));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"Order {reader["id"]}: {reader["name"]} - ${reader["total"]}");
+}
+```
+
+#### 1.6 接続文字列リファレンス
+
+| パラメータ | 例 | 説明 |
+|-----------|-----|------|
+| `Data Source` | `Data Source=./mydb` | 組み込みモード、データベースフォルダパス |
+| `Server` | `Server=127.0.0.1` | サーバーモード、サーバーアドレス |
+| `Port` | `Port=3306` | サーバーポート（デフォルト 3306） |
+| `Database` | `Database=mydb` | データベース名 |
+| `WalMode` | `WalMode=Full` | WAL モード（Full/Normal/None） |
+| `ReadOnly` | `ReadOnly=true` | 読み取り専用モード |
+
+---
+
+### 2. 時系列データベース（ADO.NET + SQL）
+
+時系列エンジン（Flux Engine）も ADO.NET + SQL 経由でアクセスします。テーブル作成時に `ENGINE=FLUX` を指定します。
+
+#### 2.1 時系列テーブルの作成
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"CREATE TABLE IF NOT EXISTS metrics (
+    timestamp DATETIME,
+    device_id STRING(50),
+    temperature DOUBLE,
+    humidity DOUBLE
+) ENGINE=FLUX";
+cmd.ExecuteNonQuery();
+```
+
+#### 2.2 時系列データの書き込み
+
+```csharp
+// 単一挿入
+cmd.CommandText = @"INSERT INTO metrics (timestamp, device_id, temperature, humidity)
+    VALUES (NOW(), 'sensor-001', 23.5, 65.0)";
+cmd.ExecuteNonQuery();
+
+// バッチ挿入
+cmd.CommandText = @"INSERT INTO metrics (timestamp, device_id, temperature, humidity) VALUES
+    ('2025-07-01 10:00:00', 'sensor-001', 22.1, 60.0),
+    ('2025-07-01 10:01:00', 'sensor-001', 22.3, 61.0),
+    ('2025-07-01 10:02:00', 'sensor-002', 25.0, 55.0)";
+cmd.ExecuteNonQuery();
+```
+
+#### 2.3 時間範囲クエリ
+
+```csharp
+cmd.CommandText = @"SELECT device_id, temperature, humidity, timestamp
+    FROM metrics
+    WHERE timestamp >= @start AND timestamp < @end
+    ORDER BY timestamp DESC";
+cmd.Parameters.Add(new NovaParameter("@start", DateTime.Now.AddHours(-1)));
+cmd.Parameters.Add(new NovaParameter("@end", DateTime.Now));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"[{reader["timestamp"]}] {reader["device_id"]}: " +
+        $"temp={reader["temperature"]}°C, humidity={reader["humidity"]}%");
+}
+```
+
+#### 2.4 集計分析
+
+```csharp
+cmd.CommandText = @"SELECT device_id, COUNT(*) AS cnt, AVG(temperature) AS avg_temp,
+        MIN(temperature) AS min_temp, MAX(temperature) AS max_temp
+    FROM metrics
+    WHERE timestamp >= @start
+    GROUP BY device_id";
+cmd.Parameters.Add(new NovaParameter("@start", DateTime.Now.AddDays(-1)));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"{reader["device_id"]}: avg={reader["avg_temp"]:F1}°C, " +
+        $"min={reader["min_temp"]}°C, max={reader["max_temp"]}°C, count={reader["cnt"]}");
+}
+```
+
+---
+
+### 3. メッセージキュー（NovaClient）
+
+NovaDb は Flux 時系列エンジンに基づいた Redis Stream スタイルのメッセージキューを実装しています。メッセージキューは `NovaClient` RPC インターフェースを通じてアクセスします。
+
+#### 3.1 サーバーへの接続
+
+```csharp
+using NewLife.NovaDb.Client;
+
+using var client = new NovaClient("tcp://127.0.0.1:3306");
+client.Open();
+```
+
+#### 3.2 メッセージの発行
+
+```csharp
+var affected = await client.ExecuteAsync(
+    "INSERT INTO order_events (timestamp, orderId, action, amount) " +
+    "VALUES (NOW(), 10001, 'created', 299.00)");
+Console.WriteLine($"Message published, affected rows: {affected}");
+```
+
+#### 3.3 メッセージの消費
+
+```csharp
+var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
+    "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
+    new { since = DateTime.Now.AddMinutes(-5) });
+```
+
+#### 3.4 ハートビート
+
+```csharp
+var serverTime = await client.PingAsync();
+Console.WriteLine($"Server connected: {serverTime}");
+Console.WriteLine($"Is connected: {client.IsConnected}");
+```
+
+#### 3.5 MQ コア機能
 
 - **メッセージ ID**: タイムスタンプ + シーケンス番号（同じミリ秒内で自動インクリメント）、グローバル順序
 - **コンシューマグループ**: `Topic/Stream` + `ConsumerGroup` + `Consumer` + `Pending`
 - **信頼性**: At-Least-Once、読み取り後に Pending に入り、ビジネス成功後に Ack
 - **データ保持**: TTL をサポート（時間/ファイルサイズで古いシャードを自動削除）
-- **遅延メッセージ**: `DelayTime`/`DeliverAt` を指定（予定）
-- **デッドレターキュー**: 消費失敗時に自動的に DLQ に入る（予定）
-- **ブロッキング読み取り**: ロングポーリング + タイムアウト（予定）
+- **遅延メッセージ**: 遅延時間または正確な配信時刻を指定
+- **デッドレターキュー**: 最大リトライ回数を超えた後、自動的に DLQ に入る
 
-### KV 機能
+---
 
-- `Get(key)` / `Set(key, value, ttl)` / `Delete(key)` / `Exists(key)`
-- 遅延削除（読み取り時に有効期限をチェック） + バックグラウンドクリーンアップ（`CleanupExpired()`）
-- `Add(key, value, ttl)`: キーが存在しない場合にのみ追加（予定）
-- `Inc(key, delta, ttl)`: アトミックインクリメント（予定）
+### 4. KV キーバリューストア（NovaClient）
+
+KV ストレージは `NovaClient` を通じてアクセスします。テーブル作成時に `ENGINE=KV` を指定します。KV テーブルは `Key + Value + TTL` の固定スキーマを持ちます。
+
+#### 4.1 KV テーブルの作成
+
+```csharp
+using var client = new NovaClient("tcp://127.0.0.1:3306");
+client.Open();
+
+await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
+    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+) ENGINE=KV DEFAULT_TTL=7200");
+```
+
+#### 4.2 データの読み書き
+
+```csharp
+// 書き込み（UPSERT セマンティクス）
+await client.ExecuteAsync(
+    "INSERT INTO session_cache (Key, Value, TTL) VALUES ('session:1001', 'user-data', " +
+    "DATEADD(NOW(), 30, 'MINUTE')) ON DUPLICATE KEY UPDATE Value = 'user-data'");
+
+// 読み取り
+var result = await client.QueryAsync<IDictionary<String, Object>[]>(
+    "SELECT Value FROM session_cache WHERE Key = 'session:1001' " +
+    "AND (TTL IS NULL OR TTL > NOW())");
+
+// 削除
+await client.ExecuteAsync("DELETE FROM session_cache WHERE Key = 'session:1001'");
+```
+
+#### 4.3 アトミックインクリメント（カウンター）
+
+```csharp
+await client.ExecuteAsync(
+    "INSERT INTO counters (Key, Value) VALUES ('page:views', 1) " +
+    "ON DUPLICATE KEY UPDATE Value = Value + 1");
+```
+
+#### 4.4 KV 機能概要
+
+| 操作 | 説明 |
+|------|------|
+| `Get` | 遅延 TTL チェック付きで値を読み取り |
+| `Set` | オプションの TTL 付きで値を設定 |
+| `Add` | Key が存在しない場合にのみ追加（分散ロック） |
+| `Delete` | キーを削除 |
+| `Inc` | アトミックインクリメント/デクリメント（カウンター） |
+| `TTL` | 有効期限切れ時に自動的に非表示、定期的なバックグラウンドクリーンアップ |
+
+---
 
 ## データセキュリティと WAL モード
 
@@ -91,6 +425,25 @@ NovaDb は 3 つの WAL 永続化戦略を提供します:
 | `NONE` | 完全非同期、積極的なフラッシュなし | 一時データ/キャッシュシナリオ、最高スループット |
 
 > 同期（`FULL`）以外のモードを選択すると、クラッシュ/停電シナリオでデータ損失が発生する可能性を受け入れることを意味します。
+
+## クラスターデプロイメント
+
+NovaDb は Binlog による非同期データレプリケーションを使用した**1マスタ、複数スレーブ**アーキテクチャをサポートします:
+
+```
+┌──────────┐    Binlog Sync    ┌──────────┐
+│  Master   │ ──────────────→  │  Slave 1  │
+│  (R/W)    │                  │  (R/O)    │
+└──────────┘                  └──────────┘
+      │         Binlog Sync    ┌──────────┐
+      └──────────────────────→ │  Slave 2  │
+                               │  (R/O)    │
+                               └──────────┘
+```
+
+- マスターノードがすべての書き込み操作を処理し、スレーブノードは読み取り専用クエリを提供
+- Binlog による非同期レプリケーション、ブレークポイントからの再開をサポート
+- アプリケーション層が読み書き分離を担当
 
 ## ロードマップ
 
