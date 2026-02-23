@@ -212,7 +212,7 @@ partial class SqlEngine
             "BIGINT" or "INT64" or "LONG" => DataType.Int64,
             "FLOAT" or "DOUBLE" or "REAL" => DataType.Double,
             "DECIMAL" or "NUMERIC" => DataType.Decimal,
-            "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" => DataType.String,
+            "CHAR" or "NCHAR" or "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" => DataType.String,
             "BINARY" or "VARBINARY" or "BYTES" or "BLOB" => DataType.Binary,
             "DATETIME" or "TIMESTAMP" or "DATE" => DataType.DateTime,
             "GEOPOINT" => DataType.GeoPoint,
