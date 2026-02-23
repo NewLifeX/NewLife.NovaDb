@@ -553,6 +553,65 @@ public class SqlEngineTests : IDisposable
 
     #endregion
 
+    #region IN 表达式
+
+    [Fact(DisplayName = "IN 值列表查询")]
+    public void TestInValueList()
+    {
+        _engine.Execute("CREATE TABLE products (id INT PRIMARY KEY, name VARCHAR, price INT)");
+        _engine.Execute("INSERT INTO products (id, name, price) VALUES (1, 'Apple', 10)");
+        _engine.Execute("INSERT INTO products (id, name, price) VALUES (2, 'Banana', 20)");
+        _engine.Execute("INSERT INTO products (id, name, price) VALUES (3, 'Cherry', 30)");
+        _engine.Execute("INSERT INTO products (id, name, price) VALUES (4, 'Date', 40)");
+
+        var result = _engine.Execute("SELECT id, name FROM products WHERE id IN (1, 3)");
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    [Fact(DisplayName = "NOT IN 值列表查询")]
+    public void TestNotInValueList()
+    {
+        _engine.Execute("CREATE TABLE items (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO items (id, name) VALUES (1, 'A')");
+        _engine.Execute("INSERT INTO items (id, name) VALUES (2, 'B')");
+        _engine.Execute("INSERT INTO items (id, name) VALUES (3, 'C')");
+
+        var result = _engine.Execute("SELECT id FROM items WHERE id NOT IN (1, 2)");
+        Assert.Single(result.Rows);
+        Assert.Equal(3, result.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "IN 子查询")]
+    public void TestInSubquery()
+    {
+        _engine.Execute("CREATE TABLE categories (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO categories (id, name) VALUES (1, 'Fruit')");
+        _engine.Execute("INSERT INTO categories (id, name) VALUES (2, 'Vegetable')");
+
+        _engine.Execute("CREATE TABLE goods (id INT PRIMARY KEY, name VARCHAR, cat_id INT)");
+        _engine.Execute("INSERT INTO goods (id, name, cat_id) VALUES (1, 'Apple', 1)");
+        _engine.Execute("INSERT INTO goods (id, name, cat_id) VALUES (2, 'Carrot', 2)");
+        _engine.Execute("INSERT INTO goods (id, name, cat_id) VALUES (3, 'Banana', 1)");
+        _engine.Execute("INSERT INTO goods (id, name, cat_id) VALUES (4, 'Pea', 3)");
+
+        var result = _engine.Execute("SELECT name FROM goods WHERE cat_id IN (SELECT id FROM categories)");
+        Assert.Equal(3, result.Rows.Count);
+    }
+
+    [Fact(DisplayName = "IN 字符串值列表")]
+    public void TestInStringValues()
+    {
+        _engine.Execute("CREATE TABLE colors (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO colors (id, name) VALUES (1, 'red')");
+        _engine.Execute("INSERT INTO colors (id, name) VALUES (2, 'green')");
+        _engine.Execute("INSERT INTO colors (id, name) VALUES (3, 'blue')");
+
+        var result = _engine.Execute("SELECT id FROM colors WHERE name IN ('red', 'blue')");
+        Assert.Equal(2, result.Rows.Count);
+    }
+
+    #endregion
+
     #region 系统表查询
 
     [Fact(DisplayName = "测试 _sys.tables 系统表")]

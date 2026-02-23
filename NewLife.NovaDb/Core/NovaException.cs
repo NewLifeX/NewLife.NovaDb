@@ -97,6 +97,9 @@ public enum ErrorCode
     /// <summary>只读模式下禁止写操作</summary>
     ReadOnlyViolation = 5002,
 
+    /// <summary>操作超时</summary>
+    Timeout = 5003,
+
     /// <summary>I/O 错误</summary>
     IoError = 6000,
 
