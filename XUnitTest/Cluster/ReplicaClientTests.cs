@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.WAL;
@@ -200,5 +200,77 @@ public class ReplicaClientTests : IDisposable
         // 清理缓冲区
         var cleaned = manager.CleanupBuffer();
         Assert.Equal(3, cleaned);
+    }
+
+    [Fact(DisplayName = "测试远程客户端属性")]
+    public void TestRemoteClientProperty()
+    {
+        // 未连接远程时 RemoteClient 为 null
+        Assert.Null(_client.RemoteClient);
+    }
+
+    [Fact(DisplayName = "测试拉取配置")]
+    public void TestPullConfiguration()
+    {
+        using var client = new ReplicaClient(
+            new NodeInfo { NodeId = "slave-2", Endpoint = "127.0.0.1:9002", Role = NodeRole.Slave },
+            "127.0.0.1:9000"
+        );
+
+        // 验证默认配置
+        Assert.Equal(1000, client.PullIntervalMs);
+        Assert.Equal(5000, client.HeartbeatIntervalMs);
+        Assert.Equal(100, client.MaxPullBatchSize);
+        Assert.Equal(3000, client.ReconnectIntervalMs);
+
+        // 修改配置
+        client.PullIntervalMs = 500;
+        client.HeartbeatIntervalMs = 2000;
+        client.MaxPullBatchSize = 50;
+        client.ReconnectIntervalMs = 1000;
+
+        Assert.Equal(500, client.PullIntervalMs);
+        Assert.Equal(2000, client.HeartbeatIntervalMs);
+        Assert.Equal(50, client.MaxPullBatchSize);
+        Assert.Equal(1000, client.ReconnectIntervalMs);
+    }
+
+    [Fact(DisplayName = "测试断开网络连接")]
+    public void TestDisconnectCleansUp()
+    {
+        _client.Connect();
+        Assert.True(_client.IsConnected);
+
+        _client.Disconnect();
+        Assert.False(_client.IsConnected);
+        Assert.Equal(NodeState.Offline, _localNode.State);
+        Assert.Null(_client.RemoteClient);
+    }
+
+    [Fact(DisplayName = "测试PullBinlogResultDto")]
+    public void TestPullBinlogResultDto()
+    {
+        var result = new PullBinlogResultDto
+        {
+            MasterLsn = 100,
+            Events =
+            [
+                new ReplicationEventDto
+                {
+                    Lsn = 1, TxId = 1, RecordType = (Byte)WalRecordType.UpdatePage,
+                    PageId = 10, Data = new Byte[] { 1, 2 }, Timestamp = 12345
+                },
+                new ReplicationEventDto
+                {
+                    Lsn = 2, TxId = 1, RecordType = (Byte)WalRecordType.CommitTx,
+                    PageId = 0, Data = Array.Empty<Byte>(), Timestamp = 12346
+                }
+            ]
+        };
+
+        Assert.Equal(100UL, result.MasterLsn);
+        Assert.Equal(2, result.Events.Length);
+        Assert.Equal(1UL, result.Events[0].Lsn);
+        Assert.Equal(2UL, result.Events[1].Lsn);
     }
 }

@@ -1,4 +1,5 @@
 ﻿using NewLife.Log;
+using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Storage;
@@ -13,6 +14,7 @@ public class NovaServer : DisposeBase
     private readonly Int32 _port;
     private SqlEngine? _sqlEngine;
     private DatabaseManager? _dbManager;
+    private ReplicationManager? _replicationManager;
 
     /// <summary>端口</summary>
     public Int32 Port => _server?.Port ?? _port;
@@ -34,6 +36,15 @@ public class NovaServer : DisposeBase
 
     /// <summary>数据库管理器</summary>
     public DatabaseManager? DbManager => _dbManager;
+
+    /// <summary>复制管理器（主节点模式时可用）</summary>
+    public ReplicationManager? ReplicationManager => _replicationManager;
+
+    /// <summary>节点 ID，用于集群标识</summary>
+    public String NodeId { get; set; } = Guid.NewGuid().ToString("N")[..8];
+
+    /// <summary>节点角色</summary>
+    public NodeRole NodeRole { get; set; } = NodeRole.Master;
 
     /// <summary>创建服务器实例</summary>
     /// <param name="port">监听端口</param>
@@ -60,8 +71,21 @@ public class NovaServer : DisposeBase
 
         _sqlEngine = new SqlEngine(dbPath, dbOptions);
 
+        // 初始化复制管理器（主节点模式）
+        if (NodeRole == NodeRole.Master)
+        {
+            var masterInfo = new NodeInfo
+            {
+                NodeId = NodeId,
+                Endpoint = $"127.0.0.1:{_port}",
+                Role = NodeRole.Master
+            };
+            _replicationManager = new ReplicationManager(Path.Combine(dbPath, "wal"), masterInfo);
+        }
+
         // 设置共享引擎供控制器使用
         NovaController.SharedEngine = _sqlEngine;
+        NovaController.SharedReplication = _replicationManager;
 
         var server = new ApiServer(_port)
         {
@@ -73,16 +97,24 @@ public class NovaServer : DisposeBase
 
         server.Start();
         _server = server;
+
+        // 启动复制循环
+        _replicationManager?.StartReplication();
     }
 
     /// <summary>停止服务器</summary>
     /// <param name="reason">停止原因</param>
     public void Stop(String? reason = null)
     {
+        _replicationManager?.StopReplication();
+        _replicationManager?.Dispose();
+        _replicationManager = null;
+
         _server?.Stop(reason ?? "NovaServer.Stop");
         _server = null;
 
         NovaController.SharedEngine = null;
+        NovaController.SharedReplication = null;
         _sqlEngine?.Dispose();
         _sqlEngine = null;
         _dbManager = null;
@@ -94,11 +126,16 @@ public class NovaServer : DisposeBase
     {
         base.Dispose(disposing);
 
+        _replicationManager?.StopReplication();
+        _replicationManager?.Dispose();
+        _replicationManager = null;
+
         _server?.Stop(disposing ? "Dispose" : "GC");
         _server.TryDispose();
         _server = null;
 
         NovaController.SharedEngine = null;
+        NovaController.SharedReplication = null;
         _sqlEngine?.Dispose();
         _sqlEngine = null;
         _dbManager = null;

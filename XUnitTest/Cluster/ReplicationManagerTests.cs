@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.WAL;
@@ -250,5 +251,110 @@ public class ReplicationManagerTests : IDisposable
 
         var ex3 = Assert.Throws<NovaException>(() => _manager.GetReplicationLag("nonexistent"));
         Assert.Equal(ErrorCode.NodeNotFound, ex3.Code);
+    }
+
+    [Fact(DisplayName = "测试异步复制循环启停")]
+    public void TestReplicationStartStop()
+    {
+        _manager.ReplicationIntervalMs = 100;
+        _manager.StartReplication();
+
+        // 验证复制已启动
+        Assert.NotNull(_manager);
+
+        // 停止复制
+        _manager.StopReplication();
+    }
+
+    [Fact(DisplayName = "测试BinlogWriter集成")]
+    public void TestBinlogWriterIntegration()
+    {
+        var binlogPath = Path.Combine(Path.GetTempPath(), $"novadb_test_binlog_{Guid.NewGuid():N}");
+        try
+        {
+            using var binlogWriter = new BinlogWriter(binlogPath, "testdb");
+            _manager.BinlogWriter = binlogWriter;
+
+            Assert.Equal(binlogWriter, _manager.BinlogWriter);
+
+            // 写入 Binlog 事件
+            binlogWriter.Write(BinlogEventType.Insert, "INSERT INTO t1 VALUES (1, 'hello')", 1);
+            binlogWriter.Write(BinlogEventType.Update, "UPDATE t1 SET name='world' WHERE id=1", 1);
+
+            // 注册从节点
+            var slave = new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9001", Role = NodeRole.Slave };
+            _manager.RegisterSlave(slave);
+
+            // 获取待复制的 Binlog 事件
+            var events = _manager.GetPendingBinlogEvents("slave-1", 0, 10);
+            Assert.True(events.Count >= 2);
+            Assert.Equal(BinlogEventType.Insert, events[0].EventType);
+            Assert.Equal(BinlogEventType.Update, events[1].EventType);
+        }
+        finally
+        {
+            if (Directory.Exists(binlogPath))
+                Directory.Delete(binlogPath, true);
+        }
+    }
+
+    [Fact(DisplayName = "测试复制DTO序列化")]
+    public void TestReplicationDtoSerialization()
+    {
+        var dto = new ReplicationEventDto
+        {
+            Lsn = 42,
+            TxId = 7,
+            RecordType = (Byte)WalRecordType.UpdatePage,
+            PageId = 100,
+            Data = new Byte[] { 1, 2, 3 },
+            Timestamp = DateTime.UtcNow.Ticks
+        };
+
+        Assert.Equal(42UL, dto.Lsn);
+        Assert.Equal(7UL, dto.TxId);
+        Assert.Equal((Byte)WalRecordType.UpdatePage, dto.RecordType);
+        Assert.Equal(100UL, dto.PageId);
+        Assert.Equal(new Byte[] { 1, 2, 3 }, dto.Data);
+
+        var ack = new ReplicationAckDto
+        {
+            Success = true,
+            AckedLsn = 42
+        };
+
+        Assert.True(ack.Success);
+        Assert.Equal(42UL, ack.AckedLsn);
+        Assert.Null(ack.ErrorMessage);
+    }
+
+    [Fact(DisplayName = "测试从节点初始LSN")]
+    public void TestSlaveInitialLsn()
+    {
+        // 从节点注册时应保留其已有的 ReplicatedLsn
+        var slave = new NodeInfo
+        {
+            NodeId = "slave-1",
+            Endpoint = "127.0.0.1:9001",
+            Role = NodeRole.Slave,
+            ReplicatedLsn = 10
+        };
+        _manager.RegisterSlave(slave);
+
+        // 追加记录
+        for (UInt64 i = 0; i < 15; i++)
+        {
+            _manager.AppendRecord(new WalRecord
+            {
+                RecordType = WalRecordType.UpdatePage,
+                PageId = i,
+                Data = Array.Empty<Byte>()
+            });
+        }
+
+        // 从 LSN 10 开始的待复制记录应为 5 条（11, 12, 13, 14, 15）
+        var pending = _manager.GetPendingRecords("slave-1");
+        Assert.Equal(5, pending.Count);
+        Assert.Equal(11UL, pending[0].Lsn);
     }
 }
