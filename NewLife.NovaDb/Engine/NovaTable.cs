@@ -486,10 +486,7 @@ public partial class NovaTable : IDisposable
             var idx = new SkipList<ComparableObject, List<ComparableObject>>();
             _secondaryIndexes[indexDef.IndexName] = idx;
 
-            // 获取索引列的序号
-            var colOrdinals = new Int32[indexDef.Columns.Count];
-            for (var i = 0; i < indexDef.Columns.Count; i++)
-                colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
+            var colOrdinals = GetColumnOrdinals(indexDef);
 
             var pkCol = _schema.GetPrimaryKeyColumn()!;
 
@@ -513,7 +510,7 @@ public partial class NovaTable : IDisposable
                         }
                         else if (indexDef.IsUnique && pkList!.Count > 0)
                         {
-                            throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Duplicate key in unique index '{indexDef.IndexName}'");
+                            throw new NovaException(ErrorCode.UniqueConstraintViolation, $"Duplicate key in unique index '{indexDef.IndexName}'");
                         }
 
                         pkList!.Add(pk);
@@ -557,6 +554,15 @@ public partial class NovaTable : IDisposable
         }
     }
 
+    /// <summary>获取索引定义的列序号数组</summary>
+    private Int32[] GetColumnOrdinals(IndexDefinition indexDef)
+    {
+        var colOrdinals = new Int32[indexDef.Columns.Count];
+        for (var i = 0; i < indexDef.Columns.Count; i++)
+            colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
+        return colOrdinals;
+    }
+
     /// <summary>构建索引键</summary>
     private static ComparableObject BuildIndexKey(Object?[] row, Int32[] colOrdinals)
     {
@@ -579,10 +585,7 @@ public partial class NovaTable : IDisposable
             var indexDef = _schema.GetIndex(kvp.Key);
             if (indexDef == null) continue;
 
-            var colOrdinals = new Int32[indexDef.Columns.Count];
-            for (var i = 0; i < indexDef.Columns.Count; i++)
-                colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
-
+            var colOrdinals = GetColumnOrdinals(indexDef);
             var indexKey = BuildIndexKey(row, colOrdinals);
             var idx = kvp.Value;
 
@@ -593,7 +596,7 @@ public partial class NovaTable : IDisposable
             }
             else if (indexDef.IsUnique && pkList!.Count > 0)
             {
-                throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Duplicate key in unique index '{indexDef.IndexName}'");
+                throw new NovaException(ErrorCode.UniqueConstraintViolation, $"Duplicate key in unique index '{indexDef.IndexName}'");
             }
 
             pkList!.Add(pk);
@@ -608,10 +611,7 @@ public partial class NovaTable : IDisposable
             var indexDef = _schema.GetIndex(kvp.Key);
             if (indexDef == null) continue;
 
-            var colOrdinals = new Int32[indexDef.Columns.Count];
-            for (var i = 0; i < indexDef.Columns.Count; i++)
-                colOrdinals[i] = _schema.GetColumnIndex(indexDef.Columns[i]);
-
+            var colOrdinals = GetColumnOrdinals(indexDef);
             var indexKey = BuildIndexKey(row, colOrdinals);
             var idx = kvp.Value;
 

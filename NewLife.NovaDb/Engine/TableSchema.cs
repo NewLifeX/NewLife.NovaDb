@@ -222,12 +222,8 @@ public class TableSchema
     {
         if (index == null) throw new ArgumentNullException(nameof(index));
 
-        // 检查索引名是否重复
-        foreach (var existing in _indexes)
-        {
-            if (String.Equals(existing.IndexName, index.IndexName, StringComparison.OrdinalIgnoreCase))
-                throw new NovaException(ErrorCode.InvalidArgument, $"Index '{index.IndexName}' already exists");
-        }
+        if (FindIndexByName(index.IndexName) != null)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Index '{index.IndexName}' already exists");
 
         // 验证索引列是否都存在
         foreach (var col in index.Columns)
@@ -245,25 +241,20 @@ public class TableSchema
     {
         if (indexName == null) throw new ArgumentNullException(nameof(indexName));
 
-        var removed = false;
-        for (var i = _indexes.Count - 1; i >= 0; i--)
-        {
-            if (String.Equals(_indexes[i].IndexName, indexName, StringComparison.OrdinalIgnoreCase))
-            {
-                _indexes.RemoveAt(i);
-                removed = true;
-                break;
-            }
-        }
-
-        if (!removed)
+        var idx = FindIndexByName(indexName);
+        if (idx == null)
             throw new NovaException(ErrorCode.InvalidArgument, $"Index '{indexName}' not found");
+
+        _indexes.Remove(idx);
     }
 
     /// <summary>根据索引名获取索引定义</summary>
     /// <param name="indexName">索引名</param>
     /// <returns>索引定义，不存在返回 null</returns>
-    public IndexDefinition? GetIndex(String indexName)
+    public IndexDefinition? GetIndex(String indexName) => FindIndexByName(indexName);
+
+    /// <summary>按名称查找索引定义</summary>
+    private IndexDefinition? FindIndexByName(String indexName)
     {
         foreach (var idx in _indexes)
         {

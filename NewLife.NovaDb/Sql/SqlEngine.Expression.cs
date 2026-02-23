@@ -758,9 +758,9 @@ partial class SqlEngine
             "second" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second / amount * amount),
             "minute" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute / amount * amount, 0),
             "hour" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour / amount * amount, 0, 0),
-            "day" => new DateTime(dt.Year, dt.Month, (dt.Day - 1) / amount * amount + 1),
+            "day" => new DateTime(dt.Year, dt.Month, Math.Min((dt.Day - 1) / amount * amount + 1, DateTime.DaysInMonth(dt.Year, dt.Month))),
             "month" => new DateTime(dt.Year, (dt.Month - 1) / amount * amount + 1, 1),
-            "year" => new DateTime(dt.Year / amount * amount, 1, 1),
+            "year" => new DateTime(dt.Year / amount * amount == 0 ? 1 : dt.Year / amount * amount, 1, 1),
             _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIME_BUCKET unit: {unit}")
         };
     }
