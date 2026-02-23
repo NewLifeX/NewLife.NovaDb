@@ -152,6 +152,30 @@ public class NovaCommandTests : IDisposable
         cmd.Prepare();
     }
 
+    [Fact(DisplayName = "命令-正常执行不超时")]
+    public void ExecuteWithTimeout_NormalExecution()
+    {
+        using var conn = CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "CREATE TABLE timeout_test (id INT PRIMARY KEY, name VARCHAR)";
+        cmd.CommandTimeout = 30;
+        cmd.ExecuteNonQuery();
+
+        cmd.CommandText = "INSERT INTO timeout_test (id, name) VALUES (1, 'test')";
+        var affected = cmd.ExecuteNonQuery();
+        Assert.Equal(1, affected);
+    }
+
+    [Fact(DisplayName = "命令-CommandTimeout为0不超时")]
+    public void ExecuteWithTimeout_ZeroMeansNoTimeout()
+    {
+        using var conn = CreateConnection();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "CREATE TABLE no_timeout (id INT PRIMARY KEY)";
+        cmd.CommandTimeout = 0;
+        cmd.ExecuteNonQuery();
+    }
+
     #endregion
 
     #region ExecuteNonQuery 嵌入模式

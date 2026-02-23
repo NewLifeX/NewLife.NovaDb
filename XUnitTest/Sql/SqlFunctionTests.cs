@@ -536,6 +536,61 @@ public class SqlFunctionTests : IDisposable
         Assert.Equal(expected, r.Rows[0][0]);
     }
 
+    [Fact(DisplayName = "QUARTER 获取季度")]
+    public void TestQuarter()
+    {
+        var r1 = _engine.Execute("SELECT QUARTER('2025-01-15')");
+        Assert.Equal(1, r1.Rows[0][0]);
+
+        var r2 = _engine.Execute("SELECT QUARTER('2025-06-15')");
+        Assert.Equal(2, r2.Rows[0][0]);
+
+        var r3 = _engine.Execute("SELECT QUARTER('2025-09-15')");
+        Assert.Equal(3, r3.Rows[0][0]);
+
+        var r4 = _engine.Execute("SELECT QUARTER('2025-12-15')");
+        Assert.Equal(4, r4.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "WEEK 获取周数")]
+    public void TestWeek()
+    {
+        var r = _engine.Execute("SELECT WEEK('2025-01-01')");
+        Assert.NotNull(r.Rows[0][0]);
+        var weekNum = Convert.ToInt32(r.Rows[0][0]);
+        Assert.InRange(weekNum, 0, 53);
+    }
+
+    [Fact(DisplayName = "ASCII 获取字符ASCII码")]
+    public void TestAscii()
+    {
+        var r = _engine.Execute("SELECT ASCII('A')");
+        Assert.Equal(65, r.Rows[0][0]);
+
+        var r2 = _engine.Execute("SELECT ASCII('abc')");
+        Assert.Equal(97, r2.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "CHAR 码值转字符")]
+    public void TestChar()
+    {
+        var r = _engine.Execute("SELECT CHAR(65)");
+        Assert.Equal("A", r.Rows[0][0]);
+
+        var r2 = _engine.Execute("SELECT CHAR(97)");
+        Assert.Equal("a", r2.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "DATEPART支持QUARTER和WEEK")]
+    public void TestDatePartQuarterWeek()
+    {
+        var r1 = _engine.Execute("SELECT DATEPART('QUARTER', '2025-06-15')");
+        Assert.Equal(2, r1.Rows[0][0]);
+
+        var r2 = _engine.Execute("SELECT DATEPART('WEEK', '2025-01-01')");
+        Assert.NotNull(r2.Rows[0][0]);
+    }
+
     #endregion
 
     #region GeoPoint 函数

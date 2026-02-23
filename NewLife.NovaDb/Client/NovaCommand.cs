@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
+using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Client;
 
@@ -11,6 +12,7 @@ public class NovaCommand : DbCommand
     #region 属性
     private String _commandText = String.Empty;
     private readonly NovaParameterCollection _parameters = [];
+    private CancellationTokenSource? _cts;
 
     /// <summary>SQL 命令文本</summary>
     public override String CommandText
@@ -19,7 +21,7 @@ public class NovaCommand : DbCommand
         set => _commandText = value ?? String.Empty;
     }
 
-    /// <summary>命令超时（秒）</summary>
+    /// <summary>命令超时（秒）。0 表示不超时</summary>
     public override Int32 CommandTimeout { get; set; } = 30;
 
     /// <summary>命令类型</summary>
@@ -43,8 +45,8 @@ public class NovaCommand : DbCommand
 
     #region 方法
 
-    /// <summary>取消命令</summary>
-    public override void Cancel() { }
+    /// <summary>取消正在执行的命令</summary>
+    public override void Cancel() => _cts?.Cancel();
 
     /// <summary>执行非查询命令</summary>
     /// <returns>受影响行数</returns>
@@ -55,7 +57,7 @@ public class NovaCommand : DbCommand
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
         {
-            var result = conn.SqlEngine.Execute(_commandText, BuildParameters());
+            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters()));
             return result.AffectedRows;
         }
 
@@ -75,7 +77,7 @@ public class NovaCommand : DbCommand
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
         {
-            var result = conn.SqlEngine.Execute(_commandText, BuildParameters());
+            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters()));
             return result.GetScalar();
         }
 
@@ -108,7 +110,7 @@ public class NovaCommand : DbCommand
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
         {
-            var result = conn.SqlEngine.Execute(_commandText, BuildParameters());
+            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters()));
             if (result.IsQuery && result.ColumnNames != null)
             {
                 reader.SetColumns(result.ColumnNames);
@@ -137,6 +139,40 @@ public class NovaCommand : DbCommand
     #endregion
 
     #region 辅助
+
+    /// <summary>带超时和取消支持的执行包装</summary>
+    /// <typeparam name="T">返回类型</typeparam>
+    /// <param name="action">执行动作</param>
+    /// <returns>执行结果</returns>
+    private T ExecuteWithTimeout<T>(Func<T> action)
+    {
+        // CommandTimeout 为 0 表示不超时
+        if (CommandTimeout <= 0) return action();
+
+        _cts = new CancellationTokenSource(TimeSpan.FromSeconds(CommandTimeout));
+        try
+        {
+            var task = Task.Run(action, _cts.Token);
+            if (task.Wait(TimeSpan.FromSeconds(CommandTimeout)))
+                return task.Result;
+
+            _cts.Cancel();
+            throw new NovaException(ErrorCode.Timeout, $"Command execution timed out after {CommandTimeout} seconds");
+        }
+        catch (AggregateException ex) when (ex.InnerException is OperationCanceledException)
+        {
+            throw new NovaException(ErrorCode.Timeout, "Command execution was cancelled");
+        }
+        catch (OperationCanceledException)
+        {
+            throw new NovaException(ErrorCode.Timeout, "Command execution was cancelled");
+        }
+        finally
+        {
+            _cts.Dispose();
+            _cts = null;
+        }
+    }
 
     /// <summary>将参数集合转换为字典</summary>
     private Dictionary<String, Object?>? BuildParameters()

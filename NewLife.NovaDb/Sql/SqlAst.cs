@@ -390,7 +390,9 @@ public enum SqlExpressionType
     /// <summary>CASE WHEN 条件表达式</summary>
     CaseWhen,
     /// <summary>CAST 类型转换</summary>
-    CastExpr
+    CastExpr,
+    /// <summary>IN 表达式</summary>
+    In
 }
 
 /// <summary>SQL 表达式基类</summary>
@@ -566,6 +568,25 @@ public class CastExpression : SqlExpression
 
     /// <summary>目标类型名称</summary>
     public String TargetTypeName { get; set; } = String.Empty;
+}
+
+/// <summary>IN / NOT IN 表达式</summary>
+public class InExpression : SqlExpression
+{
+    /// <summary>表达式类型</summary>
+    public override SqlExpressionType ExprType => SqlExpressionType.In;
+
+    /// <summary>左操作数</summary>
+    public SqlExpression Operand { get; set; } = null!;
+
+    /// <summary>值列表</summary>
+    public List<SqlExpression> Values { get; set; } = [];
+
+    /// <summary>子查询（与 Values 互斥）</summary>
+    public SelectStatement? Subquery { get; set; }
+
+    /// <summary>是否为 NOT IN</summary>
+    public Boolean IsNot { get; set; }
 }
 
 #endregion

@@ -48,6 +48,9 @@ partial class SqlEngine
                 var operandVal = EvaluateExpression(isNull.Operand, row, schema, parameters);
                 return isNull.IsNot ? operandVal != null : operandVal == null;
 
+            case InExpression inExpr:
+                return EvaluateInExpression(inExpr, row, schema, parameters);
+
             default:
                 throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type: {expr.ExprType}");
         }
@@ -453,11 +456,34 @@ partial class SqlEngine
                     "MINUTE" => dpDate.Minute,
                     "SECOND" => dpDate.Second,
                     "WEEKDAY" or "DAYOFWEEK" => (Int32)dpDate.DayOfWeek + 1,
+                    "QUARTER" => (dpDate.Month - 1) / 3 + 1,
+                    "WEEK" => System.Globalization.CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
+                        dpDate, System.Globalization.CalendarWeekRule.FirstDay, DayOfWeek.Sunday),
                     _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown DATEPART part: {dpPart}")
                 };
 
             case "WEEKDAY" or "DAYOFWEEK":
                 return args.Count > 0 && args[0] != null ? (Int32)Convert.ToDateTime(args[0]).DayOfWeek + 1 : (Object?)null;
+
+            case "QUARTER":
+                if (args.Count < 1 || args[0] == null) return null;
+                return (Convert.ToDateTime(args[0]).Month - 1) / 3 + 1;
+
+            case "WEEK":
+                if (args.Count < 1 || args[0] == null) return null;
+                var wkDate = Convert.ToDateTime(args[0]);
+                return System.Globalization.CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
+                    wkDate, System.Globalization.CalendarWeekRule.FirstDay, DayOfWeek.Sunday);
+
+            case "ASCII":
+                if (args.Count < 1 || args[0] == null) return null;
+                var ascStr = Convert.ToString(args[0]);
+                return ascStr != null && ascStr.Length > 0 ? (Int32)ascStr[0] : (Object?)null;
+
+            case "CHAR":
+                if (args.Count < 1 || args[0] == null) return null;
+                var charCode = Convert.ToInt32(args[0]);
+                return charCode is >= 0 and <= 0x10FFFF ? ((Char)charCode).ToString() : (Object?)null;
 
             case "LAST_DAY":
                 if (args.Count < 1 || args[0] == null) return null;
@@ -647,6 +673,44 @@ partial class SqlEngine
             "DATETIME" or "TIMESTAMP" or "DATE" => Convert.ToDateTime(value),
             _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown CAST target type: {typeName}")
         };
+    }
+
+    /// <summary>计算 IN / NOT IN 表达式</summary>
+    private Object? EvaluateInExpression(InExpression inExpr, Object?[]? row, TableSchema? schema, Dictionary<String, Object?>? parameters)
+    {
+        var value = EvaluateExpression(inExpr.Operand, row, schema, parameters);
+        if (value == null) return null;
+
+        var found = false;
+
+        if (inExpr.Subquery != null)
+        {
+            // 子查询模式
+            var subResult = ExecuteSelect(inExpr.Subquery, parameters);
+            foreach (var subRow in subResult.Rows)
+            {
+                if (subRow.Length > 0 && CompareValues(value, subRow[0]) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            // 值列表模式
+            foreach (var valExpr in inExpr.Values)
+            {
+                var listVal = EvaluateExpression(valExpr, row, schema, parameters);
+                if (listVal != null && CompareValues(value, listVal) == 0)
+                {
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        return inExpr.IsNot ? !found : found;
     }
 
     #endregion

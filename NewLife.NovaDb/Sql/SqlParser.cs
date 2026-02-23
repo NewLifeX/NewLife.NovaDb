@@ -783,6 +783,21 @@ public class SqlParser
             return new IsNullExpression { Operand = left, IsNot = isNot };
         }
 
+        // NOT IN
+        if (next.Type == SqlTokenType.Not && PeekAt(1).Type == SqlTokenType.In)
+        {
+            Advance(); // NOT
+            Advance(); // IN
+            return ParseInList(left, isNot: true);
+        }
+
+        // IN
+        if (next.Type == SqlTokenType.In)
+        {
+            Advance();
+            return ParseInList(left, isNot: false);
+        }
+
         // LIKE
         if (next.Type == SqlTokenType.Like)
         {
@@ -811,6 +826,33 @@ public class SqlParser
         }
 
         return left;
+    }
+
+    /// <summary>解析 IN 列表：(expr, expr, ...) 或 (SELECT ...)</summary>
+    /// <param name="operand">左操作数</param>
+    /// <param name="isNot">是否 NOT IN</param>
+    private InExpression ParseInList(SqlExpression operand, Boolean isNot)
+    {
+        Expect(SqlTokenType.LeftParen);
+        var inExpr = new InExpression { Operand = operand, IsNot = isNot };
+
+        // 检查是否为子查询
+        if (Peek().Type == SqlTokenType.Select)
+        {
+            inExpr.Subquery = ParseSelect();
+        }
+        else
+        {
+            // 值列表
+            inExpr.Values.Add(ParseExpression());
+            while (TryConsume(SqlTokenType.Comma))
+            {
+                inExpr.Values.Add(ParseExpression());
+            }
+        }
+
+        Expect(SqlTokenType.RightParen);
+        return inExpr;
     }
 
     private SqlExpression ParseAddSub()
@@ -1098,6 +1140,10 @@ public class SqlParser
     #region 辅助
 
     private SqlToken Peek() => _pos < _tokens.Count ? _tokens[_pos] : _tokens[^1];
+
+    /// <summary>向前看指定偏移量的 Token</summary>
+    /// <param name="offset">偏移量</param>
+    private SqlToken PeekAt(Int32 offset) => _pos + offset < _tokens.Count ? _tokens[_pos + offset] : _tokens[^1];
 
     private SqlToken Advance()
     {
