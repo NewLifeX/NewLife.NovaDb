@@ -106,8 +106,8 @@ public class NovaServer : DisposeBase
         // 设置共享引擎供控制器使用
         NovaController.SharedEngine = _sqlEngine;
         NovaController.SharedReplication = _replicationManager;
-        NovaController.SharedKvStore = _kvStore;
-        NovaController.SharedStreamManager = _streamManager;
+        KvController.SharedKvStore = _kvStore;
+        FluxController.SharedStreamManager = _streamManager;
 
         var server = new ApiServer(_port)
         {
@@ -116,6 +116,8 @@ public class NovaServer : DisposeBase
 
         // 注册 NovaDb 业务控制器
         server.Register<NovaController>();
+        server.Register<KvController>();
+        server.Register<FluxController>();
 
         server.Start();
         _server = server;
@@ -137,8 +139,8 @@ public class NovaServer : DisposeBase
 
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
-        NovaController.SharedKvStore = null;
-        NovaController.SharedStreamManager = null;
+        KvController.SharedKvStore = null;
+        FluxController.SharedStreamManager = null;
 
         _streamManager?.Dispose();
         _streamManager = null;
@@ -168,8 +170,8 @@ public class NovaServer : DisposeBase
 
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
-        NovaController.SharedKvStore = null;
-        NovaController.SharedStreamManager = null;
+        KvController.SharedKvStore = null;
+        FluxController.SharedStreamManager = null;
 
         _streamManager?.Dispose();
         _streamManager = null;

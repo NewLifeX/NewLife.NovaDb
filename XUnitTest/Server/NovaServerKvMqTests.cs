@@ -72,7 +72,7 @@ public class NovaServerKvMqTests : IDisposable
         _server.Start();
         var manager = _server.Server!.Manager;
 
-        var kvActions = new[] { "Nova/KvSet", "Nova/KvGet", "Nova/KvDelete", "Nova/KvExists" };
+        var kvActions = new[] { "Kv/Set", "Kv/Get", "Kv/Delete", "Kv/Exists" };
         foreach (var action in kvActions)
         {
             Assert.True(manager.Services.ContainsKey(action), $"Missing KV action: {action}");
@@ -85,7 +85,7 @@ public class NovaServerKvMqTests : IDisposable
         _server.Start();
         var manager = _server.Server!.Manager;
 
-        var mqActions = new[] { "Nova/MqPublish", "Nova/MqCreateGroup", "Nova/MqReadGroup", "Nova/MqAck" };
+        var mqActions = new[] { "Flux/Publish", "Flux/CreateGroup", "Flux/ReadGroup", "Flux/Ack" };
         foreach (var action in mqActions)
         {
             Assert.True(manager.Services.ContainsKey(action), $"Missing MQ action: {action}");

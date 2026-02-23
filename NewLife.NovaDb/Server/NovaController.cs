@@ -1,6 +1,4 @@
 ﻿using NewLife.NovaDb.Cluster;
-using NewLife.NovaDb.Engine.Flux;
-using NewLife.NovaDb.Engine.KV;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Tx;
 using NewLife.NovaDb.WAL;
@@ -8,7 +6,7 @@ using NewLife.Remoting;
 
 namespace NewLife.NovaDb.Server;
 
-/// <summary>NovaDb RPC 服务控制器，提供数据库操作接口</summary>
+/// <summary>NovaDb RPC 服务控制器，提供关系型引擎操作接口</summary>
 /// <remarks>
 /// 控制器方法通过 Remoting RPC 暴露为远程接口。
 /// 路由格式：Nova/{方法名}，如 Nova/Ping、Nova/Execute。
@@ -24,12 +22,6 @@ internal class NovaController : IApi
 
     /// <summary>共享复制管理器，由 NovaServer 启动时设置</summary>
     internal static ReplicationManager? SharedReplication { get; set; }
-
-    /// <summary>共享 KV 存储引擎，由 NovaServer 启动时设置</summary>
-    internal static KvStore? SharedKvStore { get; set; }
-
-    /// <summary>共享流管理器（消息队列），由 NovaServer 启动时设置</summary>
-    internal static StreamManager? SharedStreamManager { get; set; }
 
     /// <summary>共享事务字典，跨请求维护事务状态</summary>
     private static readonly Dictionary<String, Transaction> _transactions = new(StringComparer.OrdinalIgnoreCase);
@@ -114,120 +106,6 @@ internal class NovaController : IApi
             return true;
         }
     }
-
-    #region KV 操作
-    /// <summary>KV 设置键值对</summary>
-    /// <param name="key">键</param>
-    /// <param name="value">字符串值</param>
-    /// <param name="ttlSeconds">过期时间（秒），0 表示永不过期</param>
-    /// <returns>是否成功</returns>
-    public Boolean KvSet(String key, String value, Int32 ttlSeconds = 0)
-    {
-        if (SharedKvStore == null) return false;
-
-        var ttl = ttlSeconds > 0 ? TimeSpan.FromSeconds(ttlSeconds) : (TimeSpan?)null;
-        SharedKvStore.SetString(key, value, ttl);
-        return true;
-    }
-
-    /// <summary>KV 获取值</summary>
-    /// <param name="key">键</param>
-    /// <returns>字符串值，不存在返回 null</returns>
-    public String? KvGet(String key)
-    {
-        if (SharedKvStore == null) return null;
-
-        return SharedKvStore.GetString(key);
-    }
-
-    /// <summary>KV 删除键</summary>
-    /// <param name="key">键</param>
-    /// <returns>是否成功</returns>
-    public Boolean KvDelete(String key)
-    {
-        if (SharedKvStore == null) return false;
-
-        return SharedKvStore.Delete(key);
-    }
-
-    /// <summary>KV 检查键是否存在</summary>
-    /// <param name="key">键</param>
-    /// <returns>是否存在</returns>
-    public Boolean KvExists(String key)
-    {
-        if (SharedKvStore == null) return false;
-
-        return SharedKvStore.Exists(key);
-    }
-    #endregion
-
-    #region 消息队列操作
-    /// <summary>发布消息到流</summary>
-    /// <param name="data">消息字段数据</param>
-    /// <returns>消息 ID 字符串</returns>
-    public String? MqPublish(IDictionary<String, Object?>? data)
-    {
-        if (SharedStreamManager == null) return null;
-
-        var entry = new FluxEntry
-        {
-            Timestamp = DateTime.UtcNow.Ticks,
-        };
-
-        if (data != null)
-        {
-            foreach (var kvp in data)
-            {
-                entry.Fields[kvp.Key] = kvp.Value;
-            }
-        }
-
-        var mid = SharedStreamManager.Publish(entry);
-        return mid.ToString();
-    }
-
-    /// <summary>创建消费组</summary>
-    /// <param name="groupName">消费组名称</param>
-    /// <returns>是否成功</returns>
-    public Boolean MqCreateGroup(String groupName)
-    {
-        if (SharedStreamManager == null) return false;
-
-        SharedStreamManager.CreateConsumerGroup(groupName);
-        return true;
-    }
-
-    /// <summary>消费组读取消息</summary>
-    /// <param name="groupName">消费组名称</param>
-    /// <param name="consumer">消费者名称</param>
-    /// <param name="count">最大读取数量</param>
-    /// <returns>消息列表</returns>
-    public Object? MqReadGroup(String groupName, String consumer, Int32 count = 10)
-    {
-        if (SharedStreamManager == null) return null;
-
-        var entries = SharedStreamManager.ReadGroup(groupName, consumer, count);
-        return entries.Select(e => new
-        {
-            Id = new MessageId(e.Timestamp, e.SequenceId).ToString(),
-            e.Fields
-        }).ToArray();
-    }
-
-    /// <summary>确认消息</summary>
-    /// <param name="groupName">消费组名称</param>
-    /// <param name="messageId">消息 ID 字符串</param>
-    /// <returns>是否成功</returns>
-    public Boolean MqAck(String groupName, String messageId)
-    {
-        if (SharedStreamManager == null) return false;
-
-        var mid = MessageId.Parse(messageId);
-        if (mid == null) return false;
-
-        return SharedStreamManager.Acknowledge(groupName, mid);
-    }
-    #endregion
 
     #region 复制接口
     /// <summary>从节点注册到主节点</summary>

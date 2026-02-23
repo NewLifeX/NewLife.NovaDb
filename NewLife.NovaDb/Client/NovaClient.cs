@@ -126,7 +126,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvSetAsync(String key, String value, Int32 ttlSeconds = 0)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/KvSet", new { key, value, ttlSeconds }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Kv/Set", new { key, value, ttlSeconds }).ConfigureAwait(false);
     }
 
     /// <summary>KV 获取值</summary>
@@ -135,7 +135,7 @@ public class NovaClient : DisposeBase
     public async Task<String?> KvGetAsync(String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<String>("Nova/KvGet", new { key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<String>("Kv/Get", new { key }).ConfigureAwait(false);
     }
 
     /// <summary>KV 删除键</summary>
@@ -144,7 +144,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvDeleteAsync(String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/KvDelete", new { key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Kv/Delete", new { key }).ConfigureAwait(false);
     }
 
     /// <summary>KV 检查键是否存在</summary>
@@ -153,7 +153,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> KvExistsAsync(String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/KvExists", new { key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Kv/Exists", new { key }).ConfigureAwait(false);
     }
     #endregion
 
@@ -164,7 +164,7 @@ public class NovaClient : DisposeBase
     public async Task<String?> MqPublishAsync(IDictionary<String, Object?> data)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<String>("Nova/MqPublish", new { data }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<String>("Flux/Publish", new { data }).ConfigureAwait(false);
     }
 
     /// <summary>创建消费组</summary>
@@ -173,7 +173,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> MqCreateGroupAsync(String groupName)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/MqCreateGroup", new { groupName }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Flux/CreateGroup", new { groupName }).ConfigureAwait(false);
     }
 
     /// <summary>消费组读取消息</summary>
@@ -184,7 +184,7 @@ public class NovaClient : DisposeBase
     public async Task<Object?> MqReadGroupAsync(String groupName, String consumer, Int32 count = 10)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Object>("Nova/MqReadGroup", new { groupName, consumer, count }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Object>("Flux/ReadGroup", new { groupName, consumer, count }).ConfigureAwait(false);
     }
 
     /// <summary>确认消息</summary>
@@ -194,7 +194,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> MqAckAsync(String groupName, String messageId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/MqAck", new { groupName, messageId }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Flux/Ack", new { groupName, messageId }).ConfigureAwait(false);
     }
     #endregion
 
