@@ -464,6 +464,49 @@ public class SqlParserTests
 
     #endregion
 
+    #region MERGE INTO 解析
+
+    [Fact(DisplayName = "测试 MERGE INTO 解析")]
+    public void TestParseMerge()
+    {
+        var parser = new SqlParser("MERGE INTO users (id, name, age) VALUES (1, 'Alice', 25)");
+        var stmt = parser.Parse();
+
+        Assert.IsType<MergeStatement>(stmt);
+        var merge = (MergeStatement)stmt;
+        Assert.Equal("users", merge.TableName);
+        Assert.Equal(SqlStatementType.Merge, merge.StatementType);
+        Assert.NotNull(merge.Columns);
+        Assert.Equal(3, merge.Columns!.Count);
+        Assert.Single(merge.ValuesList);
+        Assert.Equal(3, merge.ValuesList[0].Count);
+    }
+
+    [Fact(DisplayName = "测试 MERGE INTO 无列名解析")]
+    public void TestParseMergeWithoutColumns()
+    {
+        var parser = new SqlParser("MERGE INTO users VALUES (1, 'Alice', 25)");
+        var stmt = parser.Parse();
+
+        Assert.IsType<MergeStatement>(stmt);
+        var merge = (MergeStatement)stmt;
+        Assert.Null(merge.Columns);
+        Assert.Single(merge.ValuesList);
+    }
+
+    [Fact(DisplayName = "测试 MERGE INTO 多行解析")]
+    public void TestParseMergeMultiRow()
+    {
+        var parser = new SqlParser("MERGE INTO users VALUES (1, 'Alice', 25), (2, 'Bob', 30)");
+        var stmt = parser.Parse();
+
+        Assert.IsType<MergeStatement>(stmt);
+        var merge = (MergeStatement)stmt;
+        Assert.Equal(2, merge.ValuesList.Count);
+    }
+
+    #endregion
+
     #region TRUNCATE 解析
 
     [Fact(DisplayName = "测试 TRUNCATE TABLE 解析")]

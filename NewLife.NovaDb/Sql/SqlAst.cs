@@ -31,6 +31,8 @@ public enum SqlStatementType
     TruncateTable,
     /// <summary>UPSERT（INSERT ... ON DUPLICATE KEY UPDATE）</summary>
     Upsert,
+    /// <summary>MERGE INTO（冲突时自动更新）</summary>
+    Merge,
     /// <summary>EXPLAIN 查询计划</summary>
     Explain
 }
@@ -216,6 +218,22 @@ public class InsertStatement : SqlStatement
 {
     /// <summary>语句类型</summary>
     public override SqlStatementType StatementType => SqlStatementType.Insert;
+
+    /// <summary>表名</summary>
+    public String TableName { get; set; } = String.Empty;
+
+    /// <summary>列名列表（可选）</summary>
+    public List<String>? Columns { get; set; }
+
+    /// <summary>值列表（多行插入）</summary>
+    public List<List<SqlExpression>> ValuesList { get; set; } = [];
+}
+
+/// <summary>MERGE INTO 语句（冲突时自动更新非键列）</summary>
+public class MergeStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.Merge;
 
     /// <summary>表名</summary>
     public String TableName { get; set; } = String.Empty;

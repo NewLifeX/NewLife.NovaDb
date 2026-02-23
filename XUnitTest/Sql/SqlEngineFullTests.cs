@@ -716,4 +716,136 @@ public class SqlEngineFullTests : IDisposable
     }
 
     #endregion
+
+    #region MERGE INTO 测试
+
+    [Fact(DisplayName = "MERGE INTO 行不存在时执行插入")]
+    public void MergeInsertWhenNotExists()
+    {
+        CreateUsersTable();
+
+        var result = _engine.Execute("MERGE INTO users (id, name, age) VALUES (1, 'Alice', 25)");
+        Assert.Equal(1, result.AffectedRows);
+
+        var select = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Single(select.Rows!);
+        Assert.Equal("Alice", select.Rows![0][1]);
+        Assert.Equal(25, select.Rows![0][2]);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 主键冲突时执行更新")]
+    public void MergeUpdateWhenPkConflict()
+    {
+        SeedUsers();
+
+        var result = _engine.Execute("MERGE INTO users VALUES (1, 'AliceUpdated', 99)");
+        Assert.Equal(1, result.AffectedRows);
+
+        var select = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Single(select.Rows!);
+        Assert.Equal("AliceUpdated", select.Rows![0][1]);
+        Assert.Equal(99, select.Rows![0][2]);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 不指定列名")]
+    public void MergeWithoutColumns()
+    {
+        SeedUsers();
+
+        _engine.Execute("MERGE INTO users VALUES (1, 'Updated', 88)");
+
+        var select = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Single(select.Rows!);
+        Assert.Equal("Updated", select.Rows![0][1]);
+        Assert.Equal(88, select.Rows![0][2]);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 指定部分列名")]
+    public void MergeWithPartialColumns()
+    {
+        SeedUsers();
+
+        _engine.Execute("MERGE INTO users (id, name) VALUES (1, 'NewName')");
+
+        var select = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Single(select.Rows!);
+        Assert.Equal("NewName", select.Rows![0][1]);
+        // age 保持原值
+        Assert.Equal(25, select.Rows![0][2]);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 多行混合插入和更新")]
+    public void MergeMultipleRowsMixed()
+    {
+        SeedUsers();
+
+        // id=1 已存在 → 更新；id=10 不存在 → 插入
+        var result = _engine.Execute("MERGE INTO users VALUES (1, 'AliceNew', 50), (10, 'Dave', 40)");
+        Assert.Equal(2, result.AffectedRows);
+
+        var select1 = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Equal("AliceNew", select1.Rows![0][1]);
+        Assert.Equal(50, select1.Rows![0][2]);
+
+        var select2 = _engine.Execute("SELECT * FROM users WHERE id = 10");
+        Assert.Single(select2.Rows!);
+        Assert.Equal("Dave", select2.Rows![0][1]);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 唯一索引冲突时执行更新")]
+    public void MergeUpdateOnUniqueIndexConflict()
+    {
+        CreateUsersTable();
+        _engine.Execute("CREATE UNIQUE INDEX idx_name ON users (name)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 25)");
+
+        // 唯一索引冲突：name='Alice' 已存在
+        var result = _engine.Execute("MERGE INTO users VALUES (99, 'Alice', 99)");
+        Assert.Equal(1, result.AffectedRows);
+
+        // 应该更新已有行的 age，而非插入新行
+        var select = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Single(select.Rows!);
+        Assert.Equal("Alice", select.Rows![0][1]);
+        Assert.Equal(99, select.Rows![0][2]);
+
+        // 不应有 id=99 的行
+        var select2 = _engine.Execute("SELECT * FROM users WHERE id = 99");
+        Assert.Empty(select2.Rows!);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 使用参数化值")]
+    public void MergeWithParameters()
+    {
+        SeedUsers();
+
+        var parameters = new Dictionary<String, Object?>
+        {
+            ["@id"] = 1,
+            ["@name"] = "ParamAlice",
+            ["@age"] = 77
+        };
+
+        var result = _engine.Execute(
+            "MERGE INTO users (id, name, age) VALUES (@id, @name, @age)",
+            parameters);
+        Assert.Equal(1, result.AffectedRows);
+
+        var select = _engine.Execute("SELECT * FROM users WHERE id = 1");
+        Assert.Equal("ParamAlice", select.Rows![0][1]);
+        Assert.Equal(77, select.Rows![0][2]);
+    }
+
+    [Fact(DisplayName = "MERGE INTO 计入 InsertCount")]
+    public void MergeTrackedAsInsert()
+    {
+        CreateUsersTable();
+        var beforeInsert = _engine.Metrics.InsertCount;
+
+        _engine.Execute("MERGE INTO users VALUES (1, 'Alice', 25)");
+
+        Assert.Equal(beforeInsert + 1, _engine.Metrics.InsertCount);
+    }
+
+    #endregion
 }

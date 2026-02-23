@@ -120,6 +120,7 @@ public partial class SqlEngine : IDisposable
             // DML 语句
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters), sql),
             UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters), sql),
+            MergeStatement merge => TrackInsert(ExecuteMerge(merge, parameters), sql),
             UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters), sql),
             DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters), sql),
 

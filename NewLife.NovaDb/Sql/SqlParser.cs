@@ -28,6 +28,7 @@ public class SqlParser
         {
             SqlTokenType.Select => (SqlStatement)ParseSelect(),
             SqlTokenType.Insert => ParseInsert(),
+            SqlTokenType.Merge => ParseMerge(),
             SqlTokenType.Update => ParseUpdate(),
             SqlTokenType.Delete => ParseDelete(),
             SqlTokenType.Create => ParseCreate(),
@@ -453,6 +454,57 @@ public class SqlParser
         }
 
         return new InsertStatement
+        {
+            TableName = tableName,
+            Columns = columns,
+            ValuesList = valuesList
+        };
+    }
+
+    private MergeStatement ParseMerge()
+    {
+        Expect(SqlTokenType.Merge);
+        Expect(SqlTokenType.Into);
+
+        var tableName = ExpectIdentifier();
+
+        // 可选的列名列表
+        List<String>? columns = null;
+        if (Peek().Type == SqlTokenType.LeftParen)
+        {
+            Advance();
+            columns = [];
+
+            do
+            {
+                columns.Add(ExpectIdentifier());
+            }
+            while (TryConsume(SqlTokenType.Comma));
+
+            Expect(SqlTokenType.RightParen);
+        }
+
+        Expect(SqlTokenType.Values);
+
+        // 解析一组或多组值
+        var valuesList = new List<List<SqlExpression>>();
+        do
+        {
+            Expect(SqlTokenType.LeftParen);
+            var values = new List<SqlExpression>();
+
+            do
+            {
+                values.Add(ParseExpression());
+            }
+            while (TryConsume(SqlTokenType.Comma));
+
+            Expect(SqlTokenType.RightParen);
+            valuesList.Add(values);
+        }
+        while (TryConsume(SqlTokenType.Comma));
+
+        return new MergeStatement
         {
             TableName = tableName,
             Columns = columns,

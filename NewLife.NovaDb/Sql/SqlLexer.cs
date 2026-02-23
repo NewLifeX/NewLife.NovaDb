@@ -76,6 +76,7 @@ public class SqlLexer
         ["TRUNCATE"] = SqlTokenType.Truncate,
         ["DUPLICATE"] = SqlTokenType.Duplicate,
         ["EXPLAIN"] = SqlTokenType.Explain,
+        ["MERGE"] = SqlTokenType.Merge,
     };
 
     /// <summary>创建词法分析器</summary>

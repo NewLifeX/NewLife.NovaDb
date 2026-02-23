@@ -132,6 +132,8 @@ public enum SqlTokenType
     Duplicate,
     /// <summary>EXPLAIN</summary>
     Explain,
+    /// <summary>MERGE</summary>
+    Merge,
 
     // 标识符与字面量
     /// <summary>标识符</summary>
