@@ -230,7 +230,8 @@ public class AuthManager
     private static String HashPassword(String password)
     {
         var bytes = System.Text.Encoding.UTF8.GetBytes(password);
-        var hash = System.Security.Cryptography.SHA256.Create().ComputeHash(bytes);
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hash = sha256.ComputeHash(bytes);
         return Convert.ToBase64String(hash);
     }
 }
