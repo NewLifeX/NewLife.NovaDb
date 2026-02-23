@@ -516,6 +516,28 @@ partial class SqlEngine
                     _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIMESTAMPDIFF unit: {tdUnit}")
                 };
 
+            case "TIMESTAMPADD":
+                if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
+                var taUnit = Convert.ToString(args[0])!.ToUpper();
+                var taAmount = Convert.ToInt32(args[1]);
+                var taDate = Convert.ToDateTime(args[2]);
+                return taUnit switch
+                {
+                    "YEAR" => taDate.AddYears(taAmount),
+                    "MONTH" => taDate.AddMonths(taAmount),
+                    "DAY" => taDate.AddDays(taAmount),
+                    "HOUR" => taDate.AddHours(taAmount),
+                    "MINUTE" => taDate.AddMinutes(taAmount),
+                    "SECOND" => taDate.AddSeconds(taAmount),
+                    _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIMESTAMPADD unit: {taUnit}")
+                };
+
+            case "TIME_BUCKET":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                var tbBucket = Convert.ToString(args[0])!.Trim().ToLower();
+                var tbDate2 = Convert.ToDateTime(args[1]);
+                return ParseTimeBucket(tbBucket, tbDate2);
+
             // 类型转换函数
             case "CONVERT":
                 if (args.Count < 2) return null;
@@ -604,6 +626,10 @@ partial class SqlEngine
             case "DISTANCE":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
                 return ((GeoPoint)args[0]!).Distance((GeoPoint)args[1]!);
+
+            case "DISTANCE_KM":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return null;
+                return ((GeoPoint)args[0]!).Distance((GeoPoint)args[1]!) / 1000.0;
 
             case "WITHIN_RADIUS":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
@@ -711,6 +737,32 @@ partial class SqlEngine
         }
 
         return inExpr.IsNot ? !found : found;
+    }
+
+    /// <summary>解析时间分桶表达式，将时间对齐到指定桶边界</summary>
+    /// <param name="bucket">桶大小表达式，如 "1 hour"、"5 minute"、"1 day"</param>
+    /// <param name="dt">待对齐的时间</param>
+    /// <returns>对齐后的时间</returns>
+    private static DateTime ParseTimeBucket(String bucket, DateTime dt)
+    {
+        // 解析桶大小，格式如 "1 hour", "5 minute", "1 day"
+        var parts = bucket.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2) throw new NovaException(ErrorCode.InvalidArgument, $"Invalid TIME_BUCKET format: {bucket}");
+
+        var amount = Convert.ToInt32(parts[0]);
+        if (amount <= 0) throw new NovaException(ErrorCode.InvalidArgument, $"TIME_BUCKET amount must be positive: {amount}");
+
+        var unit = parts[1].TrimEnd('s').ToLower();
+        return unit switch
+        {
+            "second" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second / amount * amount),
+            "minute" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute / amount * amount, 0),
+            "hour" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour / amount * amount, 0, 0),
+            "day" => new DateTime(dt.Year, dt.Month, (dt.Day - 1) / amount * amount + 1),
+            "month" => new DateTime(dt.Year, (dt.Month - 1) / amount * amount + 1, 1),
+            "year" => new DateTime(dt.Year / amount * amount, 1, 1),
+            _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIME_BUCKET unit: {unit}")
+        };
     }
 
     #endregion

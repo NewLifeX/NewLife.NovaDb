@@ -696,4 +696,86 @@ public class SqlFunctionTests : IDisposable
     }
 
     #endregion
+
+    #region 新增函数测试
+
+    [Fact(DisplayName = "TIMESTAMPADD 按天加减")]
+    public void TestTimestampAddDay()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPADD('DAY', 5, '2025-06-10')");
+        var result = Convert.ToDateTime(r.Rows[0][0]);
+        Assert.Equal(new DateTime(2025, 6, 15), result);
+    }
+
+    [Fact(DisplayName = "TIMESTAMPADD 按月加减")]
+    public void TestTimestampAddMonth()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPADD('MONTH', 3, '2025-01-15')");
+        var result = Convert.ToDateTime(r.Rows[0][0]);
+        Assert.Equal(new DateTime(2025, 4, 15), result);
+    }
+
+    [Fact(DisplayName = "TIMESTAMPADD 按小时加减")]
+    public void TestTimestampAddHour()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPADD('HOUR', 4, '2025-06-15 10:00:00')");
+        var result = Convert.ToDateTime(r.Rows[0][0]);
+        Assert.Equal(new DateTime(2025, 6, 15, 14, 0, 0), result);
+    }
+
+    [Fact(DisplayName = "TIMESTAMPADD NULL 参数返回 NULL")]
+    public void TestTimestampAddNull()
+    {
+        var r = _engine.Execute("SELECT TIMESTAMPADD('DAY', NULL, '2025-06-10')");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "TIME_BUCKET 按小时分桶")]
+    public void TestTimeBucketHour()
+    {
+        var r = _engine.Execute("SELECT TIME_BUCKET('1 hour', '2025-06-15 14:35:22')");
+        var result = Convert.ToDateTime(r.Rows[0][0]);
+        Assert.Equal(new DateTime(2025, 6, 15, 14, 0, 0), result);
+    }
+
+    [Fact(DisplayName = "TIME_BUCKET 按5分钟分桶")]
+    public void TestTimeBucket5Minutes()
+    {
+        var r = _engine.Execute("SELECT TIME_BUCKET('5 minutes', '2025-06-15 14:37:22')");
+        var result = Convert.ToDateTime(r.Rows[0][0]);
+        Assert.Equal(new DateTime(2025, 6, 15, 14, 35, 0), result);
+    }
+
+    [Fact(DisplayName = "TIME_BUCKET 按天分桶")]
+    public void TestTimeBucketDay()
+    {
+        var r = _engine.Execute("SELECT TIME_BUCKET('1 day', '2025-06-15 14:35:22')");
+        var result = Convert.ToDateTime(r.Rows[0][0]);
+        Assert.Equal(new DateTime(2025, 6, 15), result);
+    }
+
+    [Fact(DisplayName = "TIME_BUCKET NULL 参数返回 NULL")]
+    public void TestTimeBucketNull()
+    {
+        var r = _engine.Execute("SELECT TIME_BUCKET(NULL, '2025-06-15')");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "DISTANCE_KM 计算两点距离（公里）")]
+    public void TestDistanceKm()
+    {
+        var r = _engine.Execute("SELECT DISTANCE_KM(GEOPOINT(39.9042, 116.4074), GEOPOINT(31.2304, 121.4737))");
+        var distance = Convert.ToDouble(r.Rows[0][0]);
+        // 北京到上海约 1068 km
+        Assert.InRange(distance, 1050, 1090);
+    }
+
+    [Fact(DisplayName = "DISTANCE_KM NULL 参数返回 NULL")]
+    public void TestDistanceKmNull()
+    {
+        var r = _engine.Execute("SELECT DISTANCE_KM(NULL, GEOPOINT(31.2304, 121.4737))");
+        Assert.Null(r.Rows[0][0]);
+    }
+
+    #endregion
 }
