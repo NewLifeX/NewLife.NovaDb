@@ -1,6 +1,8 @@
 ﻿using NewLife.Log;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Engine.Flux;
+using NewLife.NovaDb.Engine.KV;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Storage;
 using NewLife.Remoting;
@@ -15,6 +17,9 @@ public class NovaServer : DisposeBase
     private SqlEngine? _sqlEngine;
     private DatabaseManager? _dbManager;
     private ReplicationManager? _replicationManager;
+    private KvStore? _kvStore;
+    private FluxEngine? _fluxEngine;
+    private StreamManager? _streamManager;
 
     /// <summary>端口</summary>
     public Int32 Port => _server?.Port ?? _port;
@@ -39,6 +44,12 @@ public class NovaServer : DisposeBase
 
     /// <summary>复制管理器（主节点模式时可用）</summary>
     public ReplicationManager? ReplicationManager => _replicationManager;
+
+    /// <summary>KV 存储引擎</summary>
+    public KvStore? KvStore => _kvStore;
+
+    /// <summary>流管理器（消息队列）</summary>
+    public StreamManager? StreamManager => _streamManager;
 
     /// <summary>节点 ID，用于集群标识</summary>
     public String NodeId { get; set; } = Guid.NewGuid().ToString("N")[..8];
@@ -71,6 +82,15 @@ public class NovaServer : DisposeBase
 
         _sqlEngine = new SqlEngine(dbPath, dbOptions);
 
+        // 初始化 KV 存储引擎
+        var kvPath = Path.Combine(dbPath, "kv");
+        _kvStore = new KvStore(dbOptions, kvPath);
+
+        // 初始化消息队列引擎
+        var mqPath = Path.Combine(dbPath, "mq");
+        _fluxEngine = new FluxEngine(mqPath, dbOptions);
+        _streamManager = new StreamManager(_fluxEngine);
+
         // 初始化复制管理器（主节点模式）
         if (NodeRole == NodeRole.Master)
         {
@@ -86,6 +106,8 @@ public class NovaServer : DisposeBase
         // 设置共享引擎供控制器使用
         NovaController.SharedEngine = _sqlEngine;
         NovaController.SharedReplication = _replicationManager;
+        NovaController.SharedKvStore = _kvStore;
+        NovaController.SharedStreamManager = _streamManager;
 
         var server = new ApiServer(_port)
         {
@@ -115,6 +137,16 @@ public class NovaServer : DisposeBase
 
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
+        NovaController.SharedKvStore = null;
+        NovaController.SharedStreamManager = null;
+
+        _streamManager?.Dispose();
+        _streamManager = null;
+        _fluxEngine?.Dispose();
+        _fluxEngine = null;
+        _kvStore?.CloseKvLog();
+        _kvStore = null;
+
         _sqlEngine?.Dispose();
         _sqlEngine = null;
         _dbManager = null;
@@ -136,6 +168,16 @@ public class NovaServer : DisposeBase
 
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
+        NovaController.SharedKvStore = null;
+        NovaController.SharedStreamManager = null;
+
+        _streamManager?.Dispose();
+        _streamManager = null;
+        _fluxEngine?.Dispose();
+        _fluxEngine = null;
+        _kvStore?.CloseKvLog();
+        _kvStore = null;
+
         _sqlEngine?.Dispose();
         _sqlEngine = null;
         _dbManager = null;

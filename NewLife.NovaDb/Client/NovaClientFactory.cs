@@ -25,6 +25,9 @@ public sealed class NovaClientFactory : DbProviderFactory
 
     /// <summary>性能跟踪器</summary>
     public ITracer? Tracer { get; set; }
+
+    /// <summary>连接池管理器</summary>
+    public NovaPoolManager PoolManager { get; } = new();
     #endregion
 
     #region 静态

@@ -15,6 +15,7 @@ public class NovaConnection : DbConnection
     private String _database = String.Empty;
     private NovaClient? _client;
     private SqlEngine? _sqlEngine;
+    private Boolean _fromPool;
 
     /// <summary>连接字符串设置</summary>
     public NovaConnectionStringBuilder Setting { get; } = [];
@@ -96,10 +97,10 @@ public class NovaConnection : DbConnection
         }
         else
         {
-            var server = Setting.Server;
-            var port = Setting.Port;
-            _client = new NovaClient($"tcp://{server}:{port}");
-            _client.Open();
+            // 从连接池获取客户端
+            var pool = Factory.PoolManager.GetPool(Setting);
+            _client = pool.Get();
+            _fromPool = true;
         }
 
         _state = ConnectionState.Open;
@@ -110,8 +111,19 @@ public class NovaConnection : DbConnection
     {
         if (_state == ConnectionState.Closed) return;
 
-        _client?.Close("Connection.Close");
-        _client = null;
+        // 如果客户端来自连接池，归还而非关闭
+        if (_fromPool && _client != null)
+        {
+            var pool = Factory.PoolManager.GetPool(Setting);
+            pool.Return(_client);
+            _client = null;
+            _fromPool = false;
+        }
+        else
+        {
+            _client?.Close("Connection.Close");
+            _client = null;
+        }
 
         _sqlEngine?.Dispose();
         _sqlEngine = null;
@@ -152,9 +164,20 @@ public class NovaConnection : DbConnection
     {
         base.Dispose(disposing);
 
-        _client?.Close(disposing ? "Dispose" : "GC");
-        _client?.Dispose();
-        _client = null;
+        // 如果客户端来自连接池，归还而非销毁
+        if (_fromPool && _client != null)
+        {
+            var pool = Factory.PoolManager.GetPool(Setting);
+            pool.Return(_client);
+            _client = null;
+            _fromPool = false;
+        }
+        else
+        {
+            _client?.Close(disposing ? "Dispose" : "GC");
+            _client?.Dispose();
+            _client = null;
+        }
 
         _sqlEngine?.Dispose();
         _sqlEngine = null;

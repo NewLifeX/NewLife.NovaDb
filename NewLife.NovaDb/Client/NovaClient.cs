@@ -117,6 +117,87 @@ public class NovaClient : DisposeBase
     }
     #endregion
 
+    #region KV 操作
+    /// <summary>KV 设置键值对</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">值</param>
+    /// <param name="ttlSeconds">过期时间（秒），0 表示永不过期</param>
+    /// <returns>是否成功</returns>
+    public async Task<Boolean> KvSetAsync(String key, String value, Int32 ttlSeconds = 0)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Boolean>("Nova/KvSet", new { key, value, ttlSeconds }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 获取值</summary>
+    /// <param name="key">键</param>
+    /// <returns>值，不存在返回 null</returns>
+    public async Task<String?> KvGetAsync(String key)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<String>("Nova/KvGet", new { key }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 删除键</summary>
+    /// <param name="key">键</param>
+    /// <returns>是否成功</returns>
+    public async Task<Boolean> KvDeleteAsync(String key)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Boolean>("Nova/KvDelete", new { key }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 检查键是否存在</summary>
+    /// <param name="key">键</param>
+    /// <returns>是否存在</returns>
+    public async Task<Boolean> KvExistsAsync(String key)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Boolean>("Nova/KvExists", new { key }).ConfigureAwait(false);
+    }
+    #endregion
+
+    #region 消息队列操作
+    /// <summary>发布消息到流</summary>
+    /// <param name="data">消息数据（JSON 格式的字段字典）</param>
+    /// <returns>消息 ID</returns>
+    public async Task<String?> MqPublishAsync(IDictionary<String, Object?> data)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<String>("Nova/MqPublish", new { data }).ConfigureAwait(false);
+    }
+
+    /// <summary>创建消费组</summary>
+    /// <param name="groupName">消费组名称</param>
+    /// <returns>是否成功</returns>
+    public async Task<Boolean> MqCreateGroupAsync(String groupName)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Boolean>("Nova/MqCreateGroup", new { groupName }).ConfigureAwait(false);
+    }
+
+    /// <summary>消费组读取消息</summary>
+    /// <param name="groupName">消费组名称</param>
+    /// <param name="consumer">消费者名称</param>
+    /// <param name="count">最大读取数量</param>
+    /// <returns>消息列表</returns>
+    public async Task<Object?> MqReadGroupAsync(String groupName, String consumer, Int32 count = 10)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Object>("Nova/MqReadGroup", new { groupName, consumer, count }).ConfigureAwait(false);
+    }
+
+    /// <summary>确认消息</summary>
+    /// <param name="groupName">消费组名称</param>
+    /// <param name="messageId">消息 ID</param>
+    /// <returns>是否成功</returns>
+    public async Task<Boolean> MqAckAsync(String groupName, String messageId)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Boolean>("Nova/MqAck", new { groupName, messageId }).ConfigureAwait(false);
+    }
+    #endregion
+
     #region 释放
     /// <summary>释放资源</summary>
     /// <param name="disposing">是否由 Dispose 调用</param>
