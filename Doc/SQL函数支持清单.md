@@ -145,7 +145,7 @@
 |------|------|------|------|
 | `DATEPART` | `DATEPART(part, dt)` | SQL Server 风格，支持 QUARTER/WEEK | ✅ |
 | `DATE_FORMAT` | `DATE_FORMAT(dt, format)` | MySQL 风格 `'%Y-%m-%d'` | ✅ |
-| `TIME_BUCKET` | `TIME_BUCKET(bucket, dt)` | 时序聚合，bucket 如 `'1 hour'` | ❌ |
+| `TIME_BUCKET` | `TIME_BUCKET(bucket, dt)` | 时序聚合，bucket 如 `'1 hour'` | ✅ |
 | `WEEKDAY` | `WEEKDAY(dt)` | 0=周日~6=周六 | ✅ |
 | `DAYOFWEEK` | `DAYOFWEEK(dt)` | 1=周日~7=周六 | ✅ |
 | `QUARTER` | `QUARTER(dt)` | 1~4 | ✅ |
@@ -181,7 +181,7 @@
 |------|------|------|------|
 | `GEOPOINT` | `GEOPOINT(lat, lon)` | 构造地理坐标点 | ✅ |
 | `DISTANCE` | `DISTANCE(p1, p2)` | 两点距离（米），Haversine | ✅ |
-| `DISTANCE_KM` | `DISTANCE_KM(p1, p2)` | 两点距离（公里） | ❌ |
+| `DISTANCE_KM` | `DISTANCE_KM(p1, p2)` | 两点距离（公里） | ✅ |
 | `WITHIN_RADIUS` | `WITHIN_RADIUS(p, center, radius)` | 是否在半径内（米） | ✅ |
 | `WITHIN_POLYGON` | `WITHIN_POLYGON(p, polygon_wkt)` | 是否在多边形内 | ❌ |
 
@@ -229,7 +229,7 @@
 |------|------|------|------|
 | `LAST_DAY` | `LAST_DAY(dt)` | 当月最后一天 | ✅ |
 | `TIMESTAMPDIFF` | `TIMESTAMPDIFF(unit, dt1, dt2)` | 时间差（指定单位） | ✅ |
-| `TIMESTAMPADD` | `TIMESTAMPADD(unit, n, dt)` | 时间加减（指定单位） | ❌ |
+| `TIMESTAMPADD` | `TIMESTAMPADD(unit, n, dt)` | 时间加减（指定单位） | ✅ |
 
 ### 4.5 系统
 
@@ -245,19 +245,16 @@
 | 优先级 | 总数 | 已实现 | 未实现 | 完成率 |
 |--------|------|--------|--------|--------|
 | P0 | 38 | 38 | 0 | 100% |
-| P1 | 27 | 24 | 3 | 89% |
-| P2 | 14 | 12 | 2 | 86% |
-| **合计** | **79** | **74** | **5** | **94%** |
+| P1 | 27 | 26 | 1 | 96% |
+| P2 | 14 | 13 | 1 | 93% |
+| **合计** | **79** | **77** | **2** | **97%** |
 
 ### 待实现函数清单
 
 | 优先级 | 函数 | 类别 | 说明 |
 |--------|------|------|------|
-| P1 | `TIME_BUCKET` | 日期时间 | 时序聚合分桶 |
-| P1 | `DISTANCE_KM` | 地理 | 公里级距离 |
 | P1 | `WITHIN_POLYGON` | 地理 | 多边形内判断 |
 | P1 | `VECTOR_NEAREST` | 向量 | Top-K KNN 查询 |
-| P2 | `TIMESTAMPADD` | 日期时间 | 时间加减 |
 
 ---
 
