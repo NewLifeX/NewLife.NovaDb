@@ -31,20 +31,21 @@ public class NovaClientPool : ObjectPool<NovaClient>
         {
             var client = base.Get();
 
-            // 新创建的连接尚未打开，直接返回由调用方打开
+            // 新创建的连接尚未打开，打开后返回
             if (!client.IsConnected)
             {
-                client.Open();
-                return client;
-            }
-
-            // 已打开的连接检查是否仍然可用
-            if (!client.IsConnected)
-            {
-                // 连接已失效，丢弃后重试
-                client.TryDispose();
-                if (retryCount++ > 10) throw new InvalidOperationException("无法从连接池获取可用连接");
-                continue;
+                try
+                {
+                    client.Open();
+                    return client;
+                }
+                catch
+                {
+                    // 打开失败，丢弃后重试
+                    client.TryDispose();
+                    if (retryCount++ > 10) throw new InvalidOperationException("无法从连接池获取可用连接");
+                    continue;
+                }
             }
 
             return client;
