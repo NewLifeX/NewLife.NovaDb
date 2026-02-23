@@ -50,35 +50,369 @@
 
 | 기능 | 상태 | 설명 |
 |------|------|------|
-| DDL | ✅ | CREATE/DROP TABLE/INDEX, IF NOT EXISTS, PRIMARY KEY, UNIQUE 포함 |
+| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE, ALTER TABLE (ADD/MODIFY/DROP COLUMN, COMMENT), IF NOT EXISTS, PRIMARY KEY, UNIQUE, ENGINE 포함 |
 | DML | ✅ | INSERT(여러 행), UPDATE, DELETE, UPSERT(ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
 | 쿼리 | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
 | 집계 | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN(Nested Loop), 테이블 별칭 지원 |
 | 매개변수화 | ✅ | @param 플레이스홀더 |
 | 트랜잭션 | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| SQL 함수 | ⚠️ | 문자열/숫자/날짜/변환/조건 함수(계획 중) |
-| 서브쿼리 | ⚠️ | IN/EXISTS(계획 중) |
+| SQL 함수 | ✅ | 문자열/숫자/날짜/변환/조건/해시 함수(60개 이상) |
+| 서브쿼리 | ✅ | IN/EXISTS 서브쿼리 |
 | 고급 | ❌ | 뷰/트리거/저장 프로시저/윈도우 함수 없음 |
 
-### MQ 기능(Flux Engine)
+---
 
-Redis Stream의 소비자 그룹 모델 기반:
+## 사용 가이드
+
+### 설치
+
+NuGet을 통해 NovaDb 코어 패키지를 설치합니다:
+
+```shell
+dotnet add package NewLife.NovaDb
+```
+
+### 액세스 방법
+
+NovaDb는 다양한 시나리오에 맞는 두 가지 클라이언트 액세스 방법을 제공합니다:
+
+| 액세스 방법 | 대상 엔진 | 설명 |
+|------------|----------|------|
+| **ADO.NET + SQL** | Nova(관계형), Flux(시계열) | 표준 `DbConnection`/`DbCommand`/`DbDataReader`, 모든 ORM과 호환 |
+| **NovaClient** | MQ(메시지 큐), KV(키-값 저장소) | 메시지 발행/소비/확인 및 KV 읽기/쓰기 API를 제공하는 RPC 클라이언트 |
+
+---
+
+### 1. 관계형 데이터베이스 (ADO.NET + SQL)
+
+관계형 엔진(Nova Engine)은 표준 ADO.NET 인터페이스를 통해 액세스합니다. 연결 문자열에서 `Data Source`는 임베디드 모드를, `Server`는 서버 모드를 나타냅니다.
+
+#### 1.1 임베디드 모드 (5분 퀵스타트)
+
+임베디드 모드는 독립 서비스가 필요 없으며, 데스크톱 앱, IoT 디바이스, 단위 테스트에 이상적입니다.
+
+```csharp
+using NewLife.NovaDb.Client;
+
+// 연결 생성 (임베디드 모드, 폴더=데이터베이스)
+using var conn = new NovaConnection { ConnectionString = "Data Source=./mydb" };
+conn.Open();
+
+// 테이블 생성
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"CREATE TABLE IF NOT EXISTS users (
+    id   INT PRIMARY KEY AUTO_INCREMENT,
+    name STRING(50) NOT NULL,
+    age  INT DEFAULT 0,
+    created DATETIME
+)";
+cmd.ExecuteNonQuery();
+
+// 데이터 삽입
+cmd.CommandText = "INSERT INTO users (name, age, created) VALUES ('Alice', 25, NOW())";
+cmd.ExecuteNonQuery();
+
+// 배치 삽입
+cmd.CommandText = @"INSERT INTO users (name, age) VALUES
+    ('Bob', 30),
+    ('Charlie', 28)";
+cmd.ExecuteNonQuery();
+
+// 데이터 조회
+cmd.CommandText = "SELECT * FROM users WHERE age >= 25 ORDER BY age";
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"id={reader["id"]}, name={reader["name"]}, age={reader["age"]}");
+}
+```
+
+#### 1.2 서버 모드
+
+서버 모드는 TCP를 통한 원격 액세스를 제공하며, 다수의 동시 클라이언트 연결을 지원합니다.
+
+**서버 시작:**
+
+```csharp
+using NewLife.NovaDb.Server;
+
+var svr = new NovaServer(3306) { DbPath = "./data" };
+svr.Start();
+Console.ReadLine();
+svr.Stop("Manual shutdown");
+```
+
+**ADO.NET 클라이언트 연결 (임베디드 모드와 동일한 API):**
+
+```csharp
+using var conn = new NovaConnection
+{
+    ConnectionString = "Server=127.0.0.1;Port=3306;Database=mydb"
+};
+conn.Open();
+
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT * FROM users WHERE age > 20";
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"name={reader["name"]}");
+}
+```
+
+#### 1.3 매개변수화 쿼리
+
+매개변수화 쿼리는 `@name` 명명된 매개변수를 사용하여 SQL 인젝션을 방지합니다:
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT * FROM users WHERE age > @minAge AND name LIKE @pattern";
+cmd.Parameters.Add(new NovaParameter("@minAge", 18));
+cmd.Parameters.Add(new NovaParameter("@pattern", "A%"));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"{reader["name"]}, {reader["age"]}");
+}
+```
+
+#### 1.4 트랜잭션
+
+NovaDb는 MVCC 기반 트랜잭션 격리를 구현하며, 기본 격리 수준은 Read Committed입니다:
+
+```csharp
+using var conn = new NovaConnection { ConnectionString = "Data Source=./mydb" };
+conn.Open();
+
+using var tx = conn.BeginTransaction();
+try
+{
+    using var cmd = conn.CreateCommand();
+    cmd.Transaction = tx;
+
+    cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
+    var affected = cmd.ExecuteNonQuery();
+    if (affected == 0) throw new InvalidOperationException("Insufficient stock");
+
+    cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
+    cmd.ExecuteNonQuery();
+
+    tx.Commit();
+}
+catch
+{
+    tx.Rollback();
+    throw;
+}
+```
+
+#### 1.5 JOIN 쿼리
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    SELECT o.id, u.name, o.total
+    FROM orders o
+    INNER JOIN users u ON o.user_id = u.id
+    WHERE o.total > @minTotal
+    ORDER BY o.total DESC
+    LIMIT 10";
+cmd.Parameters.Add(new NovaParameter("@minTotal", 100));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"Order {reader["id"]}: {reader["name"]} - ${reader["total"]}");
+}
+```
+
+#### 1.6 연결 문자열 참조
+
+| 매개변수 | 예시 | 설명 |
+|---------|------|------|
+| `Data Source` | `Data Source=./mydb` | 임베디드 모드, 데이터베이스 폴더 경로 |
+| `Server` | `Server=127.0.0.1` | 서버 모드, 서버 주소 |
+| `Port` | `Port=3306` | 서버 포트(기본값 3306) |
+| `Database` | `Database=mydb` | 데이터베이스 이름 |
+| `WalMode` | `WalMode=Full` | WAL 모드(Full/Normal/None) |
+| `ReadOnly` | `ReadOnly=true` | 읽기 전용 모드 |
+
+---
+
+### 2. 시계열 데이터베이스 (ADO.NET + SQL)
+
+시계열 엔진(Flux Engine)도 ADO.NET + SQL을 통해 액세스합니다. 테이블 생성 시 `ENGINE=FLUX`를 지정합니다.
+
+#### 2.1 시계열 테이블 생성
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"CREATE TABLE IF NOT EXISTS metrics (
+    timestamp DATETIME,
+    device_id STRING(50),
+    temperature DOUBLE,
+    humidity DOUBLE
+) ENGINE=FLUX";
+cmd.ExecuteNonQuery();
+```
+
+#### 2.2 시계열 데이터 쓰기
+
+```csharp
+// 단일 삽입
+cmd.CommandText = @"INSERT INTO metrics (timestamp, device_id, temperature, humidity)
+    VALUES (NOW(), 'sensor-001', 23.5, 65.0)";
+cmd.ExecuteNonQuery();
+
+// 배치 삽입
+cmd.CommandText = @"INSERT INTO metrics (timestamp, device_id, temperature, humidity) VALUES
+    ('2025-07-01 10:00:00', 'sensor-001', 22.1, 60.0),
+    ('2025-07-01 10:01:00', 'sensor-001', 22.3, 61.0),
+    ('2025-07-01 10:02:00', 'sensor-002', 25.0, 55.0)";
+cmd.ExecuteNonQuery();
+```
+
+#### 2.3 시간 범위 쿼리
+
+```csharp
+cmd.CommandText = @"SELECT device_id, temperature, humidity, timestamp
+    FROM metrics
+    WHERE timestamp >= @start AND timestamp < @end
+    ORDER BY timestamp DESC";
+cmd.Parameters.Add(new NovaParameter("@start", DateTime.Now.AddHours(-1)));
+cmd.Parameters.Add(new NovaParameter("@end", DateTime.Now));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"[{reader["timestamp"]}] {reader["device_id"]}: " +
+        $"temp={reader["temperature"]}°C, humidity={reader["humidity"]}%");
+}
+```
+
+#### 2.4 집계 분석
+
+```csharp
+cmd.CommandText = @"SELECT device_id, COUNT(*) AS cnt, AVG(temperature) AS avg_temp,
+        MIN(temperature) AS min_temp, MAX(temperature) AS max_temp
+    FROM metrics
+    WHERE timestamp >= @start
+    GROUP BY device_id";
+cmd.Parameters.Add(new NovaParameter("@start", DateTime.Now.AddDays(-1)));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"{reader["device_id"]}: avg={reader["avg_temp"]:F1}°C, " +
+        $"min={reader["min_temp"]}°C, max={reader["max_temp"]}°C, count={reader["cnt"]}");
+}
+```
+
+---
+
+### 3. 메시지 큐 (NovaClient)
+
+NovaDb는 Flux 시계열 엔진을 기반으로 Redis Stream 스타일의 메시지 큐를 구현합니다. 메시지 큐는 `NovaClient` RPC 인터페이스를 통해 액세스합니다.
+
+#### 3.1 서버 연결
+
+```csharp
+using NewLife.NovaDb.Client;
+
+using var client = new NovaClient("tcp://127.0.0.1:3306");
+client.Open();
+```
+
+#### 3.2 메시지 발행
+
+```csharp
+var affected = await client.ExecuteAsync(
+    "INSERT INTO order_events (timestamp, orderId, action, amount) " +
+    "VALUES (NOW(), 10001, 'created', 299.00)");
+Console.WriteLine($"Message published, affected rows: {affected}");
+```
+
+#### 3.3 메시지 소비
+
+```csharp
+var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
+    "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
+    new { since = DateTime.Now.AddMinutes(-5) });
+```
+
+#### 3.4 하트비트
+
+```csharp
+var serverTime = await client.PingAsync();
+Console.WriteLine($"Server connected: {serverTime}");
+Console.WriteLine($"Is connected: {client.IsConnected}");
+```
+
+#### 3.5 MQ 핵심 기능
 
 - **메시지 ID**: 타임스탬프 + 시퀀스 번호(동일 밀리초 내 자동 증가), 전역 순서
 - **소비자 그룹**: `Topic/Stream` + `ConsumerGroup` + `Consumer` + `Pending`
 - **신뢰성**: At-Least-Once, 읽기 후 Pending에 진입, 비즈니스 성공 후 Ack
 - **데이터 보존**: TTL 지원(시간/파일 크기별 오래된 샤드 자동 삭제)
-- **지연 메시지**: `DelayTime`/`DeliverAt` 지정(계획 중)
-- **데드 레터 큐**: 소비 실패 시 자동으로 DLQ 진입(계획 중)
-- **블로킹 읽기**: 롱 폴링 + 타임아웃(계획 중)
+- **지연 메시지**: 지연 시간 또는 정확한 전달 시간 지정
+- **데드 레터 큐**: 최대 재시도 횟수 초과 시 자동으로 DLQ 진입
 
-### KV 기능
+---
 
-- `Get(key)` / `Set(key, value, ttl)` / `Delete(key)` / `Exists(key)`
-- 지연 삭제(읽기 시 만료 확인) + 백그라운드 정리(`CleanupExpired()`)
-- `Add(key, value, ttl)`: 키가 존재하지 않을 때만 추가(계획 중)
-- `Inc(key, delta, ttl)`: 원자적 증가(계획 중)
+### 4. KV 키-값 저장소 (NovaClient)
+
+KV 저장소는 `NovaClient`를 통해 액세스합니다. 테이블 생성 시 `ENGINE=KV`를 지정합니다. KV 테이블은 `Key + Value + TTL`의 고정 스키마를 가집니다.
+
+#### 4.1 KV 테이블 생성
+
+```csharp
+using var client = new NovaClient("tcp://127.0.0.1:3306");
+client.Open();
+
+await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
+    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+) ENGINE=KV DEFAULT_TTL=7200");
+```
+
+#### 4.2 데이터 읽기/쓰기
+
+```csharp
+// 쓰기 (UPSERT 의미론)
+await client.ExecuteAsync(
+    "INSERT INTO session_cache (Key, Value, TTL) VALUES ('session:1001', 'user-data', " +
+    "DATEADD(NOW(), 30, 'MINUTE')) ON DUPLICATE KEY UPDATE Value = 'user-data'");
+
+// 읽기
+var result = await client.QueryAsync<IDictionary<String, Object>[]>(
+    "SELECT Value FROM session_cache WHERE Key = 'session:1001' " +
+    "AND (TTL IS NULL OR TTL > NOW())");
+
+// 삭제
+await client.ExecuteAsync("DELETE FROM session_cache WHERE Key = 'session:1001'");
+```
+
+#### 4.3 원자적 증가 (카운터)
+
+```csharp
+await client.ExecuteAsync(
+    "INSERT INTO counters (Key, Value) VALUES ('page:views', 1) " +
+    "ON DUPLICATE KEY UPDATE Value = Value + 1");
+```
+
+#### 4.4 KV 기능 개요
+
+| 작업 | 설명 |
+|------|------|
+| `Get` | 지연 TTL 확인으로 값 읽기 |
+| `Set` | 선택적 TTL로 값 설정 |
+| `Add` | Key가 존재하지 않을 때만 추가(분산 락) |
+| `Delete` | 키 삭제 |
+| `Inc` | 원자적 증가/감소(카운터) |
+| `TTL` | 만료 시 자동 비가시, 주기적 백그라운드 정리 |
+
+---
 
 ## 데이터 보안 및 WAL 모드
 
@@ -91,6 +425,25 @@ NovaDb는 3가지 WAL 지속성 전략을 제공합니다:
 | `NONE` | 완전 비동기, 능동적 플러시 없음 | 임시 데이터/캐시 시나리오, 최고 처리량 |
 
 > 동기(`FULL`) 이외의 모드를 선택하면 충돌/정전 시나리오에서 데이터 손실 가능성을 수용하는 것을 의미합니다.
+
+## 클러스터 배포
+
+NovaDb는 Binlog를 통한 비동기 데이터 복제를 지원하는 **1개 마스터, 여러 슬레이브** 아키텍처를 지원합니다:
+
+```
+┌──────────┐    Binlog Sync    ┌──────────┐
+│  Master   │ ──────────────→  │  Slave 1  │
+│  (R/W)    │                  │  (R/O)    │
+└──────────┘                  └──────────┘
+      │         Binlog Sync    ┌──────────┐
+      └──────────────────────→ │  Slave 2  │
+                               │  (R/O)    │
+                               └──────────┘
+```
+
+- 마스터 노드가 모든 쓰기 작업을 처리하고, 슬레이브 노드는 읽기 전용 쿼리를 제공합니다
+- Binlog를 통한 비동기 복제와 중단점 재개 지원
+- 애플리케이션 레이어에서 읽기/쓰기 분리를 담당합니다
 
 ## 로드맵
 
