@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading.Tasks;
 using NewLife.NovaDb.Client;
 using Xunit;
@@ -30,16 +31,18 @@ public class KvFluxIntegrationTests : IClassFixture<IntegrationServerFixture>
 
     #region KV 网络测试
 
+    private const String DefaultTable = "default";
+
     [Fact(DisplayName = "KV-网络设置和获取键值")]
     public async Task KvSetAndGet()
     {
         using var client = CreateClient();
 
-        var ok = await client.KvSetAsync("net_key1", "hello");
+        var ok = await client.KvSetAsync(DefaultTable, "net_key1", Encoding.UTF8.GetBytes("hello"));
         Assert.True(ok);
 
-        var val = await client.KvGetAsync("net_key1");
-        Assert.Equal("hello", val);
+        var val = await client.KvGetAsync(DefaultTable, "net_key1");
+        Assert.Equal("hello", Encoding.UTF8.GetString(val!));
     }
 
     [Fact(DisplayName = "KV-网络获取不存在的键返回null")]
@@ -47,7 +50,7 @@ public class KvFluxIntegrationTests : IClassFixture<IntegrationServerFixture>
     {
         using var client = CreateClient();
 
-        var val = await client.KvGetAsync("net_key_nonexistent_" + Guid.NewGuid().ToString("N"));
+        var val = await client.KvGetAsync(DefaultTable, "net_key_nonexistent_" + Guid.NewGuid().ToString("N"));
         Assert.Null(val);
     }
 
@@ -56,10 +59,10 @@ public class KvFluxIntegrationTests : IClassFixture<IntegrationServerFixture>
     {
         using var client = CreateClient();
 
-        await client.KvSetAsync("net_key2", "world");
+        await client.KvSetAsync(DefaultTable, "net_key2", Encoding.UTF8.GetBytes("world"));
 
-        Assert.True(await client.KvExistsAsync("net_key2"));
-        Assert.False(await client.KvExistsAsync("net_key2_missing_" + Guid.NewGuid().ToString("N")));
+        Assert.True(await client.KvExistsAsync(DefaultTable, "net_key2"));
+        Assert.False(await client.KvExistsAsync(DefaultTable, "net_key2_missing_" + Guid.NewGuid().ToString("N")));
     }
 
     [Fact(DisplayName = "KV-网络删除键")]
@@ -67,14 +70,14 @@ public class KvFluxIntegrationTests : IClassFixture<IntegrationServerFixture>
     {
         using var client = CreateClient();
 
-        await client.KvSetAsync("net_key3", "todelete");
-        Assert.True(await client.KvExistsAsync("net_key3"));
+        await client.KvSetAsync(DefaultTable, "net_key3", Encoding.UTF8.GetBytes("todelete"));
+        Assert.True(await client.KvExistsAsync(DefaultTable, "net_key3"));
 
-        var deleted = await client.KvDeleteAsync("net_key3");
+        var deleted = await client.KvDeleteAsync(DefaultTable, "net_key3");
         Assert.True(deleted);
 
-        Assert.False(await client.KvExistsAsync("net_key3"));
-        Assert.Null(await client.KvGetAsync("net_key3"));
+        Assert.False(await client.KvExistsAsync(DefaultTable, "net_key3"));
+        Assert.Null(await client.KvGetAsync(DefaultTable, "net_key3"));
     }
 
     [Fact(DisplayName = "KV-网络覆盖写入")]
@@ -82,11 +85,11 @@ public class KvFluxIntegrationTests : IClassFixture<IntegrationServerFixture>
     {
         using var client = CreateClient();
 
-        await client.KvSetAsync("net_key4", "v1");
-        await client.KvSetAsync("net_key4", "v2");
+        await client.KvSetAsync(DefaultTable, "net_key4", Encoding.UTF8.GetBytes("v1"));
+        await client.KvSetAsync(DefaultTable, "net_key4", Encoding.UTF8.GetBytes("v2"));
 
-        var val = await client.KvGetAsync("net_key4");
-        Assert.Equal("v2", val);
+        var val = await client.KvGetAsync(DefaultTable, "net_key4");
+        Assert.Equal("v2", Encoding.UTF8.GetString(val!));
     }
 
     [Fact(DisplayName = "KV-网络完整CRUD流程")]
@@ -96,18 +99,18 @@ public class KvFluxIntegrationTests : IClassFixture<IntegrationServerFixture>
         var key = "net_cycle_" + Guid.NewGuid().ToString("N")[..8];
 
         // 写入
-        Assert.True(await client.KvSetAsync(key, "initial"));
-        Assert.True(await client.KvExistsAsync(key));
-        Assert.Equal("initial", await client.KvGetAsync(key));
+        Assert.True(await client.KvSetAsync(DefaultTable, key, Encoding.UTF8.GetBytes("initial")));
+        Assert.True(await client.KvExistsAsync(DefaultTable, key));
+        Assert.Equal("initial", Encoding.UTF8.GetString((await client.KvGetAsync(DefaultTable, key))!));
 
         // 更新
-        Assert.True(await client.KvSetAsync(key, "updated"));
-        Assert.Equal("updated", await client.KvGetAsync(key));
+        Assert.True(await client.KvSetAsync(DefaultTable, key, Encoding.UTF8.GetBytes("updated")));
+        Assert.Equal("updated", Encoding.UTF8.GetString((await client.KvGetAsync(DefaultTable, key))!));
 
         // 删除
-        Assert.True(await client.KvDeleteAsync(key));
-        Assert.False(await client.KvExistsAsync(key));
-        Assert.Null(await client.KvGetAsync(key));
+        Assert.True(await client.KvDeleteAsync(DefaultTable, key));
+        Assert.False(await client.KvExistsAsync(DefaultTable, key));
+        Assert.Null(await client.KvGetAsync(DefaultTable, key));
     }
 
     #endregion

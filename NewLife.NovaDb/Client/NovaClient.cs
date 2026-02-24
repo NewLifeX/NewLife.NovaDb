@@ -119,41 +119,136 @@ public class NovaClient : DisposeBase
 
     #region KV 操作
     /// <summary>KV 设置键值对</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>
-    /// <param name="value">值</param>
+    /// <param name="value">二进制值</param>
     /// <param name="ttlSeconds">过期时间（秒），0 表示永不过期</param>
     /// <returns>是否成功</returns>
-    public async Task<Boolean> KvSetAsync(String key, String value, Int32 ttlSeconds = 0)
+    public async Task<Boolean> KvSetAsync(String tableName, String key, Byte[]? value, Int32 ttlSeconds = 0)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Kv/Set", new { key, value, ttlSeconds }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Kv/Set", new { tableName, key, value, ttlSeconds }).ConfigureAwait(false);
     }
 
     /// <summary>KV 获取值</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>
-    /// <returns>值，不存在返回 null</returns>
-    public async Task<String?> KvGetAsync(String key)
+    /// <returns>二进制值，不存在返回 null</returns>
+    public async Task<Byte[]?> KvGetAsync(String tableName, String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<String>("Kv/Get", new { key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Byte[]>("Kv/Get", new { tableName, key }).ConfigureAwait(false);
     }
 
     /// <summary>KV 删除键</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>
     /// <returns>是否成功</returns>
-    public async Task<Boolean> KvDeleteAsync(String key)
+    public async Task<Boolean> KvDeleteAsync(String tableName, String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Kv/Delete", new { key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Kv/Delete", new { tableName, key }).ConfigureAwait(false);
     }
 
     /// <summary>KV 检查键是否存在</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>
     /// <returns>是否存在</returns>
-    public async Task<Boolean> KvExistsAsync(String key)
+    public async Task<Boolean> KvExistsAsync(String tableName, String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Kv/Exists", new { key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Kv/Exists", new { tableName, key }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 按通配符模式删除键</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="pattern">通配符模式（支持 * 和 ?）</param>
+    /// <returns>删除的键个数</returns>
+    public async Task<Int32> KvDeleteByPatternAsync(String tableName, String pattern)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Int32>("Kv/DeleteByPattern", new { tableName, pattern }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 获取缓存项总数</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <returns>总数</returns>
+    public async Task<Int32> KvGetCountAsync(String tableName)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Int32>("Kv/GetCount", new { tableName }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 获取所有缓存键</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <returns>键数组</returns>
+    public async Task<String[]> KvGetAllKeysAsync(String tableName)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<String[]>("Kv/GetAllKeys", new { tableName }).ConfigureAwait(false) ?? [];
+    }
+
+    /// <summary>KV 清空所有缓存项</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    public async Task KvClearAsync(String tableName)
+    {
+        EnsureOpen();
+        await _client!.InvokeAsync<Object>("Kv/Clear", new { tableName }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 设置缓存项有效期</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="key">键</param>
+    /// <param name="ttlSeconds">过期时间（秒）</param>
+    /// <returns>是否成功</returns>
+    public async Task<Boolean> KvSetExpireAsync(String tableName, String key, Int32 ttlSeconds)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Boolean>("Kv/SetExpire", new { tableName, key, ttlSeconds }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 获取缓存项剩余有效期</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="key">键</param>
+    /// <returns>剩余 TTL（秒），-1 表示无过期或不存在</returns>
+    public async Task<Double> KvGetExpireAsync(String tableName, String key)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Double>("Kv/GetExpire", new { tableName, key }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 原子递增（整数）</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="key">键</param>
+    /// <param name="value">变化量</param>
+    /// <returns>更新后的值</returns>
+    public async Task<Int64> KvIncrementAsync(String tableName, String key, Int64 value)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Int64>("Kv/Increment", new { tableName, key, value }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 原子递增（浮点）</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="key">键</param>
+    /// <param name="value">变化量</param>
+    /// <returns>更新后的值</returns>
+    public async Task<Double> KvIncrementDoubleAsync(String tableName, String key, Double value)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Double>("Kv/IncrementDouble", new { tableName, key, value }).ConfigureAwait(false);
+    }
+
+    /// <summary>KV 搜索匹配的键</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="pattern">搜索模式</param>
+    /// <param name="offset">偏移量</param>
+    /// <param name="count">数量，-1 表示不限</param>
+    /// <returns>匹配的键数组</returns>
+    public async Task<String[]> KvSearchAsync(String tableName, String pattern, Int32 offset = 0, Int32 count = -1)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<String[]>("Kv/Search", new { tableName, pattern, offset, count }).ConfigureAwait(false) ?? [];
     }
     #endregion
 

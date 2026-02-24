@@ -1,4 +1,5 @@
-﻿using NewLife.Log;
+﻿using System.Collections.Concurrent;
+using NewLife.Log;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux;
@@ -18,6 +19,7 @@ public class NovaServer : DisposeBase
     private DatabaseManager? _dbManager;
     private ReplicationManager? _replicationManager;
     private KvStore? _kvStore;
+    private readonly ConcurrentDictionary<String, KvStore> _kvStores = new(StringComparer.OrdinalIgnoreCase);
     private FluxEngine? _fluxEngine;
 
     /// <summary>端口</summary>
@@ -44,8 +46,27 @@ public class NovaServer : DisposeBase
     /// <summary>复制管理器（主节点模式时可用）</summary>
     public ReplicationManager? ReplicationManager => _replicationManager;
 
-    /// <summary>KV 存储引擎</summary>
+    /// <summary>KV 存储引擎（默认表）</summary>
     public KvStore? KvStore => _kvStore;
+
+    /// <summary>获取指定名称的 KV 存储引擎，同一表名共用实例</summary>
+    /// <param name="tableName">KV 表名</param>
+    /// <returns>KvStore 实例</returns>
+    public KvStore? GetKvStore(String tableName)
+    {
+        if (String.IsNullOrEmpty(tableName) || tableName.Equals("default", StringComparison.OrdinalIgnoreCase))
+            return _kvStore;
+
+        var dbPath = DbPath;
+        if (String.IsNullOrEmpty(dbPath))
+            dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NovaData");
+
+        return _kvStores.GetOrAdd(tableName, name =>
+        {
+            var kvPath = Path.Combine(dbPath, $"{name}.kvd");
+            return new KvStore(Options, kvPath);
+        });
+    }
 
     /// <summary>Flux 时序引擎（消息队列）</summary>
     public FluxEngine? FluxEngine => _fluxEngine;
@@ -105,6 +126,7 @@ public class NovaServer : DisposeBase
         NovaController.SharedEngine = _sqlEngine;
         NovaController.SharedReplication = _replicationManager;
         KvController.SharedKvStore = _kvStore;
+        KvController.SharedServer = this;
         FluxController.SharedEngine = _fluxEngine;
 
         var server = new ApiServer(_port)
@@ -138,12 +160,20 @@ public class NovaServer : DisposeBase
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
         KvController.SharedKvStore = null;
+        KvController.SharedServer = null;
         FluxController.Reset();
 
         _fluxEngine?.Dispose();
         _fluxEngine = null;
         _kvStore?.Dispose();
         _kvStore = null;
+
+        // 释放所有附加 KV 表
+        foreach (var kv in _kvStores.Values)
+        {
+            kv.Dispose();
+        }
+        _kvStores.Clear();
 
         _sqlEngine?.Dispose();
         _sqlEngine = null;
@@ -167,12 +197,20 @@ public class NovaServer : DisposeBase
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
         KvController.SharedKvStore = null;
+        KvController.SharedServer = null;
         FluxController.Reset();
 
         _fluxEngine?.Dispose();
         _fluxEngine = null;
         _kvStore?.Dispose();
         _kvStore = null;
+
+        // 释放所有附加 KV 表
+        foreach (var kv in _kvStores.Values)
+        {
+            kv.Dispose();
+        }
+        _kvStores.Clear();
 
         _sqlEngine?.Dispose();
         _sqlEngine = null;

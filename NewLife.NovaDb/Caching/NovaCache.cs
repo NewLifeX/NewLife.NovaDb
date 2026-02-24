@@ -1,12 +1,11 @@
 ﻿using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using NewLife.Caching;
+using NewLife.Data;
 using NewLife.Messaging;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Engine.Flux;
 using NewLife.NovaDb.Engine.KV;
 using NewLife.NovaDb.Queues;
-using NewLife.Serialization;
 
 namespace NewLife.NovaDb.Caching;
 
@@ -24,6 +23,9 @@ public class NovaCache : Cache
 
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => _kvStore != null;
+
+    /// <summary>编码器，负责应用层类型与二进制之间的转换</summary>
+    public IPacketEncoder Encoder { get; set; } = new NovaJsonEncoder();
 
     /// <summary>Flux 引擎（嵌入模式下可用于队列功能）</summary>
     public FluxEngine? FluxEngine
@@ -53,10 +55,26 @@ public class NovaCache : Cache
 
     #region 基本操作
     /// <summary>缓存项总数</summary>
-    public override Int32 Count => _kvStore?.Count ?? 0;
+    public override Int32 Count
+    {
+        get
+        {
+            if (_kvStore != null) return _kvStore.Count;
+            if (_client != null) return _client.KvGetCountAsync(Name).ConfigureAwait(false).GetAwaiter().GetResult();
+            return 0;
+        }
+    }
 
     /// <summary>所有缓存键集合</summary>
-    public override ICollection<String> Keys => _kvStore != null ? _kvStore.GetAllKeys().ToList() : [];
+    public override ICollection<String> Keys
+    {
+        get
+        {
+            if (_kvStore != null) return _kvStore.GetAllKeys().ToList();
+            if (_client != null) return _client.KvGetAllKeysAsync(Name).ConfigureAwait(false).GetAwaiter().GetResult();
+            return [];
+        }
+    }
 
     /// <summary>检查缓存项是否存在</summary>
     /// <param name="key">键</param>
@@ -64,7 +82,7 @@ public class NovaCache : Cache
     public override Boolean ContainsKey(String key)
     {
         if (_kvStore != null) return _kvStore.Exists(key);
-        if (_client != null) return _client.KvExistsAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+        if (_client != null) return _client.KvExistsAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult();
         return false;
     }
 
@@ -77,16 +95,16 @@ public class NovaCache : Cache
     {
         if (expire < 0) expire = Expire;
         var ttl = expire > 0 ? TimeSpan.FromSeconds(expire) : (TimeSpan?)null;
-        var str = ConvertToString(value);
+        var buf = Encoder.Encode(value)?.ReadBytes();
 
         if (_kvStore != null)
         {
-            _kvStore.SetString(key, str, ttl);
+            _kvStore.Set(key, buf, ttl);
             return true;
         }
 
         if (_client != null)
-            return _client.KvSetAsync(key, str, expire).ConfigureAwait(false).GetAwaiter().GetResult();
+            return _client.KvSetAsync(Name, key, buf, expire).ConfigureAwait(false).GetAwaiter().GetResult();
 
         return false;
     }
@@ -97,16 +115,23 @@ public class NovaCache : Cache
     [return: MaybeNull]
     public override T Get<T>(String key)
     {
-        String? str = null;
-
         if (_kvStore != null)
-            str = _kvStore.GetString(key);
-        else if (_client != null)
-            str = _client.KvGetAsync(key).ConfigureAwait(false).GetAwaiter().GetResult();
+        {
+            using var pk = _kvStore.Get(key);
+            if (pk == null || pk.Total == 0) return default;
 
-        if (str == null) return default;
+            return (T?)Encoder.Decode(pk, typeof(T));
+        }
 
-        return ConvertFromString<T>(str);
+        if (_client != null)
+        {
+            var buf = _client.KvGetAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult();
+            if (buf == null || buf.Length == 0) return default;
+
+            return (T?)Encoder.Decode(new ArrayPacket(buf), typeof(T));
+        }
+
+        return default;
     }
 
     /// <summary>移除缓存项</summary>
@@ -124,7 +149,13 @@ public class NovaCache : Cache
         }
 
         if (_client != null)
-            return _client.KvDeleteAsync(key).ConfigureAwait(false).GetAwaiter().GetResult() ? 1 : 0;
+        {
+            // 支持通配符模式
+            if (key.Contains('*') || key.Contains('?'))
+                return _client.KvDeleteByPatternAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult();
+
+            return _client.KvDeleteAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult() ? 1 : 0;
+        }
 
         return 0;
     }
@@ -147,7 +178,10 @@ public class NovaCache : Cache
     /// <summary>清空所有缓存项</summary>
     public override void Clear()
     {
-        _kvStore?.Clear();
+        if (_kvStore != null)
+            _kvStore.Clear();
+        else if (_client != null)
+            _client.KvClearAsync(Name).ConfigureAwait(false).GetAwaiter().GetResult();
     }
     #endregion
 
@@ -159,6 +193,7 @@ public class NovaCache : Cache
     public override Boolean SetExpire(String key, TimeSpan expire)
     {
         if (_kvStore != null) return _kvStore.SetExpiration(key, expire);
+        if (_client != null) return _client.KvSetExpireAsync(Name, key, (Int32)expire.TotalSeconds).ConfigureAwait(false).GetAwaiter().GetResult();
         return false;
     }
 
@@ -168,6 +203,7 @@ public class NovaCache : Cache
     public override TimeSpan GetExpire(String key)
     {
         if (_kvStore != null) return _kvStore.GetTtl(key);
+        if (_client != null) return TimeSpan.FromSeconds(_client.KvGetExpireAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult());
         return TimeSpan.FromSeconds(-1);
     }
     #endregion
@@ -180,6 +216,7 @@ public class NovaCache : Cache
     public override Int64 Increment(String key, Int64 value)
     {
         if (_kvStore != null) return _kvStore.Inc(key, value);
+        if (_client != null) return _client.KvIncrementAsync(Name, key, value).ConfigureAwait(false).GetAwaiter().GetResult();
         return 0;
     }
 
@@ -190,6 +227,7 @@ public class NovaCache : Cache
     public override Double Increment(String key, Double value)
     {
         if (_kvStore != null) return _kvStore.IncDouble(key, value);
+        if (_client != null) return _client.KvIncrementDoubleAsync(Name, key, value).ConfigureAwait(false).GetAwaiter().GetResult();
         return 0;
     }
 
@@ -213,6 +251,7 @@ public class NovaCache : Cache
     public override IEnumerable<String> Search(String pattern, Int32 offset = 0, Int32 count = -1)
     {
         if (_kvStore != null) return _kvStore.Search(pattern, offset, count);
+        if (_client != null) return _client.KvSearchAsync(Name, pattern, offset, count).ConfigureAwait(false).GetAwaiter().GetResult();
         return [];
     }
 
@@ -247,45 +286,4 @@ public class NovaCache : Cache
     }
     #endregion
 
-    #region 辅助
-    /// <summary>将值转换为字符串</summary>
-    private static String ConvertToString<T>(T value)
-    {
-        if (value == null) return String.Empty;
-        if (value is String str) return str;
-        if (value is Byte[] bytes) return Convert.ToBase64String(bytes);
-
-        if (value is IFormattable fmt)
-            return fmt.ToString(null, CultureInfo.InvariantCulture);
-
-        var type = typeof(T);
-        if (type == typeof(Boolean))
-            return value.ToString()!;
-
-        // 复杂类型使用 JSON 序列化
-        return value.ToJson();
-    }
-
-    /// <summary>从字符串转换为目标类型</summary>
-    [return: MaybeNull]
-    private static T ConvertFromString<T>(String str)
-    {
-        if (str == null) return default;
-
-        var type = typeof(T);
-        if (type == typeof(String)) return (T)(Object)str;
-        if (type == typeof(Byte[])) return (T)(Object)Convert.FromBase64String(str);
-        if (type == typeof(Int32)) return (T)(Object)Int32.Parse(str, CultureInfo.InvariantCulture);
-        if (type == typeof(Int64)) return (T)(Object)Int64.Parse(str, CultureInfo.InvariantCulture);
-        if (type == typeof(Double)) return (T)(Object)Double.Parse(str, CultureInfo.InvariantCulture);
-        if (type == typeof(Single)) return (T)(Object)Single.Parse(str, CultureInfo.InvariantCulture);
-        if (type == typeof(Decimal)) return (T)(Object)Decimal.Parse(str, CultureInfo.InvariantCulture);
-        if (type == typeof(Boolean)) return (T)(Object)Boolean.Parse(str);
-        if (type == typeof(DateTime)) return (T)(Object)DateTime.Parse(str, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
-        if (type == typeof(Object)) return (T)(Object)str;
-
-        // JSON 反序列化
-        return str.ToJsonEntity<T>();
-    }
-    #endregion
 }
