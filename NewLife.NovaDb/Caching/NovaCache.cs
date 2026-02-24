@@ -322,25 +322,19 @@ public class NovaCache : Cache
     {
         if (expire < 0) expire = Expire;
 
+        var dict = new Dictionary<String, Byte[]?>();
+        foreach (var kvp in values)
+            dict[kvp.Key] = Encoder.Encode(kvp.Value)?.ReadBytes();
+
         if (_kvStore != null)
         {
-            var dict = new Dictionary<String, Byte[]?>();
-            foreach (var kvp in values)
-                dict[kvp.Key] = Encoder.Encode(kvp.Value)?.ReadBytes();
-
             var ttl = expire > 0 ? TimeSpan.FromSeconds(expire) : (TimeSpan?)null;
             _kvStore.SetAll(dict, ttl);
             return;
         }
 
         if (_client != null)
-        {
-            var dict = new Dictionary<String, Byte[]?>();
-            foreach (var kvp in values)
-                dict[kvp.Key] = Encoder.Encode(kvp.Value)?.ReadBytes();
-
             _client.KvSetAllAsync(Name, dict, expire).ConfigureAwait(false).GetAwaiter().GetResult();
-        }
     }
 
     /// <summary>提交变更</summary>
