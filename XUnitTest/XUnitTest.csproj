@@ -5,6 +5,8 @@
     <OutputPath>..\Bin\UnitTest</OutputPath>
 
     <IsPackable>false</IsPackable>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\Doc\newlife.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>
