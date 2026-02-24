@@ -262,12 +262,15 @@ public class NovaCacheNetworkIntegrationTests : IClassFixture<IntegrationServerF
     {
         using var cache = CreateNetworkCache();
 
+        // 使用唯一前缀避免与其他测试冲突
+        var prefix = "tp_" + Guid.NewGuid().ToString("N")[..8];
+
         // 准备批量数据：每批 1000 条，每条 64 字节
         var batchSize = 1000;
         var totalOps = 0;
         var data = new Dictionary<String, String>();
         for (var i = 0; i < batchSize; i++)
-            data[$"perf:{i}"] = new String('X', 64);
+            data[$"{prefix}:{i}"] = new String('X', 64);
 
         // 预热
         cache.SetAll(data);
@@ -297,6 +300,9 @@ public class NovaCacheNetworkIntegrationTests : IClassFixture<IntegrationServerF
         sw.Stop();
 
         var readOpsPerSec = totalOps / sw.Elapsed.TotalSeconds;
+
+        // 清理测试数据，避免影响其他测试
+        cache.Remove($"{prefix}:*");
 
         // 批量操作通过将多个操作合并到单次 RPC 调用来摊薄网络开销，
         // 写入或读取方向的吞吐量应超过 100,000 ops/s

@@ -176,6 +176,44 @@ public class NovaCacheBenchmark
             _cache.Set($"pat:{id}:{i}", _stringValue);
         return _cache.Remove($"pat:{id}:*");
     }
+
+    [Benchmark(Description = "SetAll 批量写入(100)")]
+    public void SetAll_100()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        var dict = new Dictionary<String, String>(100);
+        for (var i = 0; i < 100; i++)
+            dict[$"batch:{id}:{i}"] = _stringValue;
+        _cache.SetAll(dict);
+    }
+
+    [Benchmark(Description = "GetAll 批量读取(100)")]
+    public IDictionary<String, String?> GetAll_100()
+    {
+        var keys = new String[100];
+        for (var i = 0; i < 100; i++)
+            keys[i] = $"key:{i}";
+        return _cache.GetAll<String>(keys);
+    }
+
+    [Benchmark(Description = "SetAll 批量写入(1000)")]
+    public void SetAll_1000()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        var dict = new Dictionary<String, String>(1000);
+        for (var i = 0; i < 1000; i++)
+            dict[$"batch:{id}:{i}"] = _stringValue;
+        _cache.SetAll(dict);
+    }
+
+    [Benchmark(Description = "GetAll 批量读取(1000)")]
+    public IDictionary<String, String?> GetAll_1000()
+    {
+        var keys = new String[1000];
+        for (var i = 0; i < 1000; i++)
+            keys[i] = $"key:{i}";
+        return _cache.GetAll<String>(keys);
+    }
 }
 
 /// <summary>NovaCache 嵌入模式海量数据基准测试（10万条）</summary>

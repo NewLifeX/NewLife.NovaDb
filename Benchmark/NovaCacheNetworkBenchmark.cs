@@ -169,6 +169,44 @@ public class NovaCacheNetworkBenchmark
     {
         return _cache.Count;
     }
+
+    [Benchmark(Description = "Net SetAll 批量写入(100)")]
+    public void SetAll_100()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        var dict = new Dictionary<String, String>(100);
+        for (var i = 0; i < 100; i++)
+            dict[$"batch:{id}:{i}"] = _stringValue;
+        _cache.SetAll(dict);
+    }
+
+    [Benchmark(Description = "Net GetAll 批量读取(100)")]
+    public IDictionary<String, String?> GetAll_100()
+    {
+        var keys = new String[100];
+        for (var i = 0; i < 100; i++)
+            keys[i] = $"key:{i}";
+        return _cache.GetAll<String>(keys);
+    }
+
+    [Benchmark(Description = "Net SetAll 批量写入(1000)")]
+    public void SetAll_1000()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        var dict = new Dictionary<String, String>(1000);
+        for (var i = 0; i < 1000; i++)
+            dict[$"batch:{id}:{i}"] = _stringValue;
+        _cache.SetAll(dict);
+    }
+
+    [Benchmark(Description = "Net GetAll 批量读取(1000)")]
+    public IDictionary<String, String?> GetAll_1000()
+    {
+        var keys = new String[1000];
+        for (var i = 0; i < 1000; i++)
+            keys[i] = $"key:{i}";
+        return _cache.GetAll<String>(keys);
+    }
 }
 
 /// <summary>NovaCache 网络模式海量数据基准测试（10万条）</summary>
@@ -225,6 +263,42 @@ public class NovaCacheNetworkMassDataBenchmark
             _cache.Set($"mass:{i}", _stringValue64);
         for (var i = 0; i < 10_000; i++)
             _cache.Get<String>($"mass:{i}");
+        _cache.Clear();
+    }
+
+    [Benchmark(Description = "网络模式批量SetAll写入1万条(64B)")]
+    public void MassBatchWrite_10K()
+    {
+        var dict = new Dictionary<String, String>(1000);
+        for (var batch = 0; batch < 10; batch++)
+        {
+            dict.Clear();
+            for (var i = 0; i < 1000; i++)
+                dict[$"mass:{batch * 1000 + i}"] = _stringValue64;
+            _cache.SetAll(dict);
+        }
+        _cache.Clear();
+    }
+
+    [Benchmark(Description = "网络模式批量SetAll+GetAll读写1万条(64B)")]
+    public void MassBatchWriteThenRead_10K()
+    {
+        var dict = new Dictionary<String, String>(1000);
+        for (var batch = 0; batch < 10; batch++)
+        {
+            dict.Clear();
+            for (var i = 0; i < 1000; i++)
+                dict[$"mass:{batch * 1000 + i}"] = _stringValue64;
+            _cache.SetAll(dict);
+        }
+
+        var keys = new String[1000];
+        for (var batch = 0; batch < 10; batch++)
+        {
+            for (var i = 0; i < 1000; i++)
+                keys[i] = $"mass:{batch * 1000 + i}";
+            _cache.GetAll<String>(keys);
+        }
         _cache.Clear();
     }
 }
