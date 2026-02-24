@@ -64,6 +64,21 @@ internal class KvController : IApi
         return Convert.ToBase64String(pk.ReadBytes());
     }
 
+    /// <summary>KV 获取值（Packet 模式，避免 Base64 编码开销）</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="key">键</param>
+    /// <returns>二进制值，不存在返回 null</returns>
+    public Byte[]? GetPacket(String tableName, String key)
+    {
+        var store = GetStore(tableName);
+        if (store == null) return null;
+
+        using var pk = store.Get(key);
+        if (pk == null) return null;
+
+        return pk.ReadBytes();
+    }
+
     /// <summary>KV 删除键</summary>
     /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>

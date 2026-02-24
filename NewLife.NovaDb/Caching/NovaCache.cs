@@ -128,10 +128,8 @@ public class NovaCache : Cache
 
         if (_client != null)
         {
-            var buf = _client.KvGetAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult();
-            if (buf == null || buf.Length == 0) return default;
-
-            var pk = new ArrayPacket(buf);
+            var pk = _client.KvGetPacketAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult();
+            if (pk == null || pk.Total == 0) return default;
 
             // Object 类型直接返回字符串，避免 JSON 反序列化失败
             if (typeof(T) == typeof(Object)) return (T)(Object)pk.ToStr();
