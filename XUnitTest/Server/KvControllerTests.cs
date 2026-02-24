@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -533,6 +534,91 @@ public class KvControllerTests : IDisposable
         Thread.Sleep(1500);
 
         Assert.Null(_controller.Get("default", "shortTtl"));
+    }
+    #endregion
+
+    #region GetAll (batch)
+    [Fact(DisplayName = "GetAll_批量获取键值对")]
+    public void GetAll_WithData_ReturnsDictionary()
+    {
+        _controller.Set("default", "ga1", Encoding.UTF8.GetBytes("v1"));
+        _controller.Set("default", "ga2", Encoding.UTF8.GetBytes("v2"));
+
+        var result = _controller.GetAll("default", ["ga1", "ga2", "ga_miss"]);
+        Assert.NotNull(result);
+        Assert.Equal(3, result.Count);
+        Assert.NotNull(result["ga1"]);
+        Assert.Equal("v1", Encoding.UTF8.GetString(Convert.FromBase64String(result["ga1"]!)));
+        Assert.NotNull(result["ga2"]);
+        Assert.Equal("v2", Encoding.UTF8.GetString(Convert.FromBase64String(result["ga2"]!)));
+        Assert.Null(result["ga_miss"]);
+    }
+
+    [Fact(DisplayName = "GetAll_存储未初始化返回空字典")]
+    public void GetAll_StoreNotInitialized_ReturnsEmptyDictionary()
+    {
+        var original = KvController.SharedKvStore;
+        try
+        {
+            KvController.SharedKvStore = null;
+            var result = _controller.GetAll("default", ["k1"]);
+            Assert.NotNull(result);
+            Assert.Empty(result);
+        }
+        finally
+        {
+            KvController.SharedKvStore = original;
+        }
+    }
+    #endregion
+
+    #region SetAll (batch)
+    [Fact(DisplayName = "SetAll_批量设置键值对")]
+    public void SetAll_WithData_ReturnsCount()
+    {
+        var values = new Dictionary<String, Byte[]?>
+        {
+            ["sa1"] = Encoding.UTF8.GetBytes("v1"),
+            ["sa2"] = Encoding.UTF8.GetBytes("v2"),
+        };
+
+        var count = _controller.SetAll("default", values);
+        Assert.Equal(2, count);
+
+        var b1 = _controller.Get("default", "sa1");
+        Assert.NotNull(b1);
+        Assert.Equal("v1", Encoding.UTF8.GetString(Convert.FromBase64String(b1)));
+    }
+
+    [Fact(DisplayName = "SetAll_带TTL批量设置")]
+    public void SetAll_WithTtl_SetsExpiration()
+    {
+        var values = new Dictionary<String, Byte[]?>
+        {
+            ["sat1"] = Encoding.UTF8.GetBytes("ttl_v"),
+        };
+
+        var count = _controller.SetAll("default", values, 60);
+        Assert.Equal(1, count);
+
+        var ttl = _controller.GetExpire("default", "sat1");
+        Assert.True(ttl > 50 && ttl <= 60);
+    }
+
+    [Fact(DisplayName = "SetAll_存储未初始化返回0")]
+    public void SetAll_StoreNotInitialized_ReturnsZero()
+    {
+        var original = KvController.SharedKvStore;
+        try
+        {
+            KvController.SharedKvStore = null;
+            var count = _controller.SetAll("default", new Dictionary<String, Byte[]?> { ["k1"] = [1] });
+            Assert.Equal(0, count);
+        }
+        finally
+        {
+            KvController.SharedKvStore = original;
+        }
     }
     #endregion
 }

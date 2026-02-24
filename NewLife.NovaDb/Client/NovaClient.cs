@@ -251,6 +251,34 @@ public class NovaClient : DisposeBase
         EnsureOpen();
         return await _client!.InvokeAsync<String[]>("Kv/Search", new { tableName, pattern, offset, count }).ConfigureAwait(false) ?? [];
     }
+
+    /// <summary>KV 批量获取值</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="keys">键数组</param>
+    /// <returns>键到二进制值的字典</returns>
+    public async Task<IDictionary<String, Byte[]?>> KvGetAllAsync(String tableName, String[] keys)
+    {
+        EnsureOpen();
+        var dict = await _client!.InvokeAsync<IDictionary<String, String?>>("Kv/GetAll", new { tableName, keys }).ConfigureAwait(false);
+        var result = new Dictionary<String, Byte[]?>();
+        if (dict != null)
+        {
+            foreach (var kvp in dict)
+                result[kvp.Key] = kvp.Value == null ? null : Convert.FromBase64String(kvp.Value);
+        }
+        return result;
+    }
+
+    /// <summary>KV 批量设置键值对</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="values">键到二进制值的字典</param>
+    /// <param name="ttlSeconds">过期时间（秒），0 表示永不过期</param>
+    /// <returns>设置的键个数</returns>
+    public async Task<Int32> KvSetAllAsync(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds = 0)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Int32>("Kv/SetAll", new { tableName, values, ttlSeconds }).ConfigureAwait(false);
+    }
     #endregion
 
     #region 消息队列操作

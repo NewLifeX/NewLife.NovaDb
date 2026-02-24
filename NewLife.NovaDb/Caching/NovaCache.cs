@@ -263,6 +263,86 @@ public class NovaCache : Cache
         return [];
     }
 
+    /// <summary>批量获取缓存项</summary>
+    /// <param name="keys">键集合</param>
+    /// <returns>键值对字典</returns>
+    public override IDictionary<String, T?> GetAll<T>(IEnumerable<String> keys) where T : default
+    {
+        if (_kvStore != null)
+        {
+            var result = new Dictionary<String, T?>();
+            var keyArr = keys as String[] ?? keys.ToArray();
+            var data = _kvStore.GetAll(keyArr);
+            foreach (var key in keyArr)
+            {
+                if (data.TryGetValue(key, out var pk) && pk != null && pk.Total > 0)
+                {
+                    using (pk)
+                    {
+                        if (typeof(T) == typeof(Object))
+                            result[key] = (T)(Object)pk.ToStr();
+                        else
+                            result[key] = (T?)Encoder.Decode(pk, typeof(T));
+                    }
+                }
+                else
+                    result[key] = default;
+            }
+            return result;
+        }
+
+        if (_client != null)
+        {
+            var keyArr = keys as String[] ?? keys.ToArray();
+            var data = _client.KvGetAllAsync(Name, keyArr).ConfigureAwait(false).GetAwaiter().GetResult();
+            var result = new Dictionary<String, T?>();
+            foreach (var key in keyArr)
+            {
+                if (data.TryGetValue(key, out var buf) && buf != null && buf.Length > 0)
+                {
+                    var pk = new ArrayPacket(buf);
+                    if (typeof(T) == typeof(Object))
+                        result[key] = (T)(Object)pk.ToStr();
+                    else
+                        result[key] = (T?)Encoder.Decode(pk, typeof(T));
+                }
+                else
+                    result[key] = default;
+            }
+            return result;
+        }
+
+        return new Dictionary<String, T?>();
+    }
+
+    /// <summary>批量设置缓存项</summary>
+    /// <param name="values">键值对字典</param>
+    /// <param name="expire">过期时间（秒）。小于0时采用默认缓存时间；0 表示永不过期</param>
+    public override void SetAll<T>(IDictionary<String, T> values, Int32 expire = -1)
+    {
+        if (expire < 0) expire = Expire;
+
+        if (_kvStore != null)
+        {
+            var dict = new Dictionary<String, Byte[]?>();
+            foreach (var kvp in values)
+                dict[kvp.Key] = Encoder.Encode(kvp.Value)?.ReadBytes();
+
+            var ttl = expire > 0 ? TimeSpan.FromSeconds(expire) : (TimeSpan?)null;
+            _kvStore.SetAll(dict, ttl);
+            return;
+        }
+
+        if (_client != null)
+        {
+            var dict = new Dictionary<String, Byte[]?>();
+            foreach (var kvp in values)
+                dict[kvp.Key] = Encoder.Encode(kvp.Value)?.ReadBytes();
+
+            _client.KvSetAllAsync(Name, dict, expire).ConfigureAwait(false).GetAwaiter().GetResult();
+        }
+    }
+
     /// <summary>提交变更</summary>
     /// <returns>0</returns>
     public override Int32 Commit() => 0;

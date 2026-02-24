@@ -193,4 +193,57 @@ internal class KvController : IApi
 
         return store.Search(pattern, offset, count).ToArray();
     }
+
+    /// <summary>批量获取键值对</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="keys">键数组</param>
+    /// <returns>键到 Base64 编码值的字典</returns>
+    public IDictionary<String, String?> GetAll(String tableName, String[] keys)
+    {
+        var store = GetStore(tableName);
+        if (store == null) return new Dictionary<String, String?>();
+
+        var result = new Dictionary<String, String?>();
+        using var data = new CompositeDisposable();
+        var raw = store.GetAll(keys);
+        foreach (var key in keys)
+        {
+            if (raw.TryGetValue(key, out var pk) && pk != null)
+            {
+                data.Add(pk);
+                result[key] = Convert.ToBase64String(pk.ReadBytes());
+            }
+            else
+                result[key] = null;
+        }
+        return result;
+    }
+
+    /// <summary>批量设置键值对</summary>
+    /// <param name="tableName">KV 表名，默认 "default"</param>
+    /// <param name="values">键到二进制值的字典</param>
+    /// <param name="ttlSeconds">过期时间（秒），0 表示永不过期</param>
+    /// <returns>设置的键个数</returns>
+    public Int32 SetAll(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds = 0)
+    {
+        var store = GetStore(tableName);
+        if (store == null) return 0;
+
+        var ttl = ttlSeconds > 0 ? TimeSpan.FromSeconds(ttlSeconds) : (TimeSpan?)null;
+        store.SetAll(values, ttl);
+        return values.Count;
+    }
+
+    /// <summary>辅助类，用于批量释放 IOwnerPacket 资源</summary>
+    private sealed class CompositeDisposable : IDisposable
+    {
+        private readonly List<IDisposable> _disposables = [];
+
+        public void Add(IDisposable disposable) => _disposables.Add(disposable);
+
+        public void Dispose()
+        {
+            foreach (var d in _disposables) d.Dispose();
+        }
+    }
 }

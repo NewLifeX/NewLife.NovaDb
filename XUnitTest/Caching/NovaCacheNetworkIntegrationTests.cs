@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -230,5 +231,75 @@ public class NovaCacheNetworkIntegrationTests : IClassFixture<IntegrationServerF
         using var cache = CreateNetworkCache();
 
         Assert.Throws<NotSupportedException>(() => cache.GetQueue<String>("test-queue"));
+    }
+
+    [Fact(DisplayName = "网络缓存-批量设置和获取")]
+    public void TestSetAllAndGetAll()
+    {
+        using var cache = CreateNetworkCache();
+
+        var prefix = "net_batch_" + Guid.NewGuid().ToString("N")[..8];
+        var data = new Dictionary<String, String>
+        {
+            [$"{prefix}_a"] = "val1",
+            [$"{prefix}_b"] = "val2",
+            [$"{prefix}_c"] = "val3",
+        };
+
+        cache.SetAll(data);
+
+        var keys = data.Keys.Concat(new[] { $"{prefix}_miss" }).ToArray();
+        var result = cache.GetAll<String>(keys);
+
+        Assert.Equal("val1", result[$"{prefix}_a"]);
+        Assert.Equal("val2", result[$"{prefix}_b"]);
+        Assert.Equal("val3", result[$"{prefix}_c"]);
+        Assert.Null(result[$"{prefix}_miss"]);
+    }
+
+    [Fact(DisplayName = "网络缓存-批量操作吞吐量超过100000ops")]
+    public void TestBatchThroughputExceeds100K()
+    {
+        using var cache = CreateNetworkCache();
+
+        // 准备批量数据
+        var batchSize = 1000;
+        var totalOps = 0;
+        var data = new Dictionary<String, String>();
+        for (var i = 0; i < batchSize; i++)
+            data[$"perf:{i}"] = new String('X', 64);
+
+        // 预热
+        cache.SetAll(data);
+        cache.GetAll<String>(data.Keys);
+
+        // 计时：批量写入
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var iterations = 200;
+        for (var n = 0; n < iterations; n++)
+        {
+            cache.SetAll(data);
+            totalOps += batchSize;
+        }
+        sw.Stop();
+
+        var writeOpsPerSec = totalOps / sw.Elapsed.TotalSeconds;
+
+        // 计时：批量读取
+        totalOps = 0;
+        var keys = data.Keys.ToArray();
+        sw.Restart();
+        for (var n = 0; n < iterations; n++)
+        {
+            cache.GetAll<String>(keys);
+            totalOps += batchSize;
+        }
+        sw.Stop();
+
+        var readOpsPerSec = totalOps / sw.Elapsed.TotalSeconds;
+
+        // 至少一个方向应超过 100,000 ops/s
+        Assert.True(writeOpsPerSec > 100_000 || readOpsPerSec > 100_000,
+            $"批量吞吐量未达标: Write={writeOpsPerSec:N0} ops/s, Read={readOpsPerSec:N0} ops/s");
     }
 }
