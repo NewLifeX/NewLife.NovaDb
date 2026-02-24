@@ -420,6 +420,10 @@ public class StreamManager : IDisposable
     }
     #endregion
 
+    /// <summary>获取消息总数</summary>
+    /// <returns>消息总数</returns>
+    public Int64 GetMessageCount() => _engine.GetEntryCount();
+
     #region 辅助
     /// <summary>获取或创建消费组的信号量</summary>
     /// <param name="groupName">消费组名称</param>

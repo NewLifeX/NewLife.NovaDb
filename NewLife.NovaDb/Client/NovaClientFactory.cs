@@ -1,5 +1,9 @@
 ﻿using System.Data.Common;
 using NewLife.Log;
+using NewLife.NovaDb.Caching;
+using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Engine.Flux;
+using NewLife.NovaDb.Engine.KV;
 
 namespace NewLife.NovaDb.Client;
 
@@ -72,5 +76,49 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// <returns>批量命令项实例</returns>
     public override DbBatchCommand CreateBatchCommand() => new NovaBatchCommand();
 #endif
+    #endregion
+
+    #region 缓存
+    /// <summary>创建 NovaCache 实例，根据连接字符串自动识别嵌入模式或网络服务模式</summary>
+    /// <param name="connectionString">连接字符串。嵌入模式：Data Source=../data；网络模式：Server=localhost;Port=3306</param>
+    /// <returns>NovaCache 实例</returns>
+    public static NovaCache CreateCache(String connectionString)
+    {
+        if (String.IsNullOrEmpty(connectionString))
+            throw new ArgumentNullException(nameof(connectionString));
+
+        var csb = new NovaConnectionStringBuilder(connectionString);
+
+        if (csb.IsEmbedded)
+        {
+            // 嵌入模式：直接使用本地 KvStore
+            var dataSource = csb.DataSource!;
+            var kvStore = new KvStore(null, dataSource);
+
+            // 同时创建流管理器用于队列功能
+            var mqPath = Path.Combine(dataSource, "mq");
+            var fluxEngine = new FluxEngine(mqPath, new DbOptions());
+            var streamManager = new StreamManager(fluxEngine);
+
+            return new NovaCache(kvStore) { StreamManager = streamManager };
+        }
+        else
+        {
+            // 网络服务模式：通过 NovaClient 远程调用
+            var server = csb.Server ?? "localhost";
+            var port = csb.Port;
+            var uri = $"tcp://{server}:{port}";
+
+            var client = new NovaClient(uri);
+            client.Open();
+
+            return new NovaCache(client);
+        }
+    }
+
+    /// <summary>创建 NovaCacheProvider 实例，根据连接字符串自动识别嵌入模式或网络服务模式</summary>
+    /// <param name="connectionString">连接字符串。嵌入模式：Data Source=../data；网络模式：Server=localhost;Port=3306</param>
+    /// <returns>NovaCacheProvider 实例</returns>
+    public static NovaCacheProvider CreateCacheProvider(String connectionString) => new(connectionString);
     #endregion
 }

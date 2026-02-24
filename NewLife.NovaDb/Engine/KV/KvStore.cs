@@ -332,4 +332,154 @@ public partial class KvStore
 
         return keys;
     }
+
+    /// <summary>清空所有键值对</summary>
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _data.Clear();
+        }
+    }
+
+    /// <summary>按模式搜索未过期的键</summary>
+    /// <param name="pattern">搜索模式，支持 * 和 ? 通配符</param>
+    /// <param name="offset">起始偏移量</param>
+    /// <param name="count">返回数量，-1 表示全部</param>
+    /// <returns>匹配的键集合</returns>
+    public IEnumerable<String> Search(String pattern, Int32 offset = 0, Int32 count = -1)
+    {
+        lock (_lock)
+        {
+            var result = new List<String>();
+            foreach (var kvp in _data)
+            {
+                if (kvp.Value.IsExpired()) continue;
+
+                if (MatchPattern(kvp.Key, pattern))
+                    result.Add(kvp.Key);
+            }
+
+            if (offset > 0)
+                result = result.Skip(offset).ToList();
+            if (count >= 0)
+                result = result.Take(count).ToList();
+
+            return result;
+        }
+    }
+
+    /// <summary>获取键的剩余存活时间</summary>
+    /// <param name="key">键</param>
+    /// <returns>剩余 TTL。永不过期返回 TimeSpan.Zero；不存在或已过期返回负值</returns>
+    public TimeSpan GetTtl(String key)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+
+        lock (_lock)
+        {
+            if (!_data.TryGetValue(key, out var entry))
+                return TimeSpan.FromSeconds(-1);
+
+            if (entry.IsExpired())
+            {
+                _data.Remove(key);
+                return TimeSpan.FromSeconds(-1);
+            }
+
+            if (entry.ExpiresAt == null)
+                return TimeSpan.Zero;
+
+            return entry.ExpiresAt.Value - DateTime.UtcNow;
+        }
+    }
+
+    /// <summary>批量删除键</summary>
+    /// <param name="keys">键集合</param>
+    /// <returns>删除的键数量</returns>
+    public Int32 Delete(String[] keys)
+    {
+        if (keys == null || keys.Length == 0) return 0;
+
+        var count = 0;
+        lock (_lock)
+        {
+            foreach (var key in keys)
+            {
+                if (String.IsNullOrEmpty(key)) continue;
+                if (_data.Remove(key))
+                {
+                    PersistKvDelete(key);
+                    count++;
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>按模式删除键</summary>
+    /// <param name="pattern">搜索模式，支持 * 和 ? 通配符</param>
+    /// <returns>删除的键数量</returns>
+    public Int32 DeleteByPattern(String pattern)
+    {
+        lock (_lock)
+        {
+            var toRemove = new List<String>();
+            foreach (var kvp in _data)
+            {
+                if (MatchPattern(kvp.Key, pattern))
+                    toRemove.Add(kvp.Key);
+            }
+
+            foreach (var key in toRemove)
+            {
+                _data.Remove(key);
+                PersistKvDelete(key);
+            }
+
+            return toRemove.Count;
+        }
+    }
+
+    /// <summary>简单通配符匹配，支持 * 和 ? </summary>
+    private static Boolean MatchPattern(String input, String pattern)
+    {
+        if (pattern == "*") return true;
+
+        var i = 0;
+        var j = 0;
+        var starIdx = -1;
+        var matchIdx = 0;
+
+        while (i < input.Length)
+        {
+            if (j < pattern.Length && (pattern[j] == '?' || pattern[j] == input[i]))
+            {
+                i++;
+                j++;
+            }
+            else if (j < pattern.Length && pattern[j] == '*')
+            {
+                starIdx = j;
+                matchIdx = i;
+                j++;
+            }
+            else if (starIdx != -1)
+            {
+                j = starIdx + 1;
+                matchIdx++;
+                i = matchIdx;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        while (j < pattern.Length && pattern[j] == '*')
+            j++;
+
+        return j == pattern.Length;
+    }
 }
