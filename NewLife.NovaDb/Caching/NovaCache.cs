@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Text;
 using NewLife.Caching;
 using NewLife.Messaging;
@@ -194,9 +195,9 @@ public class NovaCache : Cache
         if (_kvStore != null)
         {
             var str = _kvStore.GetString(key);
-            var current = str != null ? Double.Parse(str) : 0d;
+            var current = str != null ? Double.Parse(str, CultureInfo.InvariantCulture) : 0d;
             var newValue = current + value;
-            _kvStore.SetString(key, newValue.ToString("R"));
+            _kvStore.SetString(key, newValue.ToString("R", CultureInfo.InvariantCulture));
             return newValue;
         }
         return 0;
@@ -264,10 +265,11 @@ public class NovaCache : Cache
         if (value is String str) return str;
         if (value is Byte[] bytes) return Convert.ToBase64String(bytes);
 
+        if (value is IFormattable fmt)
+            return fmt.ToString(null, CultureInfo.InvariantCulture);
+
         var type = typeof(T);
-        if (type == typeof(Int32) || type == typeof(Int64) || type == typeof(Double) ||
-            type == typeof(Single) || type == typeof(Decimal) || type == typeof(Boolean) ||
-            type == typeof(DateTime) || type == typeof(DateTimeOffset))
+        if (type == typeof(Boolean))
             return value.ToString()!;
 
         // 复杂类型使用 JSON 序列化
@@ -283,13 +285,13 @@ public class NovaCache : Cache
         var type = typeof(T);
         if (type == typeof(String)) return (T)(Object)str;
         if (type == typeof(Byte[])) return (T)(Object)Convert.FromBase64String(str);
-        if (type == typeof(Int32)) return (T)(Object)Int32.Parse(str);
-        if (type == typeof(Int64)) return (T)(Object)Int64.Parse(str);
-        if (type == typeof(Double)) return (T)(Object)Double.Parse(str);
-        if (type == typeof(Single)) return (T)(Object)Single.Parse(str);
-        if (type == typeof(Decimal)) return (T)(Object)Decimal.Parse(str);
+        if (type == typeof(Int32)) return (T)(Object)Int32.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Int64)) return (T)(Object)Int64.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Double)) return (T)(Object)Double.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Single)) return (T)(Object)Single.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Decimal)) return (T)(Object)Decimal.Parse(str, CultureInfo.InvariantCulture);
         if (type == typeof(Boolean)) return (T)(Object)Boolean.Parse(str);
-        if (type == typeof(DateTime)) return (T)(Object)DateTime.Parse(str);
+        if (type == typeof(DateTime)) return (T)(Object)DateTime.Parse(str, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
         if (type == typeof(Object)) return (T)(Object)str;
 
         // JSON 反序列化

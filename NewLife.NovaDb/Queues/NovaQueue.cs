@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using NewLife.Caching;
 using NewLife.NovaDb.Engine.Flux;
 using NewLife.Serialization;
@@ -254,9 +255,10 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
         if (value == null) return String.Empty;
         if (value is String str) return str;
 
-        var type = typeof(T);
-        if (type == typeof(Int32) || type == typeof(Int64) || type == typeof(Double) ||
-            type == typeof(Single) || type == typeof(Decimal) || type == typeof(Boolean))
+        if (value is IFormattable fmt)
+            return fmt.ToString(null, CultureInfo.InvariantCulture);
+
+        if (typeof(T) == typeof(Boolean))
             return value.ToString()!;
 
         return value.ToJson();
@@ -270,11 +272,11 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
 
         var type = typeof(T);
         if (type == typeof(String)) return (T)(Object)str;
-        if (type == typeof(Int32)) return (T)(Object)Int32.Parse(str);
-        if (type == typeof(Int64)) return (T)(Object)Int64.Parse(str);
-        if (type == typeof(Double)) return (T)(Object)Double.Parse(str);
-        if (type == typeof(Single)) return (T)(Object)Single.Parse(str);
-        if (type == typeof(Decimal)) return (T)(Object)Decimal.Parse(str);
+        if (type == typeof(Int32)) return (T)(Object)Int32.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Int64)) return (T)(Object)Int64.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Double)) return (T)(Object)Double.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Single)) return (T)(Object)Single.Parse(str, CultureInfo.InvariantCulture);
+        if (type == typeof(Decimal)) return (T)(Object)Decimal.Parse(str, CultureInfo.InvariantCulture);
         if (type == typeof(Boolean)) return (T)(Object)Boolean.Parse(str);
         if (type == typeof(Object)) return (T)(Object)str;
 
