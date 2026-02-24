@@ -146,10 +146,10 @@ public class NovaClient : DisposeBase
     /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>
     /// <returns>二进制数据包，不存在返回 null</returns>
-    public async Task<Packet?> KvGetPacketAsync(String tableName, String key)
+    public async Task<IPacket?> KvGetPacketAsync(String tableName, String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Packet>("Kv/GetPacket", new { tableName, key }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<IPacket>("Kv/GetPacket", new { tableName, key }).ConfigureAwait(false);
     }
 
     /// <summary>KV 删除键</summary>
