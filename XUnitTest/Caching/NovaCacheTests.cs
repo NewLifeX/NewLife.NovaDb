@@ -345,4 +345,156 @@ public class NovaCacheTests : IDisposable
         using var cache = CreateCache();
         Assert.Equal(0, cache.Commit());
     }
+
+    [Fact(DisplayName = "测试浮点递减")]
+    public void TestDecrementDouble()
+    {
+        using var cache = CreateCache();
+
+        cache.Increment("price", 10.0);
+        var val = cache.Decrement("price", 3.5);
+        Assert.Equal(6.5, val, 5);
+    }
+
+    [Fact(DisplayName = "测试FluxEngine属性")]
+    public void TestFluxEngineProperty()
+    {
+        var kvStore = new KvStore(null, Path.Combine(_testDir, "flux_prop.kvd"));
+        using var cache = new NovaCache(kvStore);
+
+        Assert.Null(cache.FluxEngine);
+
+        var mqPath = Path.Combine(_testDir, "mq_prop");
+        var fluxEngine = new FluxEngine(mqPath, new DbOptions { FluxPartitionHours = 1 });
+        cache.FluxEngine = fluxEngine;
+
+        Assert.NotNull(cache.FluxEngine);
+        Assert.Same(fluxEngine, cache.FluxEngine);
+    }
+
+    [Fact(DisplayName = "测试Encoder属性")]
+    public void TestEncoderProperty()
+    {
+        using var cache = CreateCache();
+
+        Assert.NotNull(cache.Encoder);
+        Assert.IsType<NovaJsonEncoder>(cache.Encoder);
+    }
+
+    [Fact(DisplayName = "测试GetQueue成功获取队列")]
+    public void TestGetQueueWithFluxEngine()
+    {
+        using var cache = CreateCache();
+
+        var queue = cache.GetQueue<String>("test-queue");
+        Assert.NotNull(queue);
+    }
+
+    [Fact(DisplayName = "测试GetQueue无FluxEngine抛出异常")]
+    public void TestGetQueueWithoutFluxEngineThrows()
+    {
+        var kvStore = new KvStore(null, Path.Combine(_testDir, "no_flux.kvd"));
+        using var cache = new NovaCache(kvStore);
+
+        Assert.Throws<NotSupportedException>(() => cache.GetQueue<String>("test-queue"));
+    }
+
+    [Fact(DisplayName = "测试CreateEventBus有FluxEngine")]
+    public void TestCreateEventBusWithFluxEngine()
+    {
+        using var cache = CreateCache();
+
+        var bus = cache.CreateEventBus<String>("test-topic", "client1");
+        Assert.NotNull(bus);
+    }
+
+    [Fact(DisplayName = "测试CreateEventBus无FluxEngine回退基类")]
+    public void TestCreateEventBusWithoutFluxEngine()
+    {
+        var kvStore = new KvStore(null, Path.Combine(_testDir, "no_flux2.kvd"));
+        using var cache = new NovaCache(kvStore);
+
+        var bus = cache.CreateEventBus<String>("test-topic", "client1");
+        Assert.NotNull(bus);
+    }
+
+    [Fact(DisplayName = "测试Set过期时间为零永不过期")]
+    public void TestSetExpireZero()
+    {
+        using var cache = CreateCache();
+
+        cache.Set("key", "value", 0);
+        Assert.True(cache.ContainsKey("key"));
+        Assert.Equal("value", cache.Get<String>("key"));
+    }
+
+    [Fact(DisplayName = "测试Set过期时间为负使用默认")]
+    public void TestSetExpireNegative()
+    {
+        using var cache = CreateCache();
+
+        cache.Set("key", "value", -1);
+        Assert.True(cache.ContainsKey("key"));
+        Assert.Equal("value", cache.Get<String>("key"));
+    }
+
+    [Fact(DisplayName = "测试Remove空数组返回零")]
+    public void TestRemoveEmptyArray()
+    {
+        using var cache = CreateCache();
+
+        Assert.Equal(0, cache.Remove(Array.Empty<String>()));
+    }
+
+    [Fact(DisplayName = "测试Remove null数组返回零")]
+    public void TestRemoveNullArray()
+    {
+        using var cache = CreateCache();
+
+        Assert.Equal(0, cache.Remove((String[])null!));
+    }
+
+    [Fact(DisplayName = "测试Get获取Object类型")]
+    public void TestGetObjectType()
+    {
+        using var cache = CreateCache();
+
+        cache.Set("key", "hello");
+        var val = cache.Get<Object>("key");
+        Assert.NotNull(val);
+        Assert.Equal("hello", val.ToString());
+    }
+
+    [Fact(DisplayName = "测试Remove不存在的键返回零")]
+    public void TestRemoveNonExistent()
+    {
+        using var cache = CreateCache();
+
+        var removed = cache.Remove("nonexistent");
+        Assert.Equal(0, removed);
+    }
+
+    [Fact(DisplayName = "测试Search分页")]
+    public void TestSearchPagination()
+    {
+        using var cache = CreateCache();
+
+        for (var i = 1; i <= 5; i++)
+            cache.Set($"item:{i}", $"val{i}");
+
+        var page = cache.Search("item:*", 2, 2);
+        Assert.Equal(2, page.Count());
+    }
+
+    [Fact(DisplayName = "测试嵌入模式构造函数null抛出异常")]
+    public void TestConstructorNullKvStoreThrows()
+    {
+        Assert.Throws<ArgumentNullException>(() => new NovaCache((KvStore)null!));
+    }
+
+    [Fact(DisplayName = "测试网络模式构造函数null抛出异常")]
+    public void TestConstructorNullClientThrows()
+    {
+        Assert.Throws<ArgumentNullException>(() => new NovaCache((NewLife.NovaDb.Client.NovaClient)null!));
+    }
 }
