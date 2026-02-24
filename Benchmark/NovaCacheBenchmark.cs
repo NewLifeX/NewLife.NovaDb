@@ -234,3 +234,105 @@ public class NovaCacheEmbeddedMassDataBenchmark
             cache.Get<String>($"key:{i}");
     }
 }
+
+/// <summary>NovaCache 嵌入模式海量数据基准测试（100万条）</summary>
+[MemoryDiagnoser]
+[Config(typeof(AntiViralConfig))]
+public class NovaCacheEmbeddedMassData100wBenchmark
+{
+    private String _storePath = null!;
+    private String _stringValue64 = null!;
+    private String _stringValue1024 = null!;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _storePath = Path.Combine(Path.GetTempPath(), $"NovaBench_CacheMass100w_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_storePath);
+        _stringValue64 = new String('A', 64);
+        _stringValue1024 = new String('A', 1024);
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        try { Directory.Delete(_storePath, true); } catch { }
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入100万条(64B)")]
+    public void MassWrite_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emass64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 1_000_000; i++)
+            cache.Set($"key:{i}", _stringValue64);
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入100万条(1024B)")]
+    public void MassWrite_1024B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emass1024_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 1_000_000; i++)
+            cache.Set($"key:{i}", _stringValue1024);
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入后读取100万条(64B)")]
+    public void MassWriteThenRead_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emassrd64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 1_000_000; i++)
+            cache.Set($"key:{i}", _stringValue64);
+        for (var i = 0; i < 1_000_000; i++)
+            cache.Get<String>($"key:{i}");
+    }
+}
+
+/// <summary>NovaCache 嵌入模式海量数据基准测试（1000万条）</summary>
+[MemoryDiagnoser]
+[Config(typeof(AntiViralConfig))]
+public class NovaCacheEmbeddedMassData1000wBenchmark
+{
+    private String _storePath = null!;
+    private String _stringValue64 = null!;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _storePath = Path.Combine(Path.GetTempPath(), $"NovaBench_CacheMass1000w_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_storePath);
+        _stringValue64 = new String('A', 64);
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        try { Directory.Delete(_storePath, true); } catch { }
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入1000万条(64B)")]
+    public void MassWrite_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emass64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 10_000_000; i++)
+            cache.Set($"key:{i}", _stringValue64);
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入后读取1000万条(64B)")]
+    public void MassWriteThenRead_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emassrd64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 10_000_000; i++)
+            cache.Set($"key:{i}", _stringValue64);
+        for (var i = 0; i < 10_000_000; i++)
+            cache.Get<String>($"key:{i}");
+    }
+}
