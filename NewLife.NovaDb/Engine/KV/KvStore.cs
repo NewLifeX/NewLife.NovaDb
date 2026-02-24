@@ -397,9 +397,9 @@ public partial class KvStore
     /// <summary>批量删除键</summary>
     /// <param name="keys">键集合</param>
     /// <returns>删除的键数量</returns>
-    public Int32 Delete(String[] keys)
+    public Int32 Delete(IEnumerable<String> keys)
     {
-        if (keys == null || keys.Length == 0) return 0;
+        if (keys == null) return 0;
 
         var count = 0;
         lock (_lock)

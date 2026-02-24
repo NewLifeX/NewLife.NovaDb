@@ -194,7 +194,7 @@ public class KvStoreTests
         Assert.Throws<ArgumentException>(() => store.Set("", [1]));
         Assert.Throws<ArgumentException>(() => store.Get(null!));
         Assert.Throws<ArgumentException>(() => store.Get(""));
-        Assert.Throws<ArgumentException>(() => store.Delete(null!));
+        Assert.Throws<ArgumentException>(() => store.Delete((String)null!));
         Assert.Throws<ArgumentException>(() => store.Delete(""));
         Assert.Throws<ArgumentException>(() => store.Exists(null!));
         Assert.Throws<ArgumentException>(() => store.Exists(""));
