@@ -5,7 +5,7 @@ using NewLife.NovaDb.Engine.KV;
 
 namespace Benchmark;
 
-/// <summary>NovaCache 缓存层基准测试（ICache 接口级别）</summary>
+/// <summary>NovaCache 缓存层基准测试（嵌入模式，ICache 接口级别）</summary>
 [MemoryDiagnoser]
 [Config(typeof(AntiViralConfig))]
 public class NovaCacheBenchmark
@@ -144,5 +144,93 @@ public class NovaCacheBenchmark
     {
         var id = Interlocked.Increment(ref _counter);
         return _cache.Set($"ttl:{id}", _stringValue, 300);
+    }
+
+    [Benchmark(Description = "Clear 清空")]
+    public void Clear()
+    {
+        // 清空后重新插入测试数据，避免影响后续迭代
+        _cache.Clear();
+        for (var i = 0; i < 100; i++)
+            _cache.Set($"key:{i}", _stringValue);
+        _cache.Set("int:bench", 42);
+    }
+
+    [Benchmark(Description = "Count 获取总数")]
+    public Int32 Count()
+    {
+        return _cache.Count;
+    }
+
+    [Benchmark(Description = "Keys 获取所有键")]
+    public Int32 Keys()
+    {
+        return _cache.Keys.Count;
+    }
+
+    [Benchmark(Description = "Remove 通配符删除")]
+    public Int32 RemoveByPattern()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        for (var i = 0; i < 5; i++)
+            _cache.Set($"pat:{id}:{i}", _stringValue);
+        return _cache.Remove($"pat:{id}:*");
+    }
+}
+
+/// <summary>NovaCache 嵌入模式海量数据基准测试（10万条）</summary>
+[MemoryDiagnoser]
+[Config(typeof(AntiViralConfig))]
+public class NovaCacheEmbeddedMassDataBenchmark
+{
+    private String _storePath = null!;
+    private String _stringValue64 = null!;
+    private String _stringValue1024 = null!;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _storePath = Path.Combine(Path.GetTempPath(), $"NovaBench_CacheMass_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_storePath);
+        _stringValue64 = new String('A', 64);
+        _stringValue1024 = new String('A', 1024);
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        try { Directory.Delete(_storePath, true); } catch { }
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入10万条(64B)")]
+    public void MassWrite_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emass64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 100_000; i++)
+            cache.Set($"key:{i}", _stringValue64);
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入10万条(1024B)")]
+    public void MassWrite_1024B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emass1024_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 100_000; i++)
+            cache.Set($"key:{i}", _stringValue1024);
+    }
+
+    [Benchmark(Description = "嵌入模式海量写入后读取10万条(64B)")]
+    public void MassWriteThenRead_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"emassrd64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        var cache = new NovaCache(store);
+        for (var i = 0; i < 100_000; i++)
+            cache.Set($"key:{i}", _stringValue64);
+        for (var i = 0; i < 100_000; i++)
+            cache.Get<String>($"key:{i}");
     }
 }

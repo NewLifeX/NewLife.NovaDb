@@ -129,4 +129,125 @@ public class KvStoreBenchmark
     {
         return _store.GetTtl("key:100");
     }
+
+    [Benchmark(Description = "Add 仅新增")]
+    public Boolean Add()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        return _store.Add($"add:{id}", _value, TimeSpan.Zero);
+    }
+
+    [Benchmark(Description = "Replace 替换")]
+    public IOwnerPacket? Replace()
+    {
+        return _store.Replace("key:500", _value);
+    }
+
+    [Benchmark(Description = "GetString 字符串读取")]
+    public String? GetString()
+    {
+        return _store.GetString("key:500");
+    }
+
+    [Benchmark(Description = "GetAllKeys 获取所有键")]
+    public Int32 GetAllKeys()
+    {
+        var count = 0;
+        foreach (var _ in _store.GetAllKeys())
+            count++;
+        return count;
+    }
+
+    [Benchmark(Description = "GetExpiration 获取过期时间")]
+    public DateTime? GetExpiration()
+    {
+        return _store.GetExpiration("key:100");
+    }
+}
+
+/// <summary>KV 引擎海量数据基准测试（10万条）</summary>
+[MemoryDiagnoser]
+[Config(typeof(AntiViralConfig))]
+public class KvStoreMassDataBenchmark
+{
+    private String _storePath = null!;
+    private KvStore _store = null!;
+    private Byte[] _value64 = null!;
+    private Byte[] _value1024 = null!;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _storePath = Path.Combine(Path.GetTempPath(), $"NovaBench_KvMass_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(_storePath);
+        _value64 = new Byte[64];
+        Random.Shared.NextBytes(_value64);
+        _value1024 = new Byte[1024];
+        Random.Shared.NextBytes(_value1024);
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _store?.Dispose();
+        try { Directory.Delete(_storePath, true); } catch { }
+    }
+
+    [Benchmark(Description = "海量写入10万条(64B)")]
+    public void MassWrite_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"mass64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        for (var i = 0; i < 100_000; i++)
+            store.Set($"key:{i}", _value64);
+    }
+
+    [Benchmark(Description = "海量写入10万条(1024B)")]
+    public void MassWrite_1024B()
+    {
+        var kvFile = Path.Combine(_storePath, $"mass1024_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        for (var i = 0; i < 100_000; i++)
+            store.Set($"key:{i}", _value1024);
+    }
+
+    [Benchmark(Description = "海量写入后读取10万条(64B)")]
+    public void MassWriteThenRead_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"massrd64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        for (var i = 0; i < 100_000; i++)
+            store.Set($"key:{i}", _value64);
+        for (var i = 0; i < 100_000; i++)
+            store.Get($"key:{i}");
+    }
+
+    [Benchmark(Description = "海量批量写入10万条(SetAll, 64B)")]
+    public void MassSetAll_64B()
+    {
+        var kvFile = Path.Combine(_storePath, $"massall64_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        // 分批写入，每批 1000 条
+        for (var batch = 0; batch < 100; batch++)
+        {
+            var dict = new Dictionary<String, Byte[]?>(1000);
+            for (var i = 0; i < 1000; i++)
+                dict[$"key:{batch * 1000 + i}"] = _value64;
+            store.SetAll(dict);
+        }
+    }
+
+    [Benchmark(Description = "海量数据搜索(10万条中搜索)")]
+    public Int32 MassSearch()
+    {
+        var kvFile = Path.Combine(_storePath, $"masssrc_{Guid.NewGuid():N}.kvd");
+        using var store = new KvStore(new DbOptions { DefaultKvTtl = TimeSpan.Zero }, kvFile);
+        for (var i = 0; i < 100_000; i++)
+            store.Set($"key:{i}", _value64);
+
+        var count = 0;
+        foreach (var _ in store.Search("key:999*", 0, 100))
+            count++;
+        return count;
+    }
 }
