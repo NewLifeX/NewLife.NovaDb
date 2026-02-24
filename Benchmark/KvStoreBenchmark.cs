@@ -71,4 +71,62 @@ public class KvStoreBenchmark
         _store.Set($"del:{id}", _value);
         _store.Delete($"del:{id}");
     }
+
+    [Benchmark(Description = "Exists 存在检查")]
+    public Boolean Exists()
+    {
+        return _store.Exists("key:500");
+    }
+
+    [Benchmark(Description = "Inc 原子递增")]
+    public Int64 Inc()
+    {
+        return _store.Inc("counter:bench", 1);
+    }
+
+    [Benchmark(Description = "IncDouble 浮点递增")]
+    public Double IncDouble()
+    {
+        return _store.IncDouble("dcounter:bench", 1.5);
+    }
+
+    [Benchmark(Description = "Search 模式搜索")]
+    public Int32 Search()
+    {
+        var count = 0;
+        foreach (var _ in _store.Search("key:1*", 0, 10))
+            count++;
+        return count;
+    }
+
+    [Benchmark(Description = "SetAll 批量写入(10)")]
+    public void SetAll()
+    {
+        var id = Interlocked.Increment(ref _counter);
+        var dict = new Dictionary<String, Byte[]?>(10);
+        for (var i = 0; i < 10; i++)
+            dict[$"batch:{id}:{i}"] = _value;
+        _store.SetAll(dict);
+    }
+
+    [Benchmark(Description = "GetAll 批量读取(10)")]
+    public IDictionary<String, IOwnerPacket?> GetAll()
+    {
+        var keys = new List<String>(10);
+        for (var i = 0; i < 10; i++)
+            keys.Add($"key:{i}");
+        return _store.GetAll(keys);
+    }
+
+    [Benchmark(Description = "SetExpiration TTL设置")]
+    public Boolean SetExpiration()
+    {
+        return _store.SetExpiration("key:100", TimeSpan.FromMinutes(5));
+    }
+
+    [Benchmark(Description = "GetTtl TTL查询")]
+    public TimeSpan GetTtl()
+    {
+        return _store.GetTtl("key:100");
+    }
 }
