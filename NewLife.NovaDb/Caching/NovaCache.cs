@@ -12,7 +12,7 @@ namespace NewLife.NovaDb.Caching;
 
 /// <summary>NovaDb 缓存实现，基于 KvStore 引擎封装 ICache 接口</summary>
 /// <remarks>
-/// 支持嵌入模式（直接使用本地 KvStore）和网络服务模式（通过 NovaClient 远程调用）。
+/// 支持嵌入模式（直接使用本地 KvStore）和网络模式（通过 NovaClient 远程调用）。
 /// 嵌入模式下直接操作 KvStore 引擎，性能更高；网络模式下通过 RPC 远程操作。
 /// </remarks>
 public class NovaCache : Cache
@@ -42,7 +42,7 @@ public class NovaCache : Cache
         Name = "Nova";
     }
 
-    /// <summary>创建网络服务模式的 NovaCache</summary>
+    /// <summary>创建网络模式的 NovaCache</summary>
     /// <param name="client">NovaDb 远程客户端</param>
     public NovaCache(NovaClient client)
     {

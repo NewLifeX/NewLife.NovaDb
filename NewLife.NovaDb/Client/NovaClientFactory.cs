@@ -7,12 +7,12 @@ using NewLife.NovaDb.Queues;
 
 namespace NewLife.NovaDb.Client;
 
-/// <summary>NovaDb ADO.NET 客户端工厂。统一入口，覆盖嵌入/服务器双模式和关系型/时序/MQ/KV四大场景</summary>
+/// <summary>NovaDb ADO.NET 客户端工厂。统一入口，覆盖嵌入/网络双模式和关系型/时序/MQ/KV四大场景</summary>
 /// <remarks>
 /// 一个连接字符串对应一个数据库，数据库内可包含多张关系表、多张时序表（即多个 MQ）、多个 KV 库。
 /// 
 /// 嵌入模式连接字符串：Data Source=../data/mydb
-/// 服务器模式连接字符串：Server=localhost;Port=3306;Database=mydb
+/// 网络模式连接字符串：Server=localhost;Port=3306;Database=mydb
 /// 
 /// 四大场景用法：
 /// - 关系型/时序：通过 ADO.NET（CreateConnection）使用 SQL 操作
@@ -42,7 +42,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// <summary>性能跟踪器</summary>
     public ITracer? Tracer { get; set; }
 
-    /// <summary>连接池管理器（服务器模式）</summary>
+    /// <summary>连接池管理器（网络模式）</summary>
     public NovaPoolManager PoolManager { get; } = new();
     #endregion
 
@@ -98,7 +98,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// <remarks>
     /// 同一连接字符串对应同一数据库，内部共用引擎实例。
     /// 嵌入模式下，KV 和 MQ 引擎按数据库目录缓存共用。
-    /// 服务器模式下，连接从连接池获取共用。
+    /// 网络模式下，连接从连接池获取共用。
     /// </remarks>
     /// <param name="connectionString">连接字符串。嵌入模式：Data Source=../data/mydb；网络模式：Server=localhost;Port=3306</param>
     /// <returns>NovaCacheProvider 实例</returns>
@@ -108,7 +108,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// <remarks>
     /// 同一数据库内可包含多个 KV 表，通过 tableName 区分。
     /// 嵌入模式下每个 KV 表对应独立的 KvStore 文件。
-    /// 服务器模式下通过 NovaClient 远程操作指定 KV 表。
+    /// 网络模式下通过 NovaClient 远程操作指定 KV 表。
     /// </remarks>
     /// <param name="connectionString">连接字符串</param>
     /// <param name="tableName">KV 表名。默认 "kv"</param>
@@ -144,7 +144,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// <summary>获取消息队列实例</summary>
     /// <remarks>
     /// 同一数据库内可包含多个队列（topic），每个 topic 对应一个时序表。
-    /// 嵌入模式下使用本地 FluxEngine 引擎；服务器模式下通过 NovaClient 远程操作。
+    /// 嵌入模式下使用本地 FluxEngine 引擎；网络模式下通过 NovaClient 远程操作。
     /// </remarks>
     /// <typeparam name="T">消息类型</typeparam>
     /// <param name="connectionString">连接字符串</param>
@@ -170,7 +170,7 @@ public sealed class NovaClientFactory : DbProviderFactory
         else
         {
             // 网络模式下暂使用本地桥接，后续由服务端 MQ 协议支持
-            throw new NotSupportedException("服务器模式下队列功能尚在开发中，请使用嵌入模式或 ADO.NET SQL 操作");
+            throw new NotSupportedException("网络模式下队列功能尚在开发中，请使用嵌入模式或 ADO.NET SQL 操作");
         }
     }
 

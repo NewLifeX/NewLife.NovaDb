@@ -5,9 +5,9 @@ using NewLife.Serialization;
 
 namespace NewLife.NovaDb.Storage;
 
-/// <summary>数据库管理器（服务器模式专用，管理 Nova 系统库及所有用户数据库）</summary>
+/// <summary>数据库管理器（网络模式专用，管理 Nova 系统库及所有用户数据库）</summary>
 /// <remarks>
-/// 仅在网络服务器模式下使用。嵌入模式不需要系统数据库，直接使用 DatabaseDirectory 操作单个库即可。
+/// 仅在网络模式下使用。嵌入模式不需要系统数据库，直接使用 DatabaseDirectory 操作单个库即可。
 ///
 /// 职责：
 /// - 创建并维护名为 Nova 的系统级数据库，用于记录系统相关信息

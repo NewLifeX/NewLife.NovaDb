@@ -38,7 +38,7 @@ public class NovaConnectionStringBuilderTests
         Assert.Equal("mydb", builder.Database);
     }
 
-    [Fact(DisplayName = "连接字符串构建器-服务器模式解析")]
+    [Fact(DisplayName = "连接字符串构建器-网络模式解析")]
     public void ConstructorWithServerConnStr()
     {
         var connStr = "Server=localhost;Port=5678;Database=testdb";

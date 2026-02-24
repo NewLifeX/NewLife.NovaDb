@@ -5,11 +5,11 @@ namespace NewLife.NovaDb.Client;
 
 #pragma warning disable CS8764 // Nullability of return type doesn't match overridden member
 
-/// <summary>NovaDb 连接字符串构建器。支持嵌入模式和服务器模式</summary>
+/// <summary>NovaDb 连接字符串构建器。支持嵌入模式和网络模式</summary>
 /// <remarks>
 /// 嵌入模式连接字符串：Data Source=../data/member
 /// 嵌入模式完整连接字符串：Data Source=../data/member;WalMode=Full;ReadOnly=true
-/// 服务器模式连接字符串：Server=localhost;Port=3306;Database=member;UserId=root;Password=root
+/// 网络模式连接字符串：Server=localhost;Port=3306;Database=member;UserId=root;Password=root
 /// </remarks>
 public class NovaConnectionStringBuilder : DbConnectionStringBuilder
 {
@@ -17,7 +17,7 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
     /// <summary>数据源路径（嵌入模式）</summary>
     public String? DataSource { get => this[nameof(DataSource)] as String; set => this[nameof(DataSource)] = value; }
 
-    /// <summary>服务器地址（服务器模式）</summary>
+    /// <summary>服务器地址（网络模式）</summary>
     public String? Server { get => this[nameof(Server)] as String; set => this[nameof(Server)] = value; }
 
     /// <summary>端口</summary>
@@ -44,10 +44,10 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
         set => this[nameof(CommandTimeout)] = value;
     }
 
-    /// <summary>用户名（服务器模式）</summary>
+    /// <summary>用户名（网络模式）</summary>
     public String? UserId { get => this[nameof(UserId)] as String; set => this[nameof(UserId)] = value; }
 
-    /// <summary>密码（服务器模式）</summary>
+    /// <summary>密码（网络模式）</summary>
     public String? Password { get => this[nameof(Password)] as String; set => this[nameof(Password)] = value; }
 
     /// <summary>WAL 模式（嵌入模式）。可选值：Full/Normal/None，默认 Normal</summary>

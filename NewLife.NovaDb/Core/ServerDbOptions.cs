@@ -1,10 +1,10 @@
 ﻿namespace NewLife.NovaDb.Core;
 
-/// <summary>NovaDb 服务模式配置选项，继承嵌入模式配置并增加服务器专属设置</summary>
+/// <summary>NovaDb 网络模式配置选项，继承嵌入模式配置并增加网络模式专属设置</summary>
 public class ServerDbOptions : DbOptions
 {
     #region Binlog
-    /// <summary>是否启用 Binlog。服务器模式默认启用</summary>
+    /// <summary>是否启用 Binlog。网络模式默认启用</summary>
     public Boolean EnableBinlog { get; set; } = true;
 
     /// <summary>单个 Binlog 文件最大大小（字节），达到后滚动到新文件。默认 256MB</summary>

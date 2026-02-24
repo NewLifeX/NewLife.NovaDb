@@ -42,7 +42,7 @@ public class NovaConnectionTests
         Assert.Equal("./test.db", conn.DataSource);
     }
 
-    [Fact(DisplayName = "测试服务器模式检测")]
+    [Fact(DisplayName = "测试网络模式检测")]
     public void TestServerModeDetection()
     {
         using var conn = new NovaConnection

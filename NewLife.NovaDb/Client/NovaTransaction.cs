@@ -9,7 +9,7 @@ public class NovaTransaction : DbTransaction
     private readonly NovaConnection _connection;
     private Boolean _completed;
 
-    /// <summary>远程事务 ID（服务器模式）</summary>
+    /// <summary>远程事务 ID（网络模式）</summary>
     public String? TxId { get; set; }
 
     /// <summary>创建事务实例</summary>
@@ -18,7 +18,7 @@ public class NovaTransaction : DbTransaction
     {
         _connection = connection ?? throw new ArgumentNullException(nameof(connection));
 
-        // 服务器模式：通过 RPC 开始远程事务
+        // 网络模式：通过 RPC 开始远程事务
         if (_connection.Client != null)
             TxId = _connection.Client.BeginTransactionAsync().ConfigureAwait(false).GetAwaiter().GetResult();
     }

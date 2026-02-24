@@ -32,7 +32,7 @@ public class NovaServer : DisposeBase
     /// <summary>数据库路径。为空时使用当前目录下的 NovaData 文件夹</summary>
     public String DbPath { get; set; } = String.Empty;
 
-    /// <summary>服务模式数据库配置选项</summary>
+    /// <summary>网络模式数据库配置选项</summary>
     public ServerDbOptions Options { get; set; } = new();
 
     /// <summary>SQL 执行引擎</summary>

@@ -7,7 +7,7 @@ namespace NewLife.NovaDb.Client;
 
 #pragma warning disable CS8765 // Nullability of parameter doesn't match overridden member
 
-/// <summary>NovaDb ADO.NET 连接。支持嵌入模式和服务器模式</summary>
+/// <summary>NovaDb ADO.NET 连接。支持嵌入模式和网络模式</summary>
 public class NovaConnection : DbConnection
 {
     #region 属性
@@ -20,7 +20,7 @@ public class NovaConnection : DbConnection
     /// <summary>连接字符串设置</summary>
     public NovaConnectionStringBuilder Setting { get; } = [];
 
-    /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，服务器模式 "Server=host;Port=3306"</summary>
+    /// <summary>连接字符串。格式：嵌入模式 "Data Source=path"，网络模式 "Server=host;Port=3306"</summary>
     public override String ConnectionString
     {
         get => Setting.ConnectionString;
@@ -45,7 +45,7 @@ public class NovaConnection : DbConnection
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => Setting.IsEmbedded;
 
-    /// <summary>远程客户端（服务器模式）</summary>
+    /// <summary>远程客户端（网络模式）</summary>
     public NovaClient? Client => _client;
 
     /// <summary>SQL 执行引擎（嵌入模式）</summary>

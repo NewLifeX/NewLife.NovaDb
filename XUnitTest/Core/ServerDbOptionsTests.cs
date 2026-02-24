@@ -4,10 +4,10 @@ using Xunit;
 
 namespace XUnitTest.Core;
 
-/// <summary>ServerDbOptions 服务模式配置选项测试</summary>
+/// <summary>ServerDbOptions 网络模式配置选项测试</summary>
 public class ServerDbOptionsTests
 {
-    [Fact(DisplayName = "服务模式默认值")]
+    [Fact(DisplayName = "网络模式默认值")]
     public void TestDefaultValues()
     {
         var options = new ServerDbOptions();
@@ -17,14 +17,14 @@ public class ServerDbOptionsTests
         Assert.Equal(WalMode.Normal, options.WalMode);
         Assert.Equal(4096, options.PageSize);
 
-        // 服务模式专属默认值
+        // 网络模式专属默认值
         Assert.True(options.EnableBinlog);
         Assert.Equal(256L * 1024 * 1024, options.BinlogMaxFileSize);
         Assert.Equal(0, options.BinlogRetentionDays);
         Assert.Equal(0, options.BinlogMaxTotalSize);
     }
 
-    [Fact(DisplayName = "服务模式继承自DbOptions")]
+    [Fact(DisplayName = "网络模式继承自DbOptions")]
     public void TestInheritsFromDbOptions()
     {
         var options = new ServerDbOptions();

@@ -5,7 +5,7 @@ using NovaServer = NewLife.NovaDb.Server.NovaServer;
 
 namespace Benchmark;
 
-/// <summary>独立服务模式基准测试（通过 TCP 协议访问 NovaServer）</summary>
+/// <summary>网络模式基准测试（通过 TCP 协议访问 NovaServer）</summary>
 [MemoryDiagnoser]
 [Config(typeof(AntiViralConfig))]
 public class ServerModeBenchmark

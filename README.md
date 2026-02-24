@@ -2,7 +2,7 @@
 
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md) [![简体中文](https://img.shields.io/badge/lang-简体中文-red.svg)](README_CN.md) [![繁體中文](https://img.shields.io/badge/lang-繁體中文-orange.svg)](README_TW.md) [![Français](https://img.shields.io/badge/lang-Français-green.svg)](README_FR.md) [![Deutsch](https://img.shields.io/badge/lang-Deutsch-yellow.svg)](README_DE.md) [![日本語](https://img.shields.io/badge/lang-日本語-purple.svg)](README_JA.md) [![한국어](https://img.shields.io/badge/lang-한국어-brightgreen.svg)](README_KO.md) [![Русский](https://img.shields.io/badge/lang-Русский-lightgrey.svg)](README_RU.md) [![Español](https://img.shields.io/badge/lang-Español-yellow.svg)](README_ES.md) [![Português](https://img.shields.io/badge/lang-Português-blue.svg)](README_PT.md)
 
-A medium-to-large hybrid database implemented in **C#**, running on the **.NET platform** (supports .NET Framework 4.5 ~ .NET 10), supporting dual embedded/server modes, integrating relational, time-series, message queue, and NoSQL (KV) capabilities.
+A medium-to-large hybrid database implemented in **C#**, running on the **.NET platform** (supports .NET Framework 4.5 ~ .NET 10), supporting dual embedded/network modes, integrating relational, time-series, message queue, and NoSQL (KV) capabilities.
 
 ## Product Introduction
 
@@ -12,13 +12,13 @@ A medium-to-large hybrid database implemented in **C#**, running on the **.NET p
 
 - **Dual Deployment Modes**:
   - **Embedded Mode**: Runs as a library like SQLite, with data stored in local folders, zero configuration
-  - **Server Mode**: Standalone process + TCP protocol, network access like MySQL; supports cluster deployment and master-slave replication (one master, multiple slaves)
+  - **Network Mode**: Standalone process + TCP protocol, network access like MySQL; supports cluster deployment and master-slave replication (one master, multiple slaves)
 - **Folder-as-Database**: Copy the folder to complete migration/backup, no dump/restore process needed. Each table has independent file groups (`.data`/`.idx`/`.wal`).
 - **Four-Engine Integration**:
   - **Nova Engine** (General Relational): SkipList index + MVCC transactions (Read Committed), supports CRUD, SQL queries, JOIN
   - **Flux Engine** (Time-Series + MQ): Time-based sharding Append Only, supports TTL auto-cleanup, Redis Stream-style consumer groups + Pending + Ack
   - **KV Mode** (Logical View): Reuses Nova Engine, API hides SQL details, each row contains `Key + Value + TTL`
-  - **ADO.NET Provider**: Auto-recognizes embedded/server mode, native integration with XCode ORM
+  - **ADO.NET Provider**: Auto-recognizes embedded/network mode, native integration with XCode ORM
 - **Dynamic Hot-Cold Index Separation**: Hot data fully loaded into physical memory (SkipList nodes), cold data unloaded to MMF with only sparse directory retained. 10 million row table querying only the latest 10,000 rows uses < 20MB memory.
 - **Pure Managed Code**: No native component dependencies (pure C#/.NET), easy to deploy across platforms and in restricted environments.
 
@@ -86,7 +86,7 @@ NovaDb provides two client access methods for different scenarios:
 
 ### 1. Relational Database (ADO.NET + SQL)
 
-The relational engine (Nova Engine) is accessed through the standard ADO.NET interface. A `Data Source` in the connection string indicates embedded mode; a `Server` indicates server mode.
+The relational engine (Nova Engine) is accessed through the standard ADO.NET interface. A `Data Source` in the connection string indicates embedded mode; a `Server` indicates network mode.
 
 #### 1.1 Embedded Mode (5-Minute Quick Start)
 
@@ -128,9 +128,9 @@ while (reader.Read())
 }
 ```
 
-#### 1.2 Server Mode
+#### 1.2 Network Mode
 
-Server mode provides remote access via TCP, supporting multiple concurrent client connections.
+Network mode provides remote access via TCP, supporting multiple concurrent client connections.
 
 **Start the server:**
 
@@ -233,7 +233,7 @@ while (reader.Read())
 | Parameter | Example | Description |
 |-----------|---------|-------------|
 | `Data Source` | `Data Source=./mydb` | Embedded mode, database folder path |
-| `Server` | `Server=127.0.0.1` | Server mode, server address |
+| `Server` | `Server=127.0.0.1` | Network mode, server address |
 | `Port` | `Port=3306` | Server port (default 3306) |
 | `Database` | `Database=mydb` | Database name |
 | `WalMode` | `WalMode=Full` | WAL mode (Full/Normal/None) |

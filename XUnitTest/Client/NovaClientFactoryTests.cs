@@ -92,7 +92,7 @@ public class NovaClientFactoryTests
         Assert.Equal("mydb", builder.Database);
     }
 
-    [Fact(DisplayName = "连接字符串-服务器模式解析")]
+    [Fact(DisplayName = "连接字符串-网络模式解析")]
     public void ConnectionStringServerMode()
     {
         var builder = new NovaConnectionStringBuilder("Server=localhost;Port=5678;Database=mydb");
@@ -177,7 +177,7 @@ public class NovaClientFactoryTests
         Assert.Equal("./test.db", conn.DataSource);
     }
 
-    [Fact(DisplayName = "连接-服务器模式DataSource属性")]
+    [Fact(DisplayName = "连接-网络模式DataSource属性")]
     public void ConnectionServerDataSource()
     {
         using var conn = new NovaConnection { ConnectionString = "Server=192.168.1.1;Port=5678" };

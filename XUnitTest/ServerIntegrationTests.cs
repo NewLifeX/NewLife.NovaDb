@@ -20,7 +20,7 @@ public class ServerIntegrationTests : IClassFixture<IntegrationServerFixture>
         _fixture = fixture;
     }
 
-    /// <summary>创建并打开服务器模式连接</summary>
+    /// <summary>创建并打开网络模式连接</summary>
     private NovaConnection CreateConnection()
     {
         var conn = new NovaConnection { ConnectionString = $"Server=127.0.0.1;Port={_port}" };

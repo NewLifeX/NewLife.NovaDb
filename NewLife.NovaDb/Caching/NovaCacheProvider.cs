@@ -6,7 +6,7 @@ namespace NewLife.NovaDb.Caching;
 
 /// <summary>Nova 缓存架构服务。提供基础缓存及队列服务</summary>
 /// <remarks>
-/// 参考 RedisCacheProvider 实现，根据连接字符串自动识别嵌入模式还是网络服务模式。
+/// 参考 RedisCacheProvider 实现，根据连接字符串自动识别嵌入模式还是网络模式。
 /// 嵌入模式下同一数据库目录共用引擎实例（通过 NovaClientFactory 的 EmbeddedDatabase 缓存）。
 /// 网络模式通过 NovaClient 连接池远程操作。
 /// 
@@ -56,7 +56,7 @@ public class NovaCacheProvider : CacheProvider
         }
         else
         {
-            // 网络服务模式：从连接池获取 NovaClient
+            // 网络模式：从连接池获取 NovaClient
             var pool = _factory.PoolManager.GetPool(csb);
             _client = pool.Get();
 

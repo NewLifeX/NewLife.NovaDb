@@ -2,7 +2,7 @@
 
 [![English](https://img.shields.io/badge/lang-English-blue.svg)](README.md) [![简体中文](https://img.shields.io/badge/lang-简体中文-red.svg)](README_CN.md) [![繁體中文](https://img.shields.io/badge/lang-繁體中文-orange.svg)](README_TW.md) [![Français](https://img.shields.io/badge/lang-Français-green.svg)](README_FR.md) [![Deutsch](https://img.shields.io/badge/lang-Deutsch-yellow.svg)](README_DE.md) [![日本語](https://img.shields.io/badge/lang-日本語-purple.svg)](README_JA.md) [![한국어](https://img.shields.io/badge/lang-한국어-brightgreen.svg)](README_KO.md) [![Русский](https://img.shields.io/badge/lang-Русский-lightgrey.svg)](README_RU.md) [![Español](https://img.shields.io/badge/lang-Español-yellow.svg)](README_ES.md) [![Português](https://img.shields.io/badge/lang-Português-blue.svg)](README_PT.md)
 
-以 **C#** 实现，运行于 **.NET 平台**（支持 .NET Framework 4.5 ~ .NET 10）的中大型混合数据库，支持嵌入式/服务器双模，融合关系型、时序、消息队列、NoSQL(KV) 能力。
+以 **C#** 实现，运行于 **.NET 平台**（支持 .NET Framework 4.5 ~ .NET 10）的中大型混合数据库，支持嵌入式/网络双模，融合关系型、时序、消息队列、NoSQL(KV) 能力。
 
 ## 产品介绍
 
@@ -12,13 +12,13 @@
 
 - **双部署模式**：
   - **嵌入模式**：像 SQLite 一样以库的形式运行，数据存储在本地文件夹，零配置
-  - **服务器模式**：独立进程 + TCP 协议，像 MySQL 一样网络访问；支持集群部署与主从同步（一主多从）
+  - **网络模式**：独立进程 + TCP 协议，像 MySQL 一样网络访问；支持集群部署与主从同步（一主多从）
 - **文件夹即数据库**：拷贝文件夹即可完成迁移/备份，无需 dump/restore 流程。每表独立文件组（`.data`/`.idx`/`.wal`）。
 - **四引擎融合**：
   - **Nova Engine**（通用关系型）：SkipList 索引 + MVCC 事务（Read Committed），支持 CRUD、SQL 查询、JOIN
   - **Flux Engine**（时序 + MQ）：按时间分片 Append Only，支持 TTL 自动清理、Redis Stream 风格消费组 + Pending + Ack
   - **KV 模式**（逻辑视图）：复用 Nova Engine，API 屏蔽 SQL 细节，每行 `Key + Value + TTL`
-  - **ADO.NET Provider**：嵌入/服务器自动识别，兼容 XCode ORM 原生集成
+  - **ADO.NET Provider**：嵌入/网络自动识别，兼容 XCode ORM 原生集成
 - **动态冷热分离索引**：热数据完整加载至物理内存（SkipList 节点），冷数据卸载至 MMF 仅保留稀疏目录。1000 万行表仅查最新 1 万行时，内存占用 < 20MB。
 - **纯托管代码**：不依赖 Native 组件（纯 C#/.NET），便于跨平台与受限环境部署。
 
@@ -86,7 +86,7 @@ NovaDb 提供两种客户端接入方式，适用于不同场景：
 
 ### 一、关系型数据库（ADO.NET + SQL）
 
-关系型引擎（Nova Engine）使用标准 ADO.NET 接口访问，连接字符串中 `Data Source` 指向本地路径为嵌入模式，`Server` 指向远程地址为服务器模式。
+关系型引擎（Nova Engine）使用标准 ADO.NET 接口访问，连接字符串中 `Data Source` 指向本地路径为嵌入模式，`Server` 指向远程地址为网络模式。
 
 #### 1.1 嵌入模式（5 分钟上手）
 
@@ -128,9 +128,9 @@ while (reader.Read())
 }
 ```
 
-#### 1.2 服务器模式
+#### 1.2 网络模式
 
-服务器模式通过 TCP 提供远程访问，支持多客户端并发连接。
+网络模式通过 TCP 提供远程访问，支持多客户端并发连接。
 
 **启动服务端：**
 
@@ -276,7 +276,7 @@ cmd.ExecuteNonQuery();
 | 参数 | 示例 | 说明 |
 |------|------|------|
 | `Data Source` | `Data Source=./mydb` | 嵌入模式，指定数据库路径 |
-| `Server` | `Server=127.0.0.1` | 服务器模式，指定服务器地址 |
+| `Server` | `Server=127.0.0.1` | 网络模式，指定服务器地址 |
 | `Port` | `Port=3306` | 服务器端口（默认 3306） |
 | `Database` | `Database=mydb` | 数据库名称 |
 | `WalMode` | `WalMode=Full` | WAL 模式（Full/Normal/None） |
@@ -530,7 +530,7 @@ NovaDb 支持**一主多从**架构，通过 Binlog 实现异步数据同步：
 
 | 版本 | 计划内容 |
 |------|----------|
-| **v1.0**（已完成） | 嵌入式+服务器双模、Nova/Flux/KV 引擎、SQL DDL/DML/SELECT/JOIN、事务/MVCC、WAL/恢复、冷热分离、分片、MQ 消费组、ADO.NET Provider、集群主从同步 |
+| **v1.0**（已完成） | 嵌入式+网络双模、Nova/Flux/KV 引擎、SQL DDL/DML/SELECT/JOIN、事务/MVCC、WAL/恢复、冷热分离、分片、MQ 消费组、ADO.NET Provider、集群主从同步 |
 | **v1.1** | P0 级 SQL 函数（字符串/数值/日期/转换/条件约 30 个函数） |
 | **v1.2** | MQ 阻塞读取、KV Add/Inc 操作、P1 级 SQL 函数 |
 | **v1.3** | MQ 延迟消息、死信队列 |

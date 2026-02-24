@@ -61,7 +61,7 @@ public class NovaCommand : DbCommand
             return result.AffectedRows;
         }
 
-        // 服务器模式：通过 RPC 客户端执行
+        // 网络模式：通过 RPC 客户端执行
         if (conn.Client != null)
             return conn.Client.ExecuteAsync(_commandText).ConfigureAwait(false).GetAwaiter().GetResult();
 
@@ -81,7 +81,7 @@ public class NovaCommand : DbCommand
             return result.GetScalar();
         }
 
-        // 服务器模式：通过查询获取标量值
+        // 网络模式：通过查询获取标量值
         if (conn.Client != null)
         {
             var reader = ExecuteDbDataReader(CommandBehavior.Default);
@@ -122,7 +122,7 @@ public class NovaCommand : DbCommand
             return reader;
         }
 
-        // 服务器模式：通过 RPC 客户端查询
+        // 网络模式：通过 RPC 客户端查询
         if (conn.Client != null)
         {
             var queryResult = conn.Client.QueryAsync<IDictionary<String, Object?>>(_commandText)
