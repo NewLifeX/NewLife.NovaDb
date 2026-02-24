@@ -80,16 +80,10 @@ public class NovaConnection : DbConnection
             var dataSource = Setting.DataSource;
             if (!dataSource.IsNullOrEmpty())
             {
-                // 从连接字符串解析 WAL 模式，默认 Normal
-                var walMode = WalMode.Normal;
-                var walModeStr = Setting.WalMode;
-                if (!walModeStr.IsNullOrEmpty() && Enum.TryParse<WalMode>(walModeStr, true, out var wm))
-                    walMode = wm;
-
                 var options = new DbOptions
                 {
                     Path = dataSource,
-                    WalMode = walMode,
+                    WalMode = Setting.WalMode,
                     ReadOnly = Setting.ReadOnly
                 };
                 _sqlEngine = new SqlEngine(dataSource, options);

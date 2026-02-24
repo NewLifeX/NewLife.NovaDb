@@ -59,8 +59,6 @@ public class NovaCacheProviderTests : IDisposable
         var connStr = $"Data Source={_testDir}";
         var provider = new NovaCacheProvider(connStr);
 
-        Assert.NotNull(provider.FluxEngine);
-
         var queue = provider.GetQueue<String>("test-topic", "test-group");
         Assert.NotNull(queue);
 

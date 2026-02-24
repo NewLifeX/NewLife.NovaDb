@@ -1,4 +1,5 @@
 ﻿using System.Data.Common;
+using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Client;
 
@@ -50,7 +51,11 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
     public String? Password { get => this[nameof(Password)] as String; set => this[nameof(Password)] = value; }
 
     /// <summary>WAL 模式（嵌入模式）。可选值：Full/Normal/None，默认 Normal</summary>
-    public String? WalMode { get => this[nameof(WalMode)] as String; set => this[nameof(WalMode)] = value; }
+    public WalMode WalMode
+    {
+        get => Enum.TryParse<WalMode>(this[nameof(WalMode)]?.ToString(), true, out var wm) ? wm : WalMode.Normal;
+        set => this[nameof(WalMode)] = value.ToString();
+    }
 
     /// <summary>是否只读模式（嵌入模式）。只读模式下禁止写操作，可提升读取性能并避免多进程写冲突</summary>
     public Boolean ReadOnly
