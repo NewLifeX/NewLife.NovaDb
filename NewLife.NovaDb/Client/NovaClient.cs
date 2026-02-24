@@ -137,7 +137,8 @@ public class NovaClient : DisposeBase
     public async Task<Byte[]?> KvGetAsync(String tableName, String key)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Byte[]>("Kv/Get", new { tableName, key }).ConfigureAwait(false);
+        var str = await _client!.InvokeAsync<String>("Kv/Get", new { tableName, key }).ConfigureAwait(false);
+        return str == null ? null : Convert.FromBase64String(str);
     }
 
     /// <summary>KV 删除键</summary>

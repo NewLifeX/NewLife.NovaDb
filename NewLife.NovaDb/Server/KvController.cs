@@ -52,14 +52,16 @@ internal class KvController : IApi
     /// <summary>KV 获取值</summary>
     /// <param name="tableName">KV 表名，默认 "default"</param>
     /// <param name="key">键</param>
-    /// <returns>二进制值，不存在返回 null</returns>
-    public Byte[]? Get(String tableName, String key)
+    /// <returns>Base64 编码的值，不存在返回 null</returns>
+    public String? Get(String tableName, String key)
     {
         var store = GetStore(tableName);
         if (store == null) return null;
 
         using var pk = store.Get(key);
-        return pk?.ReadBytes(-1);
+        if (pk == null) return null;
+
+        return Convert.ToBase64String(pk.ReadBytes());
     }
 
     /// <summary>KV 删除键</summary>

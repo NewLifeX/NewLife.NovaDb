@@ -120,6 +120,9 @@ public class NovaCache : Cache
             using var pk = _kvStore.Get(key);
             if (pk == null || pk.Total == 0) return default;
 
+            // Object 类型直接返回字符串，避免 JSON 反序列化失败
+            if (typeof(T) == typeof(Object)) return (T)(Object)pk.ToStr();
+
             return (T?)Encoder.Decode(pk, typeof(T));
         }
 
@@ -128,7 +131,12 @@ public class NovaCache : Cache
             var buf = _client.KvGetAsync(Name, key).ConfigureAwait(false).GetAwaiter().GetResult();
             if (buf == null || buf.Length == 0) return default;
 
-            return (T?)Encoder.Decode(new ArrayPacket(buf), typeof(T));
+            var pk = new ArrayPacket(buf);
+
+            // Object 类型直接返回字符串，避免 JSON 反序列化失败
+            if (typeof(T) == typeof(Object)) return (T)(Object)pk.ToStr();
+
+            return (T?)Encoder.Decode(pk, typeof(T));
         }
 
         return default;
