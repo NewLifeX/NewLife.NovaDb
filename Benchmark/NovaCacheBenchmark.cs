@@ -39,6 +39,7 @@ public class NovaCacheBenchmark
         {
             _cache.Set($"key:{i}", _stringValue);
         }
+        _cache.Set("int:bench", 42);
 
         _counter = 2000;
     }
