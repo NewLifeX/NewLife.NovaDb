@@ -305,16 +305,8 @@ internal static class KvPacket
         return new ArrayPacket(buf);
     }
 
-    /// <summary>编码可空字节数组响应（null → 1 字节 0x00；非 null → 1 字节 0x01 + 值字节）</summary>
-    public static IPacket EncodeNullableValue(Byte[]? value)
-    {
-        if (value == null)
-            return new ArrayPacket(new Byte[] { 0 });
-        var result = new Byte[1 + value.Length];
-        result[0] = 1;
-        value.CopyTo(result, 1);
-        return new ArrayPacket(result);
-    }
+    /// <summary>编码空响应（用于 Clear 等无返回值操作，以及 Get 未找到键时的空包）</summary>
+    public static IPacket EncodeEmpty() => new ArrayPacket(new Byte[0]);
 
     /// <summary>编码字符串数组响应（Int32 count + 每项 EncodedString）</summary>
     public static IPacket EncodeStringArray(String[] keys)
@@ -356,10 +348,10 @@ internal static class KvPacket
             WriteString(ref writer, keyBytesArr[i]);
             if (data.TryGetValue(keys[i], out var pk) && pk != null)
             {
-                var valueBytes = pk.ReadBytes();
+                var valueSpan = pk.GetSpan();
                 writer.WriteByte(1);
-                writer.WriteEncodedInt(valueBytes.Length);
-                writer.Write(valueBytes);
+                writer.WriteEncodedInt(valueSpan.Length);
+                writer.Write(valueSpan);
             }
             else
             {
@@ -368,9 +360,6 @@ internal static class KvPacket
         }
         return new ArrayPacket(buf, 0, writer.Position);
     }
-
-    /// <summary>编码空响应（用于 Clear 等无返回值操作）</summary>
-    public static IPacket EncodeEmpty() => new ArrayPacket(new Byte[0]);
 
     #endregion
 
@@ -400,14 +389,11 @@ internal static class KvPacket
         return new SpanReader(pk).ReadDouble();
     }
 
-    /// <summary>解码可空字节数组响应（第一字节 0=null，1=有值）</summary>
+    /// <summary>解码 Get 响应（空包=未找到；非空=存储的原始字节）</summary>
     public static Byte[]? DecodeNullableValue(IPacket? pk)
     {
         if (pk == null || pk.Length == 0) return null;
-        var span = pk.GetSpan();
-        if (span[0] == 0) return null;
-        if (pk.Length == 1) return new Byte[0];
-        return span[1..].ToArray();
+        return pk.ReadBytes();
     }
 
     /// <summary>解码字符串数组响应</summary>
