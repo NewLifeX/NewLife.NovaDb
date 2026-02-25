@@ -70,6 +70,11 @@ internal class KvController : IApi
     /// 响应包：
     ///   键存在时返回存储的原始字节（ArrayPacket）；
     ///   键不存在或存储未初始化时返回空包（Length=0）
+    /// 注意：不能直接返回 IOwnerPacket（如 store.Get(key)），
+    ///       因为 Remoting 框架在 ApiServer.Process 的 finally 块中调用
+    ///       DisposeHelper.TryDispose(result) 释放控制器返回值，
+    ///       会在网络层发送前就将 OwnerPacket 的池化缓冲区归还，导致客户端收到乱码而超时。
+    ///       改用 ArrayPacket 封装独立堆数组，TryDispose 检测到非 IDisposable 时跳过。
     /// </returns>
     public IPacket Get(IPacket data)
     {
@@ -80,7 +85,8 @@ internal class KvController : IApi
         using var pk = store.Get(key);
         if (pk == null) return KvPacket.EncodeEmpty();
 
-        // GetSpan() 直接读取底层缓冲区，避免 ReadBytes() 分配中间字节数组，再包装 IPacket 的双重分配
+        // 通过 GetSpan() 直接读取底层缓冲区并复制到新数组，避免 ReadBytes() + 再包装 IPacket 的双重分配。
+        // 不能直接 return pk，原因见上方注释。
         return new ArrayPacket(pk.GetSpan().ToArray());
     }
 
