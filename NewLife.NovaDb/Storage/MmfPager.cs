@@ -21,7 +21,11 @@ public class MmfPager : IDisposable
     private readonly Boolean _enableChecksum;
     private FileStream? _fileStream;
     private MemoryMappedFile? _mmf;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Boolean _disposed;
 
     /// <summary>文件路径</summary>

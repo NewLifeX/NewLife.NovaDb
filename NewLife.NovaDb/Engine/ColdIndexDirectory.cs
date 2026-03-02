@@ -20,7 +20,11 @@ public class ColdIndexDirectory
 {
     private readonly Int32 _anchorInterval;
     private readonly List<ColdDirectoryEntry> _anchors = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>锚点间隔（行数），默认 1000 行一个锚点</summary>
     public Int32 AnchorInterval => _anchorInterval;

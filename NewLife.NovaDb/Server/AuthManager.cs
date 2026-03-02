@@ -11,7 +11,11 @@ namespace NewLife.NovaDb.Server;
 public class AuthManager
 {
     private readonly Dictionary<String, UserInfo> _users = new(StringComparer.OrdinalIgnoreCase);
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>是否启用认证。禁用时所有操作视为已认证</summary>
     public Boolean Enabled { get; set; }

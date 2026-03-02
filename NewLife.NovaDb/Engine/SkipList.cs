@@ -29,7 +29,11 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
     private Int32 _level;
     private Int32 _count;
     private readonly Random _random = new();
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>元素数量</summary>
     public Int32 Count

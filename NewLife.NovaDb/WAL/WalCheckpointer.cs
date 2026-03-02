@@ -20,7 +20,11 @@ public class WalCheckpointer : IDisposable
     private readonly TimeSpan _checkInterval;
     private Timer? _timer;
     private Boolean _disposed;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Int64 _lastCheckpointLsn;
 
     /// <summary>刷盘回调，在截断 WAL 前调用，由上层实现脏数据落盘</summary>

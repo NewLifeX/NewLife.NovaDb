@@ -16,7 +16,11 @@ internal sealed class EmbeddedDatabase
     private readonly DbOptions _options;
     private readonly ConcurrentDictionary<String, KvStore> _kvStores = new(StringComparer.OrdinalIgnoreCase);
     private FluxEngine? _fluxEngine;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _fluxLock = new();
+#else
     private readonly Object _fluxLock = new();
+#endif
 
     /// <summary>数据库路径</summary>
     public String DbPath => _dbPath;

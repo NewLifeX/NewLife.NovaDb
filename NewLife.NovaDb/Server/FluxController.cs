@@ -20,7 +20,11 @@ internal class FluxController : IApi
 
     /// <summary>共享消费组集合</summary>
     private static readonly Dictionary<String, ConsumerGroup> _consumerGroups = [];
+#if NET9_0_OR_GREATER
+    private static readonly System.Threading.Lock _lock = new();
+#else
     private static readonly Object _lock = new();
+#endif
 
     /// <summary>发布消息到流</summary>
     /// <param name="data">消息字段数据</param>

@@ -19,7 +19,11 @@ public partial class KvStore : IDisposable
 {
     #region 属性
     private readonly ConcurrentDictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _writeLock = new();
+#else
     private readonly Object _writeLock = new();
+#endif
     private readonly DbOptions? _options;
     private readonly TimeSpan? _defaultTtl;
     private readonly String _filePath;

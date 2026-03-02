@@ -48,7 +48,11 @@ public class HotIndexManager
 {
     private readonly HotSegmentConfig _config;
     private readonly SkipList<ComparableObject, IndexSegment> _hotSegments;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private DateTime _lastHeatCheck = DateTime.UtcNow;
 
     /// <summary>配置</summary>

@@ -8,7 +8,11 @@ public partial class FluxEngine : IDisposable
     private readonly String _basePath;
     private readonly DbOptions _options;
     private readonly SortedDictionary<String, List<FluxEntry>> _partitions = new(StringComparer.Ordinal);
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Boolean _disposed;
 
     /// <summary>创建 FluxEngine 实例</summary>

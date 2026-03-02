@@ -10,7 +10,11 @@ public class WalWriter : IDisposable
     private readonly WalMode _mode;
     private FileStream? _fileStream;
     private UInt64 _nextLsn;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Boolean _disposed;
     private DateTime _lastFlush;
 

@@ -25,7 +25,11 @@ internal class NovaController : IApi
 
     /// <summary>共享事务字典，跨请求维护事务状态</summary>
     private static readonly Dictionary<String, Transaction> _transactions = new(StringComparer.OrdinalIgnoreCase);
+#if NET9_0_OR_GREATER
+    private static readonly System.Threading.Lock _txLock = new();
+#else
     private static readonly Object _txLock = new();
+#endif
 
     /// <summary>心跳</summary>
     /// <returns>服务器时间</returns>

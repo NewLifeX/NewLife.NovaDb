@@ -19,22 +19,38 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
     private readonly FluxEngine _engine;
     private readonly String _topic;
     private readonly Dictionary<String, ConsumerGroup> _consumerGroups = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Boolean _disposed;
 
     #region 延迟消息
     private readonly SortedList<DateTime, List<FluxEntry>> _delayedMessages = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _delayLock = new();
+#else
     private readonly Object _delayLock = new();
+#endif
     #endregion
 
     #region 死信队列
     private readonly Dictionary<String, List<DeadLetterEntry>> _deadLetters = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _deadLetterLock = new();
+#else
     private readonly Object _deadLetterLock = new();
+#endif
     #endregion
 
     #region 阻塞读取信号
     private readonly Dictionary<String, SemaphoreSlim> _newMessageSignal = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _signalLock = new();
+#else
     private readonly Object _signalLock = new();
+#endif
     #endregion
 
     /// <summary>消费者组名称。指定消费组后使用消费组模式</summary>

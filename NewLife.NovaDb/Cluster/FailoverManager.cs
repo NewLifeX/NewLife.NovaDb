@@ -12,7 +12,11 @@ namespace NewLife.NovaDb.Cluster;
 public class FailoverManager
 {
     private readonly ReplicationManager _replication;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>允许切换的最大复制延迟（LSN 差值）。超过此值拒绝切换，避免数据丢失。默认 100</summary>
     public UInt64 MaxAllowedLag { get; set; } = 100;

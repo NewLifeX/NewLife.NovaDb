@@ -22,7 +22,11 @@ public class Transaction : IDisposable
     private readonly TransactionManager _manager;
     private TransactionState _state;
     private UInt64 _commitTs;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private readonly List<Action> _rollbackActions = [];
     private readonly List<Action> _commitActions = [];
     private Boolean _disposed;

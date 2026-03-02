@@ -64,7 +64,11 @@ public class BinlogWriter : IDisposable
     private readonly String _database;
     private readonly Int64 _maxFileSize;
     private FileStream? _stream;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Int64 _position;
     private Int32 _fileIndex;
     private Boolean _disposed;

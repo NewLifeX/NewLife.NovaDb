@@ -20,7 +20,11 @@ public class ReplicaClient : IDisposable
     private UInt64 _lastAppliedLsn;
     private readonly List<WalRecord> _appliedRecords = [];
     private readonly Action<UInt64, Byte[]>? _applyCallback;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private Boolean _isConnected;
     private Boolean _disposed;
 

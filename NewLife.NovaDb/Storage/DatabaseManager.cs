@@ -39,7 +39,11 @@ public class DatabaseManager
     private readonly String _basePath;
     private readonly DbOptions _options;
     private readonly Dictionary<String, DatabaseInfo> _databases = new(StringComparer.OrdinalIgnoreCase);
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>基础目录路径（默认数据库目录）</summary>
     public String BasePath => _basePath;

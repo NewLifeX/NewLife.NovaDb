@@ -26,7 +26,11 @@ public class ConsumerGroup
     public MessageId? LastDeliveredId { get; set; }
 
     private readonly Dictionary<String, PendingEntry> _pendingEntries = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>创建消费组</summary>
     /// <param name="name">消费组名称</param>

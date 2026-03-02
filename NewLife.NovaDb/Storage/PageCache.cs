@@ -12,7 +12,11 @@ public class PageCache
     private readonly Int32 _capacity;
     private readonly Dictionary<UInt64, CacheEntry> _cache;
     private readonly LinkedList<UInt64> _lruList;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
 
     /// <summary>缓存容量（最大页数）</summary>
     public Int32 Capacity => _capacity;

@@ -7,7 +7,11 @@ public class TransactionManager
 {
     private UInt64 _nextTxId;
     private UInt64 _nextCommitTs;
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private readonly Dictionary<UInt64, Transaction> _activeTxs = [];
 
     /// <summary>获取下一个事务 ID</summary>

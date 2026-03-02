@@ -12,7 +12,11 @@ namespace NewLife.NovaDb.Engine;
 public class MaterializedViewManager : IDisposable
 {
     private readonly Dictionary<String, MaterializedView> _views = new(StringComparer.OrdinalIgnoreCase);
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     private readonly SqlEngine _engine;
     private Timer? _scheduler;
     private Boolean _disposed;

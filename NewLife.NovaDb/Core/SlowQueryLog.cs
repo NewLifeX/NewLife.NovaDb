@@ -39,7 +39,11 @@ public class SlowQueryLog
     #region 字段
     private Int64 _totalCount;
     private readonly LinkedList<SlowQueryEntry> _entries = new();
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _lock = new();
+#else
     private readonly Object _lock = new();
+#endif
     #endregion
 
     #region 日志
