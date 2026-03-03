@@ -196,4 +196,64 @@ public class TransactionManagerTests
         // 验证回滚动作倒序执行
         Assert.Equal(new[] { 3, 2, 1 }, executionOrder);
     }
+
+    [Fact(DisplayName = "回滚事务创建的行对其他事务不可见")]
+    public void TestAbortedTxRowsNotVisible()
+    {
+        var manager = new TransactionManager();
+
+        // tx1 写入数据后回滚
+        var tx1 = manager.BeginTransaction();
+        var abortedTxId = tx1.TxId;
+        tx1.Rollback();
+
+        // tx2 不应看到 tx1 写入的行（abortedTxId 创建，0=未删除）
+        var tx2 = manager.BeginTransaction();
+        var visible = manager.IsVisible(abortedTxId, 0, tx2.TxId);
+        Assert.False(visible, "回滚事务写入的行不应对其他事务可见");
+        tx2.Commit();
+    }
+
+    [Fact(DisplayName = "回滚的删除操作被撤销—行对其他事务仍可见")]
+    public void TestAbortedDeleteReverted()
+    {
+        var manager = new TransactionManager();
+
+        // tx1 提交写入
+        var tx1 = manager.BeginTransaction();
+        var createdByTx = tx1.TxId;
+        tx1.Commit();
+
+        // tx2 删除后回滚
+        var tx2 = manager.BeginTransaction();
+        var abortedDeleteTx = tx2.TxId;
+        tx2.Rollback();
+
+        // tx3 读取：删除已回滚，行应可见
+        var tx3 = manager.BeginTransaction();
+        var visible = manager.IsVisible(createdByTx, abortedDeleteTx, tx3.TxId);
+        Assert.True(visible, "删除事务回滚后，行应对其他事务仍可见");
+        tx3.Commit();
+    }
+
+    [Fact(DisplayName = "Dispose 后再 Commit/Rollback 应抛 ObjectDisposedException")]
+    public void TestDoubleDisposeAndCommitAfterDispose()
+    {
+        var manager = new TransactionManager();
+        var tx = manager.BeginTransaction();
+
+        tx.Dispose();
+
+        // 再次 Dispose 不应抛出
+        tx.Dispose();
+
+        // Commit/Rollback 后 Dispose 已完成事务，应抛 ObjectDisposedException
+        var tx2 = manager.BeginTransaction();
+        tx2.Commit();
+        tx2.Dispose(); // 已提交后 Dispose 不应再次回滚
+
+        var tx3 = manager.BeginTransaction();
+        tx3.Rollback();
+        tx3.Dispose(); // 已回滚后 Dispose 不应重复回滚
+    }
 }

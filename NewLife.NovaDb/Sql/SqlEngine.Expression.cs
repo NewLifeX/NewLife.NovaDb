@@ -5,6 +5,13 @@ namespace NewLife.NovaDb.Sql;
 
 partial class SqlEngine
 {
+    // 线程安全的共享 Random 实例，避免快速连续调用时因相同时间种子返回相同值
+#if NET6_0_OR_GREATER
+    private static Double NextRandom() => Random.Shared.NextDouble();
+#else
+    private static readonly Random _sharedRandom = new Random();
+    private static Double NextRandom() { lock (_sharedRandom) return _sharedRandom.NextDouble(); }
+#endif
     #region 表达式求值
 
     private Object? EvaluateExpression(SqlExpression expr, Object?[]? row, TableSchema? schema, Dictionary<String, Object?>? parameters)
@@ -201,8 +208,10 @@ partial class SqlEngine
                     if (val != null) stdValues.Add(Convert.ToDouble(val));
                 }
                 if (stdValues.Count == 0) return null;
+                // 样本标准差（贝塞尔校正，除以 N-1），与 MySQL/PostgreSQL STDDEV() 语义一致
+                if (stdValues.Count == 1) return 0.0;
                 var stdMean = stdValues.Average();
-                var stdVariance = stdValues.Sum(v => (v - stdMean) * (v - stdMean)) / stdValues.Count;
+                var stdVariance = stdValues.Sum(v => (v - stdMean) * (v - stdMean)) / (stdValues.Count - 1);
                 return Math.Sqrt(stdVariance);
 
             case "VARIANCE":
@@ -213,8 +222,10 @@ partial class SqlEngine
                     if (val != null) varValues.Add(Convert.ToDouble(val));
                 }
                 if (varValues.Count == 0) return null;
+                // 样本方差（贝塞尔校正，除以 N-1），与 MySQL/PostgreSQL VARIANCE() 语义一致
+                if (varValues.Count == 1) return 0.0;
                 var varMean = varValues.Average();
-                return varValues.Sum(v => (v - varMean) * (v - varMean)) / varValues.Count;
+                return varValues.Sum(v => (v - varMean) * (v - varMean)) / (varValues.Count - 1);
 
             default:
                 throw new NovaException(ErrorCode.NotSupported, $"Unsupported aggregate function: {func.FunctionName}");
@@ -322,12 +333,20 @@ partial class SqlEngine
                 var rightLen = Convert.ToInt32(args[1]);
                 return rightLen >= rightStr.Length ? rightStr : rightStr.Substring(rightStr.Length - rightLen);
 
-            case "CHARINDEX" or "INSTR":
+            case "CHARINDEX":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return 0;
                 var ciNeedle = Convert.ToString(args[0])!;
                 var ciHaystack = Convert.ToString(args[1])!;
                 var ciIdx = ciHaystack.IndexOf(ciNeedle, StringComparison.OrdinalIgnoreCase);
                 return ciIdx >= 0 ? ciIdx + 1 : 0; // 1-based
+
+            // INSTR(haystack, needle) — MySQL 语义，参数顺序与 CHARINDEX 相反
+            case "INSTR":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return 0;
+                var instrHaystack = Convert.ToString(args[0])!;
+                var instrNeedle = Convert.ToString(args[1])!;
+                var instrIdx = instrHaystack.IndexOf(instrNeedle, StringComparison.OrdinalIgnoreCase);
+                return instrIdx >= 0 ? instrIdx + 1 : 0; // 1-based
 
             case "REVERSE":
                 if (args.Count < 1 || args[0] == null) return null;
@@ -378,7 +397,7 @@ partial class SqlEngine
                 return args.Count > 0 && args[0] != null ? Math.Sqrt(Convert.ToDouble(args[0])) : (Object?)null;
 
             case "RAND" or "RANDOM":
-                return new Random().NextDouble();
+                return NextRandom();
 
             case "SIGN":
                 return args.Count > 0 && args[0] != null ? (Object)Math.Sign(Convert.ToDouble(args[0])) : null;
