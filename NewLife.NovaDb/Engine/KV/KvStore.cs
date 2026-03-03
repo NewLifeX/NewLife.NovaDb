@@ -187,14 +187,13 @@ public partial class KvStore : IDisposable
             if (!_data.TryGetValue(key, out var index))
                 return false;
 
-            // 已过期视为不存在：惰性清理但不写 Delete 记录，返回 false
-            if (index.IsExpired())
-            {
-                _data.TryRemove(key, out _);
-                return false;
-            }
-
+            // 无论是否过期，先从内存索引移除
             _data.TryRemove(key, out _);
+
+            // 已过期视为不存在：不写 Delete 磁盘记录，返回 false
+            if (index.IsExpired())
+                return false;
+
             WriteDeleteRecordNoLock(key);
             TryAutoCompactNoLock();
             return true;

@@ -937,7 +937,7 @@ public class SqlFunctionTests : IDisposable
     public void TestRandReturnsDifferentValues()
     {
         // 快速调用多次，用共享静态 Random 实例时应返回不同值
-        var values = new System.Collections.Generic.HashSet<Double>();
+        var values = new HashSet<Double>();
         for (var i = 0; i < 10; i++)
         {
             var r = _engine.Execute("SELECT RAND()");

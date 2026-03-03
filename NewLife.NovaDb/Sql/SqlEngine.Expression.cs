@@ -209,6 +209,7 @@ partial class SqlEngine
                 }
                 if (stdValues.Count == 0) return null;
                 // 样本标准差（贝塞尔校正，除以 N-1），与 MySQL/PostgreSQL STDDEV() 语义一致
+                // 单样本无离散度，返回 0.0 避免除以零
                 if (stdValues.Count == 1) return 0.0;
                 var stdMean = stdValues.Average();
                 var stdVariance = stdValues.Sum(v => (v - stdMean) * (v - stdMean)) / (stdValues.Count - 1);
@@ -223,6 +224,7 @@ partial class SqlEngine
                 }
                 if (varValues.Count == 0) return null;
                 // 样本方差（贝塞尔校正，除以 N-1），与 MySQL/PostgreSQL VARIANCE() 语义一致
+                // 单样本无离散度，返回 0.0 避免除以零
                 if (varValues.Count == 1) return 0.0;
                 var varMean = varValues.Average();
                 return varValues.Sum(v => (v - varMean) * (v - varMean)) / (varValues.Count - 1);
