@@ -134,8 +134,8 @@ public class Transaction : IDisposable
             _commitActions.Clear();
             _rollbackActions.Clear();
 
-            // 从活跃事务列表移除
-            _manager.RemoveTransaction(_txId);
+            // 从活跃事务列表移除（标记为已回滚）
+            _manager.RemoveTransaction(_txId, aborted: true);
         }
     }
 

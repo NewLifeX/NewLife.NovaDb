@@ -176,7 +176,7 @@ public partial class KvStore : IDisposable
 
     /// <summary>删除键</summary>
     /// <param name="key">键</param>
-    /// <returns>键存在并被删除返回 true，否则返回 false</returns>
+    /// <returns>键存在且未过期并被删除返回 true，否则返回 false</returns>
     public Boolean Delete(String key)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
@@ -184,13 +184,20 @@ public partial class KvStore : IDisposable
 
         lock (_writeLock)
         {
-            if (_data.TryRemove(key, out _))
+            if (!_data.TryGetValue(key, out var index))
+                return false;
+
+            // 已过期视为不存在：惰性清理但不写 Delete 记录，返回 false
+            if (index.IsExpired())
             {
-                WriteDeleteRecordNoLock(key);
-                TryAutoCompactNoLock();
-                return true;
+                _data.TryRemove(key, out _);
+                return false;
             }
-            return false;
+
+            _data.TryRemove(key, out _);
+            WriteDeleteRecordNoLock(key);
+            TryAutoCompactNoLock();
+            return true;
         }
     }
 
@@ -510,7 +517,7 @@ public partial class KvStore : IDisposable
     #region TTL 管理
     /// <summary>获取键的过期时间</summary>
     /// <param name="key">键</param>
-    /// <returns>过期时间。键不存在或永不过期返回 null</returns>
+    /// <returns>过期时间。键不存在、已过期或永不过期返回 null</returns>
     public DateTime? GetExpiration(String key)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
@@ -518,6 +525,13 @@ public partial class KvStore : IDisposable
 
         if (!_data.TryGetValue(key, out var index))
             return null;
+
+        // 已过期视为不存在（惰性删除）
+        if (index.IsExpired())
+        {
+            _data.TryRemove(key, out _);
+            return null;
+        }
 
         // 永不过期视为无 TTL
         if (index.ExpiresAt == DateTime.MaxValue) return null;

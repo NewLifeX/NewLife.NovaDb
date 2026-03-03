@@ -884,4 +884,70 @@ public class SqlFunctionTests : IDisposable
     }
 
     #endregion
+
+    #region 缺陷修复验证测试
+
+    [Fact(DisplayName = "INSTR(haystack, needle) 参数顺序符合 MySQL 语义")]
+    public void TestInstrParameterOrder()
+    {
+        // INSTR(haystack, needle)：第一个参数是被搜索字符串，第二个是要查找的子串
+        var r = _engine.Execute("SELECT INSTR('Hello World', 'World')");
+        Assert.Equal(7, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "INSTR 未找到返回 0")]
+    public void TestInstrNotFound()
+    {
+        var r = _engine.Execute("SELECT INSTR('Hello World', 'xyz')");
+        Assert.Equal(0, r.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "CHARINDEX 与 INSTR 参数顺序不同")]
+    public void TestCharIndexVsInstrDifferentParamOrder()
+    {
+        // CHARINDEX(needle, haystack)：第一个是 needle，第二个是 haystack
+        var charIndex = _engine.Execute("SELECT CHARINDEX('World', 'Hello World')");
+        // INSTR(haystack, needle)：第一个是 haystack，第二个是 needle
+        var instr = _engine.Execute("SELECT INSTR('Hello World', 'World')");
+        // 结果相同，但参数顺序相反
+        Assert.Equal(charIndex.Rows[0][0], instr.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "STDDEV 使用样本标准差公式（N-1）与 MySQL 一致")]
+    public void TestStddevSampleFormula()
+    {
+        CreateUsersTable();
+        // 年龄: 30, 25, 35 → 均值=30 → 样本方差 = ((0)^2+(−5)^2+(5)^2)/(3-1) = 25 → stddev ≈ 5
+        var r = _engine.Execute("SELECT STDDEV(age) FROM users");
+        var stddev = Convert.ToDouble(r.Rows[0][0]);
+        Assert.Equal(5.0, stddev, precision: 10);
+    }
+
+    [Fact(DisplayName = "VARIANCE 使用样本方差公式（N-1）与 MySQL 一致")]
+    public void TestVarianceSampleFormula()
+    {
+        CreateUsersTable();
+        // 年龄: 30, 25, 35 → 均值=30 → 样本方差 = ((0)^2+(−5)^2+(5)^2)/(3-1) = 25
+        var r = _engine.Execute("SELECT VARIANCE(age) FROM users");
+        var variance = Convert.ToDouble(r.Rows[0][0]);
+        Assert.Equal(25.0, variance, precision: 10);
+    }
+
+    [Fact(DisplayName = "RAND 连续多次调用返回不同值（使用共享 Random 实例）")]
+    public void TestRandReturnsDifferentValues()
+    {
+        // 快速调用多次，用共享静态 Random 实例时应返回不同值
+        var values = new System.Collections.Generic.HashSet<Double>();
+        for (var i = 0; i < 10; i++)
+        {
+            var r = _engine.Execute("SELECT RAND()");
+            var val = Convert.ToDouble(r.Rows[0][0]);
+            Assert.InRange(val, 0.0, 1.0);
+            values.Add(val);
+        }
+        // 10次调用中至少有5个不同值（用 new Random() 时种子相同会全部相同）
+        Assert.True(values.Count >= 5, $"RAND() 返回的唯一值过少: {values.Count}");
+    }
+
+    #endregion
 }

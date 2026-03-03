@@ -57,6 +57,8 @@ partial class SqlEngine
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
+        var pkCol = schema.GetPrimaryKeyColumn()
+            ?? throw new NovaException(ErrorCode.InvalidArgument, "UPDATE requires a table with a primary key");
 
         using var tx = _txManager.BeginTransaction();
         var allRows = table.GetAll(tx);
@@ -81,7 +83,6 @@ partial class SqlEngine
             ConvertRowTypes(newRow, schema);
 
             // 获取主键值
-            var pkCol = schema.GetPrimaryKeyColumn()!;
             var pkValue = row[pkCol.Ordinal]!;
             table.Update(tx, pkValue, newRow);
             affectedRows++;
@@ -95,6 +96,8 @@ partial class SqlEngine
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
+        var pkCol = schema.GetPrimaryKeyColumn()
+            ?? throw new NovaException(ErrorCode.InvalidArgument, "DELETE requires a table with a primary key");
 
         using var tx = _txManager.BeginTransaction();
         var allRows = table.GetAll(tx);
@@ -105,7 +108,6 @@ partial class SqlEngine
             if (stmt.Where != null && !EvaluateCondition(stmt.Where, row, schema, parameters))
                 continue;
 
-            var pkCol = schema.GetPrimaryKeyColumn()!;
             var pkValue = row[pkCol.Ordinal]!;
             if (table.Delete(tx, pkValue))
                 affectedRows++;

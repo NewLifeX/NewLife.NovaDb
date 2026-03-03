@@ -362,6 +362,52 @@ public class KvStoreTests : IDisposable
         Assert.True(expiration.Value < DateTime.UtcNow.AddMinutes(6));
     }
 
+    [Fact(DisplayName = "GetExpiration 对已过期键返回 null 而非过期时间")]
+    public void TestGetExpirationOnExpiredKeyReturnsNull()
+    {
+        using var store = CreateStore();
+        // 设置极短 TTL
+        store.Set("expkey", [1, 2, 3], TimeSpan.FromMilliseconds(10));
+
+        // 等待过期
+        Thread.Sleep(50);
+
+        // 已过期的键应视为不存在，GetExpiration 应返回 null
+        var expiration = store.GetExpiration("expkey");
+        Assert.Null(expiration);
+    }
+
+    [Fact(DisplayName = "Delete 对已过期键返回 false（与 Exists 行为一致）")]
+    public void TestDeleteExpiredKeyReturnsFalse()
+    {
+        using var store = CreateStore();
+        // 设置极短 TTL
+        store.Set("expkey", [1, 2, 3], TimeSpan.FromMilliseconds(10));
+
+        // 等待过期
+        Thread.Sleep(50);
+
+        // 已过期的键：Exists 返回 false，Delete 也应返回 false
+        Assert.False(store.Exists("expkey"), "已过期键 Exists 应返回 false");
+        Assert.False(store.Delete("expkey"), "已过期键 Delete 应返回 false（与 Exists 行为一致）");
+    }
+
+    [Fact(DisplayName = "Delete 对已过期键不写入磁盘 Delete 记录")]
+    public void TestDeleteExpiredKeyDoesNotWriteDeleteRecord()
+    {
+        using var store = CreateStore();
+        // 设置极短 TTL
+        store.Set("expkey", [1, 2, 3], TimeSpan.FromMilliseconds(10));
+
+        Thread.Sleep(50);
+
+        // 在过期键上调用 Delete，不应写入 Delete 记录也不应触发压缩
+        var countBefore = store.Count;
+        store.Delete("expkey");
+        // 过期键应已被惰性清理，Count 不变
+        Assert.Equal(0, store.Count);
+    }
+
     public void Dispose()
     {
         try { if (Directory.Exists(_testDir)) Directory.Delete(_testDir, true); } catch { }

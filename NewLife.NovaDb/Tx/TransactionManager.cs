@@ -13,6 +13,8 @@ public class TransactionManager
     private readonly Object _lock = new();
 #endif
     private readonly Dictionary<UInt64, Transaction> _activeTxs = [];
+    // 已回滚（中止）的事务 ID 集合，用于区分"已回滚"与"已提交"
+    private readonly HashSet<UInt64> _abortedTxs = [];
 
     /// <summary>获取下一个事务 ID</summary>
     public UInt64 NextTxId
@@ -70,11 +72,14 @@ public class TransactionManager
 
     /// <summary>移除事务</summary>
     /// <param name="txId">事务 ID</param>
-    internal void RemoveTransaction(UInt64 txId)
+    /// <param name="aborted">是否为回滚（中止），true 表示回滚，false 表示提交</param>
+    internal void RemoveTransaction(UInt64 txId, Boolean aborted = false)
     {
         lock (_lock)
         {
             _activeTxs.Remove(txId);
+            if (aborted)
+                _abortedTxs.Add(txId);
         }
     }
 
@@ -107,29 +112,39 @@ public class TransactionManager
     public Boolean IsVisible(UInt64 createdByTx, UInt64 deletedByTx, UInt64 readTxId)
     {
         // Read Committed 语义：只读取已提交的数据
-        
-        // 如果创建事务是当前读取事务，且未被删除或删除者不是自己，则可见
-        if (createdByTx == readTxId)
+        lock (_lock)
         {
-            return deletedByTx == 0 || deletedByTx != readTxId;
+            // 如果创建事务是当前读取事务，且未被删除或删除者不是自己，则可见（读己之写）
+            if (createdByTx == readTxId)
+            {
+                return deletedByTx == 0 || deletedByTx != readTxId;
+            }
+
+            // 如果创建事务还活跃（未提交），则不可见（不读脏数据）
+            if (_activeTxs.ContainsKey(createdByTx))
+                return false;
+
+            // 如果创建事务已回滚，则不可见（回滚的写入不应可见）
+            if (_abortedTxs.Contains(createdByTx))
+                return false;
+
+            // 如果已被删除
+            if (deletedByTx > 0)
+            {
+                // 如果删除事务还活跃，则可见（删除未提交）
+                if (_activeTxs.ContainsKey(deletedByTx))
+                    return true;
+
+                // 如果删除事务已回滚，则可见（删除被撤销）
+                if (_abortedTxs.Contains(deletedByTx))
+                    return true;
+
+                // 删除事务已提交，不可见
+                return false;
+            }
+
+            // 创建事务已提交，且未被删除，可见
+            return true;
         }
-
-        // 如果创建事务还活跃，则不可见
-        if (IsTransactionActive(createdByTx))
-            return false;
-
-        // 如果已被删除
-        if (deletedByTx > 0)
-        {
-            // 如果删除事务还活跃，则可见（删除未提交）
-            if (IsTransactionActive(deletedByTx))
-                return true;
-
-            // 删除事务已提交，不可见
-            return false;
-        }
-
-        // 创建事务已提交，且未被删除，可见
-        return true;
     }
 }

@@ -759,4 +759,47 @@ public class SqlEngineTests : IDisposable
     }
 
     #endregion
+
+    #region 缺陷修复验证测试
+
+    [Fact(DisplayName = "CREATE TABLE 无主键时在创建阶段就抛出明确错误")]
+    public void TestCreateTableWithoutPrimaryKeyThrows()
+    {
+        // NovaTable 构造函数已强制要求主键，确保错误在 CREATE TABLE 时就被捕获
+        var ex = Assert.Throws<NovaException>(() =>
+            _engine.Execute("CREATE TABLE nopk (name VARCHAR, age INT)"));
+
+        Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
+        Assert.Contains("primary key", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact(DisplayName = "UPDATE 有主键表正常工作")]
+    public void TestUpdateTableWithPrimaryKey()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+
+        var result = _engine.Execute("UPDATE users SET age = 31 WHERE id = 1");
+        Assert.Equal(1, result.AffectedRows);
+
+        var selectResult = _engine.Execute("SELECT age FROM users WHERE id = 1");
+        Assert.Equal(1, selectResult.Rows.Count);
+        Assert.Equal(31, Convert.ToInt32(selectResult.Rows[0][0]));
+    }
+
+    [Fact(DisplayName = "DELETE 有主键表正常工作")]
+    public void TestDeleteFromTableWithPrimaryKey()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (1, 'Alice', 30)");
+        _engine.Execute("INSERT INTO users (id, name, age) VALUES (2, 'Bob', 25)");
+
+        var result = _engine.Execute("DELETE FROM users WHERE id = 1");
+        Assert.Equal(1, result.AffectedRows);
+
+        var selectResult = _engine.Execute("SELECT * FROM users");
+        Assert.Equal(1, selectResult.Rows.Count);
+    }
+
+    #endregion
 }
