@@ -1,5 +1,6 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Utilities;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -589,8 +590,8 @@ partial class SqlEngine
                 if (args.Count < 1 || args[0] == null) return null;
                 using (var md5 = System.Security.Cryptography.MD5.Create())
                 {
-                    var bytes = System.Text.Encoding.UTF8.GetBytes(Convert.ToString(args[0])!);
-                    var hash = md5.ComputeHash(bytes);
+                    using var bytes = Convert.ToString(args[0]).ToPooledUtf8Bytes();
+                    var hash = md5.ComputeHash(bytes.Buffer, 0, bytes.Length);
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
 
@@ -598,8 +599,8 @@ partial class SqlEngine
                 if (args.Count < 1 || args[0] == null) return null;
                 using (var sha1 = System.Security.Cryptography.SHA1.Create())
                 {
-                    var bytes = System.Text.Encoding.UTF8.GetBytes(Convert.ToString(args[0])!);
-                    var hash = sha1.ComputeHash(bytes);
+                    using var bytes = Convert.ToString(args[0]).ToPooledUtf8Bytes();
+                    var hash = sha1.ComputeHash(bytes.Buffer, 0, bytes.Length);
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
 
@@ -613,8 +614,8 @@ partial class SqlEngine
                     _ => System.Security.Cryptography.SHA256.Create()
                 })
                 {
-                    var bytes = System.Text.Encoding.UTF8.GetBytes(Convert.ToString(args[0])!);
-                    var hash = sha2.ComputeHash(bytes);
+                    using var bytes = Convert.ToString(args[0]).ToPooledUtf8Bytes();
+                    var hash = sha2.ComputeHash(bytes.Buffer, 0, bytes.Length);
                     return BitConverter.ToString(hash).Replace("-", String.Empty).ToLower();
                 }
 

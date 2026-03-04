@@ -5,6 +5,7 @@ using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
+using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Engine.KV;
@@ -144,10 +145,8 @@ public partial class KvStore
     /// <param name="expiresAt">过期时间（UTC）</param>
     /// <param name="autoFlush">是否按 WAL 模式自动刷盘</param>
     /// <returns>值在文件中的偏移（若值为空则返回 -1）</returns>
-    private Int64 WriteSetRecordNoLock(String key, Byte[] value, DateTime expiresAt, Boolean autoFlush = true)
+    private Int64 WriteSetRecordNoLock(String key, ReadOnlySpan<Byte> value, DateTime expiresAt, Boolean autoFlush = true)
     {
-        if (value == null) throw new ArgumentNullException(nameof(value));
-
         var valueOffset = WriteSetRecordToStream(_fileStream!, key, value, expiresAt);
         _writeCount++;
         if (autoFlush) FlushByWalMode();
@@ -160,13 +159,13 @@ public partial class KvStore
     /// <param name="value">值，最少为空数组，不能为 null</param>
     /// <param name="expiresAt">过期时间（UTC）</param>
     /// <returns>值在文件中的偏移（若值为空则返回 -1）</returns>
-    private static Int64 WriteSetRecordToStream(FileStream target, String key, Byte[] value, DateTime expiresAt)
+    private static Int64 WriteSetRecordToStream(FileStream target, String key, ReadOnlySpan<Byte> value, DateTime expiresAt)
     {
-        var keyBytes = Encoding.UTF8.GetBytes(key);
+        var pooledKeyBytes = _encoding.GetPooledEncodedBytes(key);
         var valueLen = value.Length;
 
         // Record: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key] [ExpiresAt: 8B] [ValueLen: 4B] [Value] [CRC32: 4B]
-        var totalLength = 1 + 2 + keyBytes.Length + 8 + 4 + valueLen + 4;
+        var totalLength = 1 + 2 + pooledKeyBytes.Length + 8 + 4 + valueLen + 4;
         var recordSize = 4 + totalLength;
 
         var buf = ArrayPool<Byte>.Shared.Rent(recordSize);
@@ -176,8 +175,8 @@ public partial class KvStore
 
             writer.Write(totalLength);
             writer.Write((Byte)KvRecordType.Set);
-            writer.Write((UInt16)keyBytes.Length);
-            writer.Write(keyBytes);
+            writer.Write((UInt16)pooledKeyBytes.Length);
+            writer.Write(pooledKeyBytes.AsSpan());
             writer.Write(expiresAt.Ticks);
             writer.Write(valueLen);
             writer.Write(value);
@@ -191,10 +190,11 @@ public partial class KvStore
             target.Write(buf, 0, recordSize);
 
             // 计算值在文件中的偏移: recordStart + 4(TotalLen) + 1(Type) + 2(KeyLen) + key + 8(ExpiresAt) + 4(ValueLen)
-            return valueLen > 0 ? recordStart + 4 + 1 + 2 + keyBytes.Length + 8 + 4 : -1L;
+            return valueLen > 0 ? recordStart + 4 + 1 + 2 + pooledKeyBytes.Length + 8 + 4 : -1L;
         }
         finally
         {
+            pooledKeyBytes.Dispose();
             ArrayPool<Byte>.Shared.Return(buf);
         }
     }
@@ -203,10 +203,10 @@ public partial class KvStore
     /// <param name="key">键</param>
     private void WriteDeleteRecordNoLock(String key)
     {
-        var keyBytes = Encoding.UTF8.GetBytes(key);
+        var pooledKeyBytes = _encoding.GetPooledEncodedBytes(key);
 
         // Delete: [TotalLength: 4B] [RecordType: 1B] [KeyLen: 2B] [Key] [CRC32: 4B]
-        var totalLength = 1 + 2 + keyBytes.Length + 4;
+        var totalLength = 1 + 2 + pooledKeyBytes.Length + 4;
         var recordSize = 4 + totalLength;
 
         var buf = ArrayPool<Byte>.Shared.Rent(recordSize);
@@ -216,8 +216,8 @@ public partial class KvStore
 
             writer.Write(totalLength);
             writer.Write((Byte)KvRecordType.Delete);
-            writer.Write((UInt16)keyBytes.Length);
-            writer.Write(keyBytes);
+            writer.Write((UInt16)pooledKeyBytes.Length);
+            writer.Write(pooledKeyBytes.AsSpan());
 
             var crc = Crc32.Compute(buf, 4, totalLength - 4);
             writer.Write(crc);
@@ -227,6 +227,7 @@ public partial class KvStore
         }
         finally
         {
+            pooledKeyBytes.Dispose();
             ArrayPool<Byte>.Shared.Return(buf);
         }
 
@@ -507,7 +508,7 @@ public partial class KvStore
                     if (kvp.Value.IsExpired()) continue;
 
                     using var pk = ReadValueFromDiskNoLock(kvp.Value);
-                    var value = pk != null ? pk.GetSpan().ToArray() : [];
+                    var value = pk != null ? pk.GetSpan() : ReadOnlySpan<byte>.Empty;
 
                     var valueOffset = WriteSetRecordToStream(tempStream, kvp.Key, value, kvp.Value.ExpiresAt);
                     newEntries[kvp.Key] = new KvEntry

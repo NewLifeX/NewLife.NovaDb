@@ -34,6 +34,8 @@ public class DefaultDataCodec : IDataCodec
     /// <summary>非 NULL 标记字节</summary>
     private const Byte NotNullFlag = 0x01;
 
+    private static readonly Encoding _encoding = Encoding.UTF8;
+
     /// <summary>编码值到二进制</summary>
     /// <param name="value">要编码的值</param>
     /// <param name="dataType">数据类型</param>
@@ -137,7 +139,7 @@ public class DefaultDataCodec : IDataCodec
             DataType.Int64 => 8,
             DataType.Double => 8,
             DataType.Decimal => 16, // 128-bit
-            DataType.String => 4 + Encoding.UTF8.GetByteCount((String)value), // 长度前缀 + UTF-8
+            DataType.String => 4 + _encoding.GetByteCount((String)value), // 长度前缀 + UTF-8
             DataType.Binary => 4 + ((Byte[])value).Length, // 长度前缀 + 数据
             DataType.DateTime => 8, // Ticks
             DataType.GeoPoint => 16, // 2 × Double
@@ -146,7 +148,7 @@ public class DefaultDataCodec : IDataCodec
         };
     }
 
-    private Byte[] EncodeDecimal(Decimal value)
+    private static Byte[] EncodeDecimal(Decimal value)
     {
         var bits = Decimal.GetBits(value);
         var buffer = new Byte[16];
@@ -154,42 +156,42 @@ public class DefaultDataCodec : IDataCodec
         return buffer;
     }
 
-    private Boolean DecodeBoolean(Byte[] buffer, Int32 offset)
+    private static Boolean DecodeBoolean(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 1)
             throw new ArgumentException($"Buffer too short to read Boolean (need {offset + 1} bytes, got {buffer.Length})");
         return BitConverter.ToBoolean(buffer, offset);
     }
 
-    private Int32 DecodeInt32(Byte[] buffer, Int32 offset)
+    private static Int32 DecodeInt32(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 4)
             throw new ArgumentException($"Buffer too short to read Int32 (need {offset + 4} bytes, got {buffer.Length})");
         return BitConverter.ToInt32(buffer, offset);
     }
 
-    private Int64 DecodeInt64(Byte[] buffer, Int32 offset)
+    private static Int64 DecodeInt64(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 8)
             throw new ArgumentException($"Buffer too short to read Int64 (need {offset + 8} bytes, got {buffer.Length})");
         return BitConverter.ToInt64(buffer, offset);
     }
 
-    private Double DecodeDouble(Byte[] buffer, Int32 offset)
+    private static Double DecodeDouble(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 8)
             throw new ArgumentException($"Buffer too short to read Double (need {offset + 8} bytes, got {buffer.Length})");
         return BitConverter.ToDouble(buffer, offset);
     }
 
-    private DateTime DecodeDateTime(Byte[] buffer, Int32 offset)
+    private static DateTime DecodeDateTime(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 8)
             throw new ArgumentException($"Buffer too short to read DateTime (need {offset + 8} bytes, got {buffer.Length})");
         return new DateTime(BitConverter.ToInt64(buffer, offset));
     }
 
-    private Decimal DecodeDecimal(Byte[] buffer, Int32 offset)
+    private static Decimal DecodeDecimal(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 16)
             throw new ArgumentException($"Buffer too short to read Decimal (need {offset + 16} bytes, got {buffer.Length})");
@@ -198,22 +200,23 @@ public class DefaultDataCodec : IDataCodec
         return new Decimal(bits);
     }
 
-    private Byte[] EncodeString(String value)
+    private static Byte[] EncodeString(String value)
     {
-        var utf8Bytes = System.Text.Encoding.UTF8.GetBytes(value);
-        var buffer = new Byte[4 + utf8Bytes.Length];
-        Buffer.BlockCopy(BitConverter.GetBytes(utf8Bytes.Length), 0, buffer, 0, 4);
-        Buffer.BlockCopy(utf8Bytes, 0, buffer, 4, utf8Bytes.Length);
+        var valueBytesLength = _encoding.GetByteCount(value);
+        var buffer = new Byte[4 + valueBytesLength];
+        Buffer.BlockCopy(BitConverter.GetBytes(buffer.Length), 0, buffer, 0, 4);
+        _encoding.GetBytes(value, buffer.AsSpan(4));
+
         return buffer;
     }
 
-    private String DecodeString(Byte[] buffer, Int32 offset)
+    private static String DecodeString(Byte[] buffer, Int32 offset)
     {
         var length = BitConverter.ToInt32(buffer, offset);
-        return System.Text.Encoding.UTF8.GetString(buffer, offset + 4, length);
+        return _encoding.GetString(buffer, offset + 4, length);
     }
 
-    private Byte[] EncodeByteArray(Byte[] value)
+    private static Byte[] EncodeByteArray(Byte[] value)
     {
         var buffer = new Byte[4 + value.Length];
         Buffer.BlockCopy(BitConverter.GetBytes(value.Length), 0, buffer, 0, 4);
@@ -221,7 +224,7 @@ public class DefaultDataCodec : IDataCodec
         return buffer;
     }
 
-    private Byte[] EncodeGeoPoint(GeoPoint value)
+    private static Byte[] EncodeGeoPoint(GeoPoint value)
     {
         var buffer = new Byte[16];
         Buffer.BlockCopy(BitConverter.GetBytes(value.Latitude), 0, buffer, 0, 8);
@@ -229,7 +232,7 @@ public class DefaultDataCodec : IDataCodec
         return buffer;
     }
 
-    private GeoPoint DecodeGeoPoint(Byte[] buffer, Int32 offset)
+    private static GeoPoint DecodeGeoPoint(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 16)
             throw new ArgumentException($"Buffer too short to read GeoPoint (need {offset + 16} bytes, got {buffer.Length})");
@@ -238,7 +241,7 @@ public class DefaultDataCodec : IDataCodec
         return new GeoPoint(lat, lon);
     }
 
-    private Byte[] EncodeVector(Single[] value)
+    private static Byte[] EncodeVector(Single[] value)
     {
         var buffer = new Byte[4 + value.Length * 4];
         Buffer.BlockCopy(BitConverter.GetBytes(value.Length), 0, buffer, 0, 4);
@@ -246,7 +249,7 @@ public class DefaultDataCodec : IDataCodec
         return buffer;
     }
 
-    private Single[] DecodeVector(Byte[] buffer, Int32 offset)
+    private static Single[] DecodeVector(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 4)
             throw new ArgumentException($"Buffer too short to read Vector length (need {offset + 4} bytes, got {buffer.Length})");
@@ -260,7 +263,7 @@ public class DefaultDataCodec : IDataCodec
         return result;
     }
 
-    private Byte[] DecodeByteArray(Byte[] buffer, Int32 offset)
+    private static Byte[] DecodeByteArray(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 4)
             throw new ArgumentException($"Buffer too short to read ByteArray length (need {offset + 4} bytes, got {buffer.Length})");

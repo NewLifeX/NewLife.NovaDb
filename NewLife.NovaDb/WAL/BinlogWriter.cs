@@ -1,4 +1,5 @@
-using System.Text;
+﻿using System.Text;
+using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.WAL;
@@ -225,14 +226,18 @@ public class BinlogWriter : IDisposable
         bw.Write(DateTime.UtcNow.Ticks);
 
         // 数据库名
-        var dbBytes = Encoding.UTF8.GetBytes(_database);
-        bw.Write(dbBytes.Length);
-        bw.Write(dbBytes);
+        using (var dbBytes = _database.ToPooledUtf8Bytes())
+        {
+            bw.Write(dbBytes.Length);
+            bw.Write(dbBytes.Buffer, 0, dbBytes.Length);
+        }
 
         // SQL 文本
-        var sqlBytes = Encoding.UTF8.GetBytes(sql ?? "");
-        bw.Write(sqlBytes.Length);
-        bw.Write(sqlBytes);
+        using (var sqlBytes = (sql ?? "").ToPooledUtf8Bytes())
+        {
+            bw.Write(sqlBytes.Length);
+            bw.Write(sqlBytes.Buffer, 0, sqlBytes.Length);
+        }
 
         bw.Write(affectedRows);
 

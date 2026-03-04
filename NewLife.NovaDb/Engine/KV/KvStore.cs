@@ -1,9 +1,11 @@
 ﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
-using NewLife;
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Utilities;
 
 namespace NewLife.NovaDb.Engine.KV;
 
@@ -18,6 +20,7 @@ namespace NewLife.NovaDb.Engine.KV;
 public partial class KvStore : IDisposable
 {
     #region 属性
+    private static readonly Encoding _encoding = Encoding.UTF8;
     private readonly ConcurrentDictionary<String, KvEntry> _data = new(StringComparer.Ordinal);
 #if NET9_0_OR_GREATER
     private readonly System.Threading.Lock _writeLock = new();
@@ -97,7 +100,15 @@ public partial class KvStore : IDisposable
     /// <param name="key">键</param>
     /// <param name="value">值</param>
     /// <param name="ttl">过期时间，null 表示使用默认 TTL（无默认则永不过期）</param>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Set(String key, Byte[]? value, TimeSpan? ttl = null)
+        => Set(key, value == null ? ReadOnlySpan<Byte>.Empty : new ReadOnlySpan<Byte>(value), ttl);
+
+    /// <summary>设置键值对</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">值</param>
+    /// <param name="ttl">过期时间，null 表示使用默认 TTL（无默认则永不过期）</param>
+    public void Set(String key, ReadOnlySpan<Byte> value, TimeSpan? ttl = null)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
         CheckDisposed();
@@ -107,11 +118,11 @@ public partial class KvStore : IDisposable
 
         lock (_writeLock)
         {
-            var valueOffset = WriteSetRecordNoLock(key, value ?? [], expiresAt);
+            var valueOffset = WriteSetRecordNoLock(key, value, expiresAt);
             _data[key] = new KvEntry
             {
                 ValueOffset = valueOffset,
-                ValueLength = value?.Length ?? 0,
+                ValueLength = value.Length,
                 ExpiresAt = expiresAt,
             };
 
@@ -238,7 +249,8 @@ public partial class KvStore : IDisposable
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
 
-        Set(key, value.GetBytes(), ttl);
+        using var pooledUtf8Bytes = _encoding.GetPooledEncodedBytes(value);
+        Set(key, pooledUtf8Bytes.AsSpan(), ttl);
     }
 
     /// <summary>获取字符串值（UTF-8 解码）</summary>
@@ -260,7 +272,15 @@ public partial class KvStore : IDisposable
     /// <param name="value">值</param>
     /// <param name="ttl">过期时间</param>
     /// <returns>添加成功返回 true，key 已存在且未过期返回 false</returns>
-    public Boolean Add(String key, Byte[] value, TimeSpan ttl)
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public Boolean Add(String key, Byte[] value, TimeSpan ttl) => Add(key, new ReadOnlySpan<Byte>(value), ttl);
+
+    /// <summary>仅当 key 不存在时添加，返回是否成功（分布式锁场景）</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">值</param>
+    /// <param name="ttl">过期时间</param>
+    /// <returns>添加成功返回 true，key 已存在且未过期返回 false</returns>
+    public Boolean Add(String key, ReadOnlySpan<Byte> value, TimeSpan ttl)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
         CheckDisposed();
@@ -293,7 +313,8 @@ public partial class KvStore : IDisposable
     {
         if (value == null) throw new ArgumentNullException(nameof(value));
 
-        return Add(key, Encoding.UTF8.GetBytes(value), ttl);
+        using var pooledUtf8Bytes = _encoding.GetPooledEncodedBytes(value);
+        return Add(key, pooledUtf8Bytes.AsSpan(), ttl);
     }
 
     /// <summary>替换并返回旧值（原子操作）</summary>
@@ -301,7 +322,16 @@ public partial class KvStore : IDisposable
     /// <param name="value">新值</param>
     /// <param name="ttl">过期时间，null 表示保持原有 TTL</param>
     /// <returns>旧值池化数据包，不存在返回 null。调用方用完后需 Dispose</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public IOwnerPacket? Replace(String key, Byte[]? value, TimeSpan? ttl = null)
+        => Replace(key, value == null ? ReadOnlySpan<Byte>.Empty : new ReadOnlySpan<Byte>(value), ttl);
+
+    /// <summary>替换并返回旧值（原子操作）</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">新值</param>
+    /// <param name="ttl">过期时间，null 表示保持原有 TTL</param>
+    /// <returns>旧值池化数据包，不存在返回 null。调用方用完后需 Dispose</returns>
+    public IOwnerPacket? Replace(String key, ReadOnlySpan<Byte> value, TimeSpan? ttl = null)
     {
         if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
         CheckDisposed();
@@ -321,11 +351,11 @@ public partial class KvStore : IDisposable
                 expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            var valueOffset = WriteSetRecordNoLock(key, value ?? [], expiresAt);
+            var valueOffset = WriteSetRecordNoLock(key, value, expiresAt);
             _data[key] = new KvEntry
             {
                 ValueOffset = valueOffset,
-                ValueLength = value?.Length ?? 0,
+                ValueLength = value.Length,
                 ExpiresAt = expiresAt,
             };
 
@@ -466,11 +496,12 @@ public partial class KvStore : IDisposable
             {
                 if (String.IsNullOrEmpty(kvp.Key)) continue;
 
-                var valueOffset = WriteSetRecordNoLock(kvp.Key, kvp.Value ?? [], expiresAt);
+                var value = kvp.Value == null ? ReadOnlySpan<Byte>.Empty : new ReadOnlySpan<Byte>(kvp.Value);
+                var valueOffset = WriteSetRecordNoLock(kvp.Key, value, expiresAt);
                 _data[kvp.Key] = new KvEntry
                 {
                     ValueOffset = valueOffset,
-                    ValueLength = kvp.Value?.Length ?? 0,
+                    ValueLength = value.Length,
                     ExpiresAt = expiresAt,
                 };
             }
@@ -549,7 +580,7 @@ public partial class KvStore : IDisposable
 
             // 从磁盘读取当前值，以新 TTL 重新追加写入
             using var valuePk = ReadValueFromDiskNoLock(index);
-            var value = valuePk?.ReadBytes() ?? [];
+            var value = valuePk == null ? ReadOnlySpan<Byte>.Empty : new ReadOnlySpan<Byte>(valuePk.ReadBytes());
             var valueOffset = WriteSetRecordNoLock(key, value, newExpiresAt);
             _data[key] = new KvEntry
             {

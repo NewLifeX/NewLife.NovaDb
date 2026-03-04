@@ -1,3 +1,5 @@
+﻿using NewLife.NovaDb.Utilities;
+
 namespace NewLife.NovaDb.Storage;
 
 /// <summary>数据库文件锁，实现跨进程单写者协调</summary>
@@ -51,9 +53,8 @@ public class DatabaseLock : IDisposable
 
             // 写入进程信息
             var pid = System.Diagnostics.Process.GetCurrentProcess().Id;
-            var info = System.Text.Encoding.UTF8.GetBytes(
-                $"PID={pid}, Time={DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            _lockStream.Write(info, 0, info.Length);
+            using (var info = $"PID={pid}, Time={DateTime.Now:yyyy-MM-dd HH:mm:ss}".ToPooledUtf8Bytes())
+                _lockStream.Write(info.Buffer, 0, info.Length);
             _lockStream.Flush();
 
             return true;

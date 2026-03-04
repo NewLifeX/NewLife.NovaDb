@@ -1,4 +1,5 @@
-using System.Text;
+﻿using System.Text;
+using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Engine.Flux;
@@ -22,6 +23,7 @@ public partial class FluxEngine
     private const Byte RecordType_FluxAppend = 1;
     private const Byte RecordType_FluxPurge = 2;
 
+    private static readonly Encoding _encoding = Encoding.UTF8;
     private static readonly Byte[] FluxLogMagic = [(Byte)'N', (Byte)'F', (Byte)'L', (Byte)'G'];
     private const Int32 FluxLogHeaderSize = 32;
 
@@ -120,7 +122,8 @@ public partial class FluxEngine
             WriteString(bw, kv.Value);
         }
 
-        WriteFluxRecord(RecordType_FluxAppend, ms.ToArray());
+        var data = ms.ToArray();
+        WriteFluxRecord(RecordType_FluxAppend, data, 0, data.Length);
     }
 
     /// <summary>持久化 Purge 记录（删除过期分区）</summary>
@@ -129,26 +132,26 @@ public partial class FluxEngine
     {
         if (_fluxLogStream == null) return;
 
-        var data = Encoding.UTF8.GetBytes(cutoffKey);
-        WriteFluxRecord(RecordType_FluxPurge, data);
+        using var pooledBytes = _encoding.GetPooledEncodedBytes(cutoffKey);
+        WriteFluxRecord(RecordType_FluxPurge, pooledBytes.Buffer, 0, pooledBytes.Length);
     }
 
     /// <summary>写入一条记录</summary>
-    private void WriteFluxRecord(Byte recordType, Byte[] data)
+    private void WriteFluxRecord(Byte recordType, Byte[] data, int offset, int count)
     {
-        var recordLength = 1 + data.Length + 4;
+        var recordLength = 1 + count + 4;
 
         using var ms = new MemoryStream(4 + recordLength);
         using var bw = new BinaryWriter(ms);
 
         bw.Write(recordLength);
         bw.Write(recordType);
-        bw.Write(data);
+        bw.Write(data, offset, count);
 
         // CRC32 校验
-        var checkBuffer = new Byte[1 + data.Length];
+        var checkBuffer = new Byte[1 + count];
         checkBuffer[0] = recordType;
-        Array.Copy(data, 0, checkBuffer, 1, data.Length);
+        Array.Copy(data, offset, checkBuffer, 1, count);
         var checksum = Crc32.Compute(checkBuffer, 0, checkBuffer.Length);
         bw.Write(checksum);
 
@@ -165,9 +168,13 @@ public partial class FluxEngine
     /// <summary>写入 UTF-8 字符串（长度前缀）</summary>
     private static void WriteString(BinaryWriter bw, String value)
     {
-        var bytes = Encoding.UTF8.GetBytes(value);
+        using var bytes = _encoding.GetPooledEncodedBytes(value);
         bw.Write(bytes.Length);
-        bw.Write(bytes);
+#if NETSTANDARD2_1_OR_GREATER
+        bw.Write(bytes.AsSpan());
+#else
+        bw.Write(bytes.Buffer, 0, bytes.Length);
+#endif
     }
 
     /// <summary>读取 UTF-8 字符串（长度前缀）</summary>
@@ -175,7 +182,7 @@ public partial class FluxEngine
     {
         var len = br.ReadInt32();
         var bytes = br.ReadBytes(len);
-        return Encoding.UTF8.GetString(bytes);
+        return _encoding.GetString(bytes);
     }
 
     /// <summary>写入字段值（带类型标签）</summary>
@@ -324,7 +331,7 @@ public partial class FluxEngine
     /// <summary>回放 Purge 记录</summary>
     private void ReplayFluxPurge(Byte[] body, Int32 offset, Int32 dataLength)
     {
-        var cutoffKey = Encoding.UTF8.GetString(body, offset, dataLength);
+        var cutoffKey = _encoding.GetString(body, offset, dataLength);
 
         var toRemove = new List<String>();
         foreach (var key in _partitions.Keys)
