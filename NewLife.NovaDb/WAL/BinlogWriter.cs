@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
+using System.Text;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
@@ -154,17 +155,29 @@ public class BinlogWriter : IDisposable
     /// <summary>写入文件头</summary>
     private void WriteHeader()
     {
-        var header = new Byte[HeaderSize];
-        Array.Copy(BinlogMagic, 0, header, 0, 4);
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> header = stackalloc Byte[HeaderSize];
+        BinlogMagic.AsSpan().CopyTo(header.Slice(0, 4));
         header[4] = 1; // Version
 
         // 写入文件索引
-        var indexBytes = BitConverter.GetBytes(_fileIndex);
-        Array.Copy(indexBytes, 0, header, 8, 4);
+        BinaryPrimitives.WriteInt32LittleEndian(header.Slice(8, 4), _fileIndex);
+
+        _stream!.Position = 0;
+        _stream.Write(header);
+        _stream.Flush();
+#else
+        var header = new Byte[HeaderSize];
+        BinlogMagic.AsSpan().CopyTo(header.AsSpan(0, 4));
+        header[4] = 1; // Version
+
+        // 写入文件索引
+        BinaryPrimitives.WriteInt32LittleEndian(header.AsSpan(8, 4), _fileIndex);
 
         _stream!.Position = 0;
         _stream.Write(header, 0, header.Length);
         _stream.Flush();
+#endif
     }
 
     /// <summary>校验文件头</summary>
@@ -173,9 +186,13 @@ public class BinlogWriter : IDisposable
         if (_stream!.Length < HeaderSize) return;
 
         _stream.Position = 0;
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> header = stackalloc Byte[HeaderSize];
+        if (_stream.Read(header) < HeaderSize) return;
+#else
         var header = new Byte[HeaderSize];
         if (_stream.Read(header, 0, header.Length) < HeaderSize) return;
-
+#endif
         if (header[0] != BinlogMagic[0] || header[1] != BinlogMagic[1] ||
             header[2] != BinlogMagic[2] || header[3] != BinlogMagic[3])
             throw new InvalidOperationException("Invalid Binlog file header");
@@ -251,13 +268,27 @@ public class BinlogWriter : IDisposable
 
         _stream.Position = _stream.Length;
 
-        var lenBuf = BitConverter.GetBytes(recordLength);
+#if NETSTANDARD2_1_OR_GREATER
+        Span<Byte> lenBuf = stackalloc Byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(lenBuf, recordLength);
+        _stream.Write(lenBuf);
+        _stream.Write(data.AsSpan());
+
+        Span<Byte> csumBuf = stackalloc Byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(csumBuf, checksum);
+        _stream.Write(csumBuf);
+        _stream.Flush();
+#else
+        var lenBuf = new Byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(lenBuf.AsSpan(), recordLength);
         _stream.Write(lenBuf, 0, 4);
         _stream.Write(data, 0, data.Length);
 
-        var csumBuf = BitConverter.GetBytes(checksum);
+        var csumBuf = new Byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(csumBuf.AsSpan(), checksum);
         _stream.Write(csumBuf, 0, 4);
         _stream.Flush();
+#endif
 
         _position++;
     }

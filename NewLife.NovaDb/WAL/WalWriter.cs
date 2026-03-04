@@ -1,4 +1,5 @@
-﻿using NewLife.Data;
+﻿using System.Buffers.Binary;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
@@ -89,8 +90,15 @@ public class WalWriter : IDisposable
             pk.TryGetArray(out var segment);
 
             // 写入长度前缀（4 字节）
-            var lengthPrefix = BitConverter.GetBytes(pk.Length);
+#if NETSTANDARD2_1_OR_GREATER
+            Span<Byte> lengthPrefix = stackalloc Byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(lengthPrefix, pk.Length);
+            _fileStream.Write(lengthPrefix);
+#else
+            var lengthPrefix = new Byte[4];
+            BinaryPrimitives.WriteInt32LittleEndian(lengthPrefix, pk.Length);
             _fileStream.Write(lengthPrefix, 0, 4);
+#endif
 
             // 写入记录数据
             _fileStream.Write(segment.Array!, segment.Offset, segment.Count);

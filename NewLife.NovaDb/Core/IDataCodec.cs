@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿using System.Buffers.Binary;
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace NewLife.NovaDb.Core;
 
@@ -204,9 +206,8 @@ public class DefaultDataCodec : IDataCodec
     {
         var valueBytesLength = _encoding.GetByteCount(value);
         var buffer = new Byte[4 + valueBytesLength];
-        Buffer.BlockCopy(BitConverter.GetBytes(buffer.Length), 0, buffer, 0, 4);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, 4), valueBytesLength);
         _encoding.GetBytes(value, buffer.AsSpan(4));
-
         return buffer;
     }
 
@@ -219,16 +220,16 @@ public class DefaultDataCodec : IDataCodec
     private static Byte[] EncodeByteArray(Byte[] value)
     {
         var buffer = new Byte[4 + value.Length];
-        Buffer.BlockCopy(BitConverter.GetBytes(value.Length), 0, buffer, 0, 4);
-        Buffer.BlockCopy(value, 0, buffer, 4, value.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, 4), value.Length);
+        value.AsSpan().CopyTo(buffer.AsSpan(4));
         return buffer;
     }
 
     private static Byte[] EncodeGeoPoint(GeoPoint value)
     {
         var buffer = new Byte[16];
-        Buffer.BlockCopy(BitConverter.GetBytes(value.Latitude), 0, buffer, 0, 8);
-        Buffer.BlockCopy(BitConverter.GetBytes(value.Longitude), 0, buffer, 8, 8);
+        WriteDoubleLittleEndian(buffer.AsSpan(0, 8), value.Latitude);
+        WriteDoubleLittleEndian(buffer.AsSpan(8, 8), value.Longitude);
         return buffer;
     }
 
@@ -243,9 +244,11 @@ public class DefaultDataCodec : IDataCodec
 
     private static Byte[] EncodeVector(Single[] value)
     {
-        var buffer = new Byte[4 + value.Length * 4];
-        Buffer.BlockCopy(BitConverter.GetBytes(value.Length), 0, buffer, 0, 4);
-        Buffer.BlockCopy(value, 0, buffer, 4, value.Length * 4);
+        var byteLen = checked(value.Length * sizeof(float));
+        var buffer = new Byte[sizeof(int) + byteLen];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, sizeof(int)), value.Length);
+        ReadOnlySpan<byte> srcBytes = MemoryMarshal.AsBytes(value.AsSpan());
+        srcBytes.CopyTo(buffer.AsSpan(sizeof(int)));
         return buffer;
     }
 
@@ -277,5 +280,15 @@ public class DefaultDataCodec : IDataCodec
         var result = new Byte[length];
         Buffer.BlockCopy(buffer, offset + 4, result, 0, length);
         return result;
+    }
+
+    private static void WriteDoubleLittleEndian(Span<byte> destination, double value)
+    {
+#if NET6_0_OR_GREATER
+        BinaryPrimitives.WriteDoubleLittleEndian(destination, value);
+#else
+        var bits = BitConverter.DoubleToInt64Bits(value);
+        BinaryPrimitives.WriteInt64LittleEndian(destination, bits);
+#endif
     }
 }
