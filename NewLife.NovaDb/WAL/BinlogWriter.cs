@@ -155,7 +155,7 @@ public class BinlogWriter : IDisposable
     /// <summary>写入文件头</summary>
     private void WriteHeader()
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> header = stackalloc Byte[HeaderSize];
         BinlogMagic.AsSpan().CopyTo(header.Slice(0, 4));
         header[4] = 1; // Version
@@ -186,7 +186,7 @@ public class BinlogWriter : IDisposable
         if (_stream!.Length < HeaderSize) return;
 
         _stream.Position = 0;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> header = stackalloc Byte[HeaderSize];
         if (_stream.Read(header) < HeaderSize) return;
 #else
@@ -268,7 +268,7 @@ public class BinlogWriter : IDisposable
 
         _stream.Position = _stream.Length;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> lenBuf = stackalloc Byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(lenBuf, recordLength);
         _stream.Write(lenBuf);

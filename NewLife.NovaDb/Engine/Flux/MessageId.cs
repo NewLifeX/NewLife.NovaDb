@@ -51,7 +51,7 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
         if (dashIndex < 0)
             throw new FormatException($"Invalid MessageId format: '{value}'");
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         var timestamp = Int64.Parse(value.AsSpan(0, dashIndex));
         var sequence = Int32.Parse(value.AsSpan(dashIndex + 1));
         return new MessageId(timestamp, sequence);
@@ -93,7 +93,7 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
     /// <returns>哈希码</returns>
     public override Int32 GetHashCode()
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         return HashCode.Combine(Timestamp, Sequence);
 #else
         unchecked

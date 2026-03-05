@@ -90,7 +90,7 @@ public class WalWriter : IDisposable
             pk.TryGetArray(out var segment);
 
             // 写入长度前缀（4 字节）
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
             Span<Byte> lengthPrefix = stackalloc Byte[4];
             BinaryPrimitives.WriteInt32LittleEndian(lengthPrefix, pk.Length);
             _fileStream.Write(lengthPrefix);

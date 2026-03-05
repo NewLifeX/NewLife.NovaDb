@@ -88,7 +88,7 @@ public partial class KvStore
             CreateTime = DateTime.UtcNow,
         };
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> buf = stackalloc Byte[FileHeaderSize];
 #else
         var buf = new Byte[FileHeaderSize];
@@ -97,7 +97,7 @@ public partial class KvStore
 
         _fileStream!.Position = 0;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         _fileStream.Write(buf);
 #else
         _fileStream.Write(buf, 0, buf.Length);
@@ -112,7 +112,7 @@ public partial class KvStore
 
         _fileStream.Position = 0;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> buf = stackalloc Byte[FileHeaderSize];
         if (_fileStream.Read(buf) < FileHeaderSize) return;
 #else
@@ -514,7 +514,7 @@ public partial class KvStore
                     PageSize = 1,
                     CreateTime = DateTime.UtcNow,
                 };
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
                 Span<Byte> headerBuf = stackalloc Byte[FileHeaderSize];
                 header.Write(headerBuf);
                 tempStream.Write(headerBuf);

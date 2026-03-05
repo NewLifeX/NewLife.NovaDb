@@ -30,7 +30,7 @@ public class FluxEntry
         if (dashIndex < 0)
             throw new FormatException($"Invalid message ID format: '{id}'");
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         var timestamp = Int64.Parse(id.AsSpan(0, dashIndex));
         var seq = Int32.Parse(id.AsSpan(dashIndex + 1));
         return (timestamp, seq);

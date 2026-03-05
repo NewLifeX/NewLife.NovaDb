@@ -66,7 +66,7 @@ public partial class FluxEngine
     /// <summary>写入文件头</summary>
     private void WriteFluxLogHeader()
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> header = stackalloc Byte[FluxLogHeaderSize];
         FluxLogMagic.AsSpan().CopyTo(header.Slice(0, 4));
 #else
@@ -78,7 +78,7 @@ public partial class FluxEngine
 
         _fluxLogStream!.Position = 0;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         _fluxLogStream.Write(header);
 #else
         _fluxLogStream.Write(header, 0, header.Length);
@@ -93,7 +93,7 @@ public partial class FluxEngine
         if (_fluxLogStream!.Length < FluxLogHeaderSize) return;
 
         _fluxLogStream.Position = 0;
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> header = stackalloc Byte[FluxLogHeaderSize];
         if (_fluxLogStream.Read(header) < FluxLogHeaderSize) return;
 #else
@@ -187,7 +187,7 @@ public partial class FluxEngine
     {
         using var bytes = _encoding.GetPooledEncodedBytes(value);
         bw.Write(bytes.Length);
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         bw.Write(bytes.AsSpan());
 #else
         bw.Write(bytes.Buffer, 0, bytes.Length);
