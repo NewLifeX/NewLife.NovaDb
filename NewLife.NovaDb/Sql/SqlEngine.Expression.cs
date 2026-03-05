@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Buffers;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Utilities;
 
@@ -659,8 +660,21 @@ partial class SqlEngine
 
             case "WITHIN_POLYGON":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                var polygonPoints = GeoPoint.ParsePolygonWkt(Convert.ToString(args[1])!);
-                return ((GeoPoint)args[0]!).WithinPolygon(polygonPoints);
+                var wkt = Convert.ToString(args[1])!;
+                var count = GeoPoint.GetPolygonWktCount(wkt);
+                if (count == 0) return false;
+                var polygonPoints = ArrayPool<GeoPoint>.Shared.Rent(count);
+                try
+                {
+                    count = GeoPoint.GetPolygonWkts(polygonPoints, wkt);
+                    if (count == 0) return false;
+
+                    return ((GeoPoint)args[0]!).WithinPolygon(new ReadOnlySpan<GeoPoint>(polygonPoints, 0, count));
+                }
+                finally
+                {
+                    ArrayPool<GeoPoint>.Shared.Return(polygonPoints);
+                }
 
             // Vector 函数
             case "VECTOR":
