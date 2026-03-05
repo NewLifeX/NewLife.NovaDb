@@ -1,4 +1,6 @@
-﻿namespace NewLife.NovaDb.Engine.KV;
+﻿using System.Runtime.CompilerServices;
+
+namespace NewLife.NovaDb.Engine.KV;
 
 /// <summary>KV 内存索引项。Bitcask 模型仅索引驻留内存，值保留在磁盘按需读取</summary>
 /// <remarks>
@@ -17,5 +19,6 @@ public struct KvEntry
     public DateTime ExpiresAt;
 
     /// <summary>检查是否已过期</summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly Boolean IsExpired() => ExpiresAt < DateTime.MaxValue && DateTime.UtcNow >= ExpiresAt;
 }

@@ -1,4 +1,5 @@
 ﻿using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -12,6 +13,14 @@ public interface IDataCodec
     /// <param name="dataType">数据类型</param>
     /// <returns>编码后的字节数组</returns>
     Byte[] Encode(Object? value, DataType dataType);
+
+    /// <summary>编码值到二进制</summary>
+    /// <param name="value">要编码的值</param>
+    /// <param name="dataType">数据类型</param>
+    /// <param name="buffer">目标缓冲区</param>
+    /// <param name="offset">起始偏移</param>
+    /// <returns>编码后的字节长度</returns>
+    Int32 Encode(Object? value, DataType dataType, Byte[] buffer, Int32 offset);
 
     /// <summary>从二进制解码值</summary>
     /// <param name="buffer">字节数组</param>
@@ -63,6 +72,85 @@ public class DefaultDataCodec : IDataCodec
                 DataType.Vector => EncodeVector((Single[])value),
                 _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
             };
+        }
+        catch (InvalidCastException ex)
+        {
+            throw new NovaException(
+                ErrorCode.InvalidArgument,
+                $"Cannot encode value of type {value.GetType().Name} as {dataType}",
+                ex
+            );
+        }
+    }
+
+    /// <summary>编码值到二进制</summary>
+    /// <param name="value">要编码的值</param>
+    /// <param name="dataType">数据类型</param>
+    /// <param name="buffer">目标缓冲区</param>
+    /// <param name="offset">起始偏移</param>
+    /// <returns>编码后的字节长度</returns>
+    public Int32 Encode(Object? value, DataType dataType, Byte[] buffer, Int32 offset)
+    {
+        if (value == null)
+        {
+            if (buffer.Length < offset + 1)
+                throw new ArgumentException($"Buffer too short to encode NULL (need {offset + 1} bytes, got {buffer.Length})");
+            buffer[offset] = NullFlag;
+            return 1;
+        }
+
+        try
+        {
+            switch (dataType)
+            {
+                case DataType.Boolean:
+                    {
+                        if (buffer.Length < offset + 1)
+                            throw new ArgumentException($"Buffer too short to encode Boolean (need {offset + 1} bytes, got {buffer.Length})");
+                        buffer[offset] = (Boolean)value ? ((Byte)1) : ((Byte)0);
+                        return 1;
+                    }
+                case DataType.Int32:
+                    {
+                        if (buffer.Length < offset + 4)
+                            throw new ArgumentException($"Buffer too short to encode Int32 (need {offset + 4} bytes, got {buffer.Length})");
+                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), (Int32)value);
+                        return 4;
+                    }
+                case DataType.Int64:
+                    {
+                        if (buffer.Length < offset + 8)
+                            throw new ArgumentException($"Buffer too short to encode Int64 (need {offset + 8} bytes, got {buffer.Length})");
+                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), (Int64)value);
+                        return 8;
+                    }
+                case DataType.Double:
+                    {
+                        if (buffer.Length < offset + 8)
+                            throw new ArgumentException($"Buffer too short to encode Double (need {offset + 8} bytes, got {buffer.Length})");
+                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), (Double)value);
+                        return 8;
+                    }
+                case DataType.Decimal:
+                    return EncodeDecimal((Decimal)value, buffer, offset);
+                case DataType.String:
+                    return EncodeString((String)value, buffer, offset);
+                case DataType.Binary:
+                    return EncodeByteArray((Byte[])value, buffer, offset);
+                case DataType.DateTime:
+                    {
+                        if (buffer.Length < offset + 8)
+                            throw new ArgumentException($"Buffer too short to encode Int64 (need {offset + 8} bytes, got {buffer.Length})");
+                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), ((DateTime)value).Ticks);
+                        return 8;
+                    }
+                case DataType.GeoPoint:
+                    return EncodeGeoPoint((GeoPoint)value, buffer, offset);
+                case DataType.Vector:
+                    return EncodeVector((Single[])value, buffer, offset);
+                default:
+                    throw new NotSupportedException($"Unsupported data type: {dataType}");
+            }
         }
         catch (InvalidCastException ex)
         {
@@ -152,10 +240,117 @@ public class DefaultDataCodec : IDataCodec
 
     private static Byte[] EncodeDecimal(Decimal value)
     {
-        var bits = Decimal.GetBits(value);
         var buffer = new Byte[16];
+
+#if NET5_0_OR_GREATER
+        Span<Int32> bits = stackalloc Int32[4];
+        Decimal.GetBits(value, bits);
+
+        // 把 4 个 int 的原始 16 字节拷贝到 byte[16]
+        MemoryMarshal.AsBytes(bits).CopyTo(buffer);
+#else
+        var bits = Decimal.GetBits(value);
         Buffer.BlockCopy(bits, 0, buffer, 0, 16);
+#endif
+
         return buffer;
+    }
+
+    private static Int32 EncodeDecimal(Decimal value, Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 16)
+            throw new ArgumentException($"Buffer too short to encode Decimal (need {offset + 16} bytes, got {buffer.Length})");
+
+#if NET5_0_OR_GREATER
+        Span<Int32> bits = stackalloc Int32[4];
+        Decimal.GetBits(value, bits);
+
+        // 16 bytes 写入目标 buffer
+        MemoryMarshal.AsBytes(bits).CopyTo(buffer.AsSpan(offset, 16));
+#else
+        var bits = Decimal.GetBits(value);
+        Buffer.BlockCopy(bits, 0, buffer, offset, 16);
+#endif
+
+        return 16;
+    }
+
+    private static Byte[] EncodeString(String value)
+    {
+        var valueBytesLength = _encoding.GetByteCount(value);
+        var buffer = new Byte[4 + valueBytesLength];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, 4), valueBytesLength);
+        _encoding.GetBytes(value, buffer.AsSpan(4));
+        return buffer;
+    }
+
+    private static Int32 EncodeString(String value, Byte[] buffer, Int32 offset)
+    {
+        var valueBytesLength = _encoding.GetByteCount(value);
+        if (buffer.Length < offset + 4 + valueBytesLength)
+            throw new ArgumentException($"Buffer too short to encode String (need {offset + 4 + valueBytesLength} bytes, got {buffer.Length})");
+
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset, 4), valueBytesLength);
+        _encoding.GetBytes(value, buffer.AsSpan(offset + 4));
+        return 4 + valueBytesLength;
+    }
+
+    private static Byte[] EncodeByteArray(Byte[] value)
+    {
+        var buffer = new Byte[4 + value.Length];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, 4), value.Length);
+        value.AsSpan().CopyTo(buffer.AsSpan(4));
+        return buffer;
+    }
+
+    private static Int32 EncodeByteArray(Byte[] value, Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 4 + value.Length)
+            throw new ArgumentException($"Buffer too short to encode ByteArray (need {offset + 4 + value.Length} bytes, got {buffer.Length})");
+
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset, 4), value.Length);
+        value.AsSpan().CopyTo(buffer.AsSpan(offset + 4));
+        return 4 + value.Length;
+    }
+
+    private static Byte[] EncodeGeoPoint(GeoPoint value)
+    {
+        var buffer = new Byte[16];
+        WriteDoubleLittleEndian(buffer.AsSpan(0, 8), value.Latitude);
+        WriteDoubleLittleEndian(buffer.AsSpan(8, 8), value.Longitude);
+        return buffer;
+    }
+
+    private static Int32 EncodeGeoPoint(GeoPoint value, Byte[] buffer, Int32 offset)
+    {
+        if (buffer.Length < offset + 16)
+            throw new ArgumentException($"Buffer too short to encode GeoPoint (need {offset + 16} bytes, got {buffer.Length})");
+
+        WriteDoubleLittleEndian(buffer.AsSpan(offset, 8), value.Latitude);
+        WriteDoubleLittleEndian(buffer.AsSpan(offset + 8, 8), value.Longitude);
+        return 16;
+    }
+
+    private static Byte[] EncodeVector(Single[] value)
+    {
+        var byteLen = checked(value.Length * sizeof(Single));
+        var buffer = new Byte[sizeof(Int32) + byteLen];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, sizeof(Int32)), value.Length);
+        ReadOnlySpan<Byte> srcBytes = MemoryMarshal.AsBytes(value.AsSpan());
+        srcBytes.CopyTo(buffer.AsSpan(sizeof(Int32)));
+        return buffer;
+    }
+
+    private static Int32 EncodeVector(Single[] value, Byte[] buffer, Int32 offset)
+    {
+        var byteLen = checked(value.Length * sizeof(Single));
+        if (buffer.Length < offset + sizeof(Int32) + byteLen)
+            throw new ArgumentException($"Buffer too short to encode Vector (need {offset + sizeof(Int32) + byteLen} bytes, got {buffer.Length})");
+
+        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset, sizeof(Int32)), value.Length);
+        ReadOnlySpan<Byte> srcBytes = MemoryMarshal.AsBytes(value.AsSpan());
+        srcBytes.CopyTo(buffer.AsSpan(offset + sizeof(Int32)));
+        return sizeof(Int32) + byteLen;
     }
 
     private static Boolean DecodeBoolean(Byte[] buffer, Int32 offset)
@@ -202,35 +397,10 @@ public class DefaultDataCodec : IDataCodec
         return new Decimal(bits);
     }
 
-    private static Byte[] EncodeString(String value)
-    {
-        var valueBytesLength = _encoding.GetByteCount(value);
-        var buffer = new Byte[4 + valueBytesLength];
-        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, 4), valueBytesLength);
-        _encoding.GetBytes(value, buffer.AsSpan(4));
-        return buffer;
-    }
-
     private static String DecodeString(Byte[] buffer, Int32 offset)
     {
         var length = BitConverter.ToInt32(buffer, offset);
         return _encoding.GetString(buffer, offset + 4, length);
-    }
-
-    private static Byte[] EncodeByteArray(Byte[] value)
-    {
-        var buffer = new Byte[4 + value.Length];
-        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, 4), value.Length);
-        value.AsSpan().CopyTo(buffer.AsSpan(4));
-        return buffer;
-    }
-
-    private static Byte[] EncodeGeoPoint(GeoPoint value)
-    {
-        var buffer = new Byte[16];
-        WriteDoubleLittleEndian(buffer.AsSpan(0, 8), value.Latitude);
-        WriteDoubleLittleEndian(buffer.AsSpan(8, 8), value.Longitude);
-        return buffer;
     }
 
     private static GeoPoint DecodeGeoPoint(Byte[] buffer, Int32 offset)
@@ -240,16 +410,6 @@ public class DefaultDataCodec : IDataCodec
         var lat = BitConverter.ToDouble(buffer, offset);
         var lon = BitConverter.ToDouble(buffer, offset + 8);
         return new GeoPoint(lat, lon);
-    }
-
-    private static Byte[] EncodeVector(Single[] value)
-    {
-        var byteLen = checked(value.Length * sizeof(float));
-        var buffer = new Byte[sizeof(int) + byteLen];
-        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(0, sizeof(int)), value.Length);
-        ReadOnlySpan<byte> srcBytes = MemoryMarshal.AsBytes(value.AsSpan());
-        srcBytes.CopyTo(buffer.AsSpan(sizeof(int)));
-        return buffer;
     }
 
     private static Single[] DecodeVector(Byte[] buffer, Int32 offset)
@@ -282,7 +442,7 @@ public class DefaultDataCodec : IDataCodec
         return result;
     }
 
-    private static void WriteDoubleLittleEndian(Span<byte> destination, double value)
+    private static void WriteDoubleLittleEndian(Span<Byte> destination, Double value)
     {
 #if NET6_0_OR_GREATER
         BinaryPrimitives.WriteDoubleLittleEndian(destination, value);

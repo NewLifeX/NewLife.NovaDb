@@ -236,59 +236,50 @@ public class BinlogWriter : IDisposable
     {
         if (_stream == null) return;
 
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
+        sql ??= string.Empty;
 
-        bw.Write((Byte)eventType);
-        bw.Write(DateTime.UtcNow.Ticks);
+        var encoding = Encoding.UTF8;
+
+        // 先构造 Data 部分（不含 RecordLength 和 checksum）
+        using var dataWriter = new PooledBufferWriter(initialCapacity: 1024);
+
+        dataWriter.WriteByte((Byte)eventType);
+        dataWriter.WriteInt64(DateTime.UtcNow.Ticks);
 
         // 数据库名
-        using (var dbBytes = _database.ToPooledUtf8Bytes())
-        {
-            bw.Write(dbBytes.Length);
-            bw.Write(dbBytes.Buffer, 0, dbBytes.Length);
-        }
+        var dbByteLength = encoding.GetByteCount(_database);
+        dataWriter.WriteInt32(dbByteLength);
+        var dbBuffer = dataWriter.GetWritableSpan(dbByteLength);
+        encoding.GetBytes(_database, dbBuffer);
 
         // SQL 文本
-        using (var sqlBytes = (sql ?? "").ToPooledUtf8Bytes())
-        {
-            bw.Write(sqlBytes.Length);
-            bw.Write(sqlBytes.Buffer, 0, sqlBytes.Length);
-        }
+        var sqlByteLength = encoding.GetByteCount(sql);
+        dataWriter.WriteInt32(sqlByteLength);
+        var sqlBuffer = dataWriter.GetWritableSpan(sqlByteLength);
+        encoding.GetBytes(sql, sqlBuffer);
 
-        bw.Write(affectedRows);
-
-        var data = ms.ToArray();
+        dataWriter.WriteInt32(affectedRows);
 
         // 计算 CRC32
-        var checksum = Crc32.Compute(data, 0, data.Length);
+        var dataLen = dataWriter.WrittenCount;
+        var checksum = Crc32.Compute(dataWriter.Buffer.AsSpan(0, dataLen));
 
         // 写入记录：[RecordLength: 4B] [Data] [Checksum: 4B]
-        var recordLength = data.Length + 4;
+        var recordLength = dataLen + 4;
+        var totalLen = checked(4 + dataLen + 4);
+
+        using var recordWriter = new PooledBufferWriter(initialCapacity: totalLen);
+
+        BinaryPrimitives.WriteInt32LittleEndian(recordWriter.GetWritableSpan(4), recordLength);
+
+        // 拷贝 Data（一次）
+        recordWriter.WriteBytes(dataWriter.Buffer, 0, dataLen);
+
+        BinaryPrimitives.WriteUInt32LittleEndian(recordWriter.GetWritableSpan(4), checksum);
 
         _stream.Position = _stream.Length;
-
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        Span<Byte> lenBuf = stackalloc Byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(lenBuf, recordLength);
-        _stream.Write(lenBuf);
-        _stream.Write(data.AsSpan());
-
-        Span<Byte> csumBuf = stackalloc Byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(csumBuf, checksum);
-        _stream.Write(csumBuf);
+        _stream.Write(recordWriter.Buffer, 0, recordWriter.WrittenCount);
         _stream.Flush();
-#else
-        var lenBuf = new Byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(lenBuf.AsSpan(), recordLength);
-        _stream.Write(lenBuf, 0, 4);
-        _stream.Write(data, 0, data.Length);
-
-        var csumBuf = new Byte[4];
-        BinaryPrimitives.WriteUInt32LittleEndian(csumBuf.AsSpan(), checksum);
-        _stream.Write(csumBuf, 0, 4);
-        _stream.Flush();
-#endif
 
         _position++;
     }

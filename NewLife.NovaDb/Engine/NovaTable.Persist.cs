@@ -1,4 +1,6 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Buffers.Binary;
+using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Engine;
@@ -140,27 +142,31 @@ public partial class NovaTable
     {
         // 格式：[RecordLength: 4B] [RecordType: 1B] [Data: variable] [Checksum: 4B]
         // RecordLength = 1 + data.Length + 4（不含 RecordLength 自身）
-        var recordLength = 1 + data.Length + 4;
+        var recordLength = checked(1 + data.Length + 4);
+        var totalLength = checked(4 + recordLength); // 4B length prefix + record
 
-        using var ms = new MemoryStream(4 + recordLength);
-        using var bw = new BinaryWriter(ms);
+        using var w = new PooledBufferWriter(initialCapacity: totalLength);
 
-        bw.Write(recordLength);
-        bw.Write(recordType);
-        bw.Write(data);
+        // 1) 写 RecordLength
+        w.WriteInt32(recordLength);
 
-        // 计算校验和（覆盖 RecordType + Data）
-        var checkBuffer = new Byte[1 + data.Length];
-        checkBuffer[0] = recordType;
-        Array.Copy(data, 0, checkBuffer, 1, data.Length);
-        var checksum = Crc32.Compute(checkBuffer, 0, checkBuffer.Length);
-        bw.Write(checksum);
+        // 2) 写 RecordType
+        w.WriteByte(recordType);
 
-        var buffer = ms.ToArray();
+        // 3) 写 Data
+        w.WriteBytes(data.AsSpan());
 
-        // 追加到文件末尾
+        // 4) CRC32 覆盖 [RecordType + Data]
+        //    这里直接对 writer 内部缓冲切片计算，不再构造 checkBuffer
+        //    recordType 位于 offset=4，长度=1+data.Length
+        var checksum = Crc32.Compute(w.Buffer.AsSpan(4, 1 + data.Length));
+
+        // 5) 写 Checksum（小端）
+        w.WriteUInt32(checksum);
+
+        // 6) 直接追加写入文件
         _rowLogStream!.Position = _rowLogStream.Length;
-        _rowLogStream.Write(buffer, 0, buffer.Length);
+        _rowLogStream.Write(w.Buffer, 0, w.WrittenCount);
         _rowLogStream.Flush();
     }
 

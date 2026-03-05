@@ -1,4 +1,6 @@
-﻿using System.Runtime.InteropServices.ComTypes;
+﻿using System.Buffers;
+using System.Buffers.Binary;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
@@ -115,32 +117,38 @@ public partial class FluxEngine
     {
         if (_fluxLogStream == null) return;
 
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
-
-        bw.Write(entry.Timestamp);
-        bw.Write(entry.SequenceId);
-
-        // Fields
-        var fields = entry.Fields;
-        bw.Write(fields.Count);
-        foreach (var kv in fields)
+        // 初始容量给个经验值：头部(8+4) + fields/tags 数量 + 少量字符串
+        // 不够会自动扩容（扩容也不会产生 GC 垃圾，走 ArrayPool）
+        var w = new PooledBufferWriter(initialCapacity: 1024);
+        try
         {
-            WriteString(bw, kv.Key);
-            WriteFieldValue(bw, kv.Value);
-        }
+            w.WriteInt64(entry.Timestamp);
+            w.WriteInt32(entry.SequenceId);
 
-        // Tags
-        var tags = entry.Tags;
-        bw.Write(tags.Count);
-        foreach (var kv in tags)
+            // Fields
+            var fields = entry.Fields;
+            w.WriteInt32(fields.Count);
+            foreach (var kv in fields)
+            {
+                WriteString(ref w, kv.Key);
+                WriteFieldValue(ref w, kv.Value);
+            }
+
+            // Tags
+            var tags = entry.Tags;
+            w.WriteInt32(tags.Count);
+            foreach (var kv in tags)
+            {
+                WriteString(ref w, kv.Key);
+                WriteString(ref w, kv.Value);
+            }
+
+            WriteFluxRecord(1, w.Buffer, 0, w.WrittenCount);
+        }
+        finally
         {
-            WriteString(bw, kv.Key);
-            WriteString(bw, kv.Value);
+            w.Dispose();
         }
-
-        var data = ms.ToArray();
-        WriteFluxRecord(RecordType_FluxAppend, data, 0, data.Length);
     }
 
     /// <summary>持久化 Purge 记录（删除过期分区）</summary>
@@ -153,29 +161,64 @@ public partial class FluxEngine
         WriteFluxRecord(RecordType_FluxPurge, pooledBytes.Buffer, 0, pooledBytes.Length);
     }
 
-    /// <summary>写入一条记录</summary>
-    private void WriteFluxRecord(Byte recordType, Byte[] data, int offset, int count)
+    private void WriteFluxRecord(byte recordType, Byte[] data, int offset, int count)
     {
-        var recordLength = 1 + count + 4;
+        // recordLength: [recordType(1)] + [payload(count)] + [crc32(4)]
+        var recordLength = checked(1 + count + 4);
+        var totalLength = checked(4 + recordLength); // length prefix + record
 
-        using var ms = new MemoryStream(4 + recordLength);
-        using var bw = new BinaryWriter(ms);
+        Byte[]? rented = null;
+        var buffer = totalLength <= 1024
+            ? stackalloc Byte[totalLength]
+            : (rented = ArrayPool<Byte>.Shared.Rent(totalLength)).AsSpan(0, totalLength);
 
-        bw.Write(recordLength);
-        bw.Write(recordType);
-        bw.Write(data, offset, count);
+        try
+        {
+            // 写 recordLength (Little Endian)
+            BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(0, 4), recordLength);
 
-        // CRC32 校验
-        var checkBuffer = new Byte[1 + count];
-        checkBuffer[0] = recordType;
-        Array.Copy(data, offset, checkBuffer, 1, count);
-        var checksum = Crc32.Compute(checkBuffer, 0, checkBuffer.Length);
-        bw.Write(checksum);
+            // 写 recordType
+            buffer[4] = recordType;
 
-        var buffer = ms.ToArray();
-        _fluxLogStream!.Position = _fluxLogStream.Length;
-        _fluxLogStream.Write(buffer, 0, buffer.Length);
-        _fluxLogStream.Flush();
+            // 写 payload
+            data.AsSpan(offset, count).CopyTo(buffer.Slice(5, count));
+
+            // 计算 CRC32：覆盖 [recordType + payload]，也就是 buffer[4..(5+count))
+            var checksum = Crc32.Compute(buffer.Slice(4, 1 + count));
+
+            // 写 CRC32 (Little Endian)
+            BinaryPrimitives.WriteUInt32LittleEndian(buffer.Slice(5 + count, 4), checksum);
+
+            // 写入到底层流
+            _fluxLogStream!.Seek(0, SeekOrigin.End);
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+            _fluxLogStream.Write(buffer); // .NET Standard 2.1+ 有 Span 重载；低版本见下面兼容写法
+#else
+            if (rented is not null)
+            {
+                _fluxLogStream.Write(rented, 0, totalLength);
+            }
+            else
+            {
+                var tempBuffer = ArrayPool<Byte>.Shared.Rent(totalLength);
+                try
+                {
+                    buffer.CopyTo(tempBuffer.AsSpan(0, totalLength));
+                    _fluxLogStream.Write(tempBuffer, 0, totalLength);
+                }
+                finally
+                {
+                    ArrayPool<byte>.Shared.Return(tempBuffer);
+                }
+            }
+#endif
+            _fluxLogStream.Flush();
+        }
+        finally
+        {
+            if (rented is not null)
+                ArrayPool<byte>.Shared.Return(rented);
+        }
     }
 
     #endregion
@@ -183,15 +226,11 @@ public partial class FluxEngine
     #region 字段序列化
 
     /// <summary>写入 UTF-8 字符串（长度前缀）</summary>
-    private static void WriteString(BinaryWriter bw, String value)
+    private static void WriteString(ref PooledBufferWriter w, string value)
     {
-        using var bytes = _encoding.GetPooledEncodedBytes(value);
-        bw.Write(bytes.Length);
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        bw.Write(bytes.AsSpan());
-#else
-        bw.Write(bytes.Buffer, 0, bytes.Length);
-#endif
+        using var bytes = value.ToPooledUtf8Bytes();
+        w.WriteInt32(bytes.Length);
+        w.WriteBytes(bytes.AsSpan());
     }
 
     /// <summary>读取 UTF-8 字符串（长度前缀）</summary>
@@ -203,38 +242,38 @@ public partial class FluxEngine
     }
 
     /// <summary>写入字段值（带类型标签）</summary>
-    private static void WriteFieldValue(BinaryWriter bw, Object? value)
+    private static void WriteFieldValue(ref PooledBufferWriter w, Object? value)
     {
         switch (value)
         {
             case null:
-                bw.Write(TypeTag_Null);
+                w.WriteByte(TypeTag_Null);
                 break;
             case Int32 i:
-                bw.Write(TypeTag_Int32);
-                bw.Write(i);
+                w.WriteByte(TypeTag_Int32);
+                w.WriteInt32(i);
                 break;
             case Int64 l:
-                bw.Write(TypeTag_Int64);
-                bw.Write(l);
+                w.WriteByte(TypeTag_Int64);
+                w.WriteInt64(l);
                 break;
             case Double d:
-                bw.Write(TypeTag_Double);
-                bw.Write(d);
+                w.WriteByte(TypeTag_Double);
+                w.WriteDouble(d);
                 break;
             case Boolean b:
-                bw.Write(TypeTag_Boolean);
-                bw.Write(b);
+                w.WriteByte(TypeTag_Boolean);
+                w.WriteBool(b);
                 break;
             case Byte[] bytes:
-                bw.Write(TypeTag_Bytes);
-                bw.Write(bytes.Length);
-                bw.Write(bytes);
+                w.WriteByte(TypeTag_Bytes);
+                w.WriteInt32(bytes.Length);
+                w.WriteBytes(bytes);
                 break;
             default:
                 // 其他类型统一转为 String
-                bw.Write(TypeTag_String);
-                WriteString(bw, value.ToString() ?? "");
+                w.WriteByte(TypeTag_String);
+                WriteString(ref w, value.ToString() ?? string.Empty);
                 break;
         }
     }

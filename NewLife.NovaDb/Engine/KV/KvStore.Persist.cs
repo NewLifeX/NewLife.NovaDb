@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.IO.MemoryMappedFiles;
-using System.Text;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
@@ -349,10 +350,17 @@ public partial class KvStore
                 if (totalLength < 5 || pos + 4 + totalLength > fileLength) break;
 
                 // 读取完整记录体
-                var body = new Byte[totalLength];
-                accessor.ReadArray(pos + 4, body, 0, totalLength);
+                var body = ArrayPool<Byte>.Shared.Rent(totalLength);
+                try
+                {
+                    accessor.ReadArray(pos + 4, body, 0, totalLength);
 
-                ReplayRecord(body, totalLength, pos);
+                    ReplayRecord(body.AsSpan(0, totalLength), pos);
+                }
+                finally
+                {
+                    ArrayPool<Byte>.Shared.Return(body);
+                }
 
                 pos += 4 + totalLength;
             }
@@ -370,44 +378,59 @@ public partial class KvStore
     {
         _fileStream!.Position = FileHeaderSize;
 
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+        Span<Byte> lenBuf = stackalloc Byte[4];
+#else
+        var lenBuf = new Byte[4];
+#endif
         while (_fileStream.Position < _fileStream.Length)
         {
             var recordStart = _fileStream.Position;
 
-            var lenBuf = new Byte[4];
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+            if (_fileStream.Read(lenBuf) < 4) break;
+#else
             if (_fileStream.Read(lenBuf, 0, 4) < 4) break;
-            var totalLength = BitConverter.ToInt32(lenBuf, 0);
+#endif
+
+            var totalLength = Unsafe.ReadUnaligned<int>(ref lenBuf[0]);
             if (totalLength < 5) break;
 
-            var body = new Byte[totalLength];
-            if (_fileStream.Read(body, 0, totalLength) < totalLength) break;
+            var body = ArrayPool<Byte>.Shared.Rent(totalLength);
+            try
+            {
+                if (_fileStream.Read(body, 0, totalLength) < totalLength) break;
 
-            ReplayRecord(body, totalLength, recordStart);
+                ReplayRecord(body.AsSpan(0, totalLength), recordStart);
+            }
+            finally
+            {
+                ArrayPool<Byte>.Shared.Return(body);
+            }
         }
     }
 
     /// <summary>回放一条记录</summary>
     /// <param name="body">记录体（不含 TotalLength 前缀）</param>
-    /// <param name="totalLength">记录总长度</param>
     /// <param name="recordFileOffset">记录在文件中的起始位置（TotalLength 字段所在位置）</param>
-    private void ReplayRecord(Byte[] body, Int32 totalLength, Int64 recordFileOffset)
+    private void ReplayRecord(ReadOnlySpan<Byte> body, Int64 recordFileOffset)
     {
         var recordType = (KvRecordType)body[0];
-        var dataLength = totalLength - 1 - 4;
+        var dataLength = body.Length - 1 - 4;
         if (dataLength < 0) return;
 
         // 校验 CRC32
-        var expectedChecksum = BitConverter.ToUInt32(body, totalLength - 4);
-        var actualChecksum = Crc32.Compute(body, 0, 1 + dataLength);
+        var expectedChecksum = Unsafe.ReadUnaligned<uint>(ref MemoryMarshal.GetReference(body.Slice(body.Length - 4)));
+        var actualChecksum = Crc32.Compute(body.Slice(0, 1 + dataLength));
         if (expectedChecksum != actualChecksum) return;
 
         switch (recordType)
         {
             case KvRecordType.Set:
-                ReplaySet(body, 1, dataLength, recordFileOffset);
+                ReplaySet(body.Slice(1, dataLength), recordFileOffset);
                 break;
             case KvRecordType.Delete:
-                ReplayDelete(body, 1, dataLength);
+                ReplayDelete(body.Slice(1, dataLength));
                 break;
             case KvRecordType.Clear:
                 _data.Clear();
@@ -417,12 +440,10 @@ public partial class KvStore
 
     /// <summary>回放 Set 记录，重建内存索引（值留在磁盘）。跳过已过期的键以避免加载浪费内存</summary>
     /// <param name="body">记录体</param>
-    /// <param name="offset">数据起始偏移</param>
-    /// <param name="dataLength">数据长度</param>
     /// <param name="recordFileOffset">记录在文件中的起始位置</param>
-    private void ReplaySet(Byte[] body, Int32 offset, Int32 dataLength, Int64 recordFileOffset)
+    private void ReplaySet(ReadOnlySpan<Byte> body, Int64 recordFileOffset)
     {
-        var reader = new SpanReader(body, offset, dataLength);
+        var reader = new SpanReader(body);
 
         var keyLen = reader.ReadUInt16();
         var key = reader.ReadString(keyLen);
@@ -446,11 +467,9 @@ public partial class KvStore
 
     /// <summary>回放 Delete 记录</summary>
     /// <param name="body">记录体</param>
-    /// <param name="offset">数据起始偏移</param>
-    /// <param name="dataLength">数据长度</param>
-    private void ReplayDelete(Byte[] body, Int32 offset, Int32 dataLength)
+    private void ReplayDelete(ReadOnlySpan<Byte> body)
     {
-        var reader = new SpanReader(body, offset, dataLength);
+        var reader = new SpanReader(body);
 
         var keyLen = reader.ReadUInt16();
         var key = reader.ReadString(keyLen);
@@ -575,5 +594,5 @@ public partial class KvStore
             _compacting = false;
         }
     }
-#endregion
+    #endregion
 }

@@ -1,6 +1,7 @@
 ﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
+using NewLife.NovaDb.Utilities;
 using NewLife.NovaDb.WAL;
 
 namespace NewLife.NovaDb.Engine;
@@ -750,22 +751,28 @@ public partial class NovaTable : IDisposable
     /// <summary>序列化行数据</summary>
     private Byte[] SerializeRow(Object?[] row)
     {
-        using var ms = new MemoryStream();
-        using var bw = new BinaryWriter(ms);
+        // 估一个常用初始容量，减少扩容次数。
+        // 暂定256字节，实际根据列数和数据类型可能需要调整。
+        using var w = new PooledBufferWriter(initialCapacity: 256);
 
-        // 写入列数
-        bw.Write(row.Length);
+        // 写入列数（Int32，小端）
+        w.WriteInt32(row.Length);
 
         // 写入每列的值
         for (var i = 0; i < row.Length; i++)
         {
             var colDef = _schema.Columns[i];
-            var encoded = _codec.Encode(row[i], colDef.DataType);
-            bw.Write(encoded.Length);
-            bw.Write(encoded);
+            var encodedLength = _codec.GetEncodedLength(row[i], colDef.DataType);
+            w.WriteInt32(encodedLength);
+
+            var segment = w.GetWritableSegment(encodedLength);
+            _codec.Encode(row[i], colDef.DataType, segment.Array!, segment.Offset);
         }
 
-        return ms.ToArray();
+        var len = w.WrittenCount;
+        var result = new Byte[len];
+        Buffer.BlockCopy(w.Buffer, 0, result, 0, len);
+        return result;
     }
 
     /// <summary>反序列化行数据</summary>
