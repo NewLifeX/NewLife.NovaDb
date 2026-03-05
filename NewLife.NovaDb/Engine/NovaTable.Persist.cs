@@ -64,7 +64,7 @@ public partial class NovaTable
     /// <summary>写入行日志文件头（32 字节）</summary>
     private void WriteRowLogHeader()
     {
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> header = stackalloc Byte[RowLogHeaderSize];
         RowLogMagic.AsSpan().CopyTo(header.Slice(0, 4));
 #else
@@ -76,7 +76,7 @@ public partial class NovaTable
 
         _rowLogStream!.Position = 0;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         _rowLogStream.Write(header);
 #else
         _rowLogStream.Write(header, 0, header.Length);
@@ -92,7 +92,7 @@ public partial class NovaTable
 
         _rowLogStream.Position = 0;
 
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> header = stackalloc Byte[RowLogHeaderSize];
         var read = _rowLogStream.Read(header);
 #else

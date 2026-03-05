@@ -39,7 +39,7 @@ public class CompressionCodec
         output.WriteByte((Byte)Algorithm);
 
         // 写入原始长度（4 字节，用于预分配解压缓冲区）
-#if NETSTANDARD2_1_OR_GREATER
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         Span<Byte> lenBytes = stackalloc Byte[4];
         BinaryPrimitives.WriteInt32LittleEndian(lenBytes, data.Length);
         output.Write(lenBytes);
