@@ -542,7 +542,7 @@ internal static class KvPacket
 #if NET45
     private static readonly byte[] EmptyBytes = new byte[0];
 #else
-    private static readonly byte[] EmptyBytes = Array.Empty<byte>();
+    private static readonly Byte[] EmptyBytes = Array.Empty<Byte>();
 #endif
 
     #endregion

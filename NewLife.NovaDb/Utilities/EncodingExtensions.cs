@@ -15,7 +15,7 @@ namespace NewLife.NovaDb.Utilities
         /// </summary>
         /// <param name="value">要转换的字符串。</param>
         /// <returns>返回一个 <see cref="PooledBytes"/> 实例，包含 UTF-8 编码的字节数组。</returns>
-        public static PooledBytes ToPooledUtf8Bytes(this string value) => Encoding.GetPooledEncodedBytes(value);
+        public static PooledBytes ToPooledUtf8Bytes(this String value) => Encoding.GetPooledEncodedBytes(value);
 
         /// <summary>
         /// 将字符串转换为使用对象池管理的指定编码的字节数组。
@@ -23,10 +23,10 @@ namespace NewLife.NovaDb.Utilities
         /// <param name="encoding">要使用的编码。</param>
         /// <param name="value">要转换的字符串。</param>
         /// <returns>返回一个 <see cref="PooledBytes"/> 实例，包含指定编码的字节数组。</returns>
-        public static PooledBytes GetPooledEncodedBytes(this Encoding encoding, string value)
+        public static PooledBytes GetPooledEncodedBytes(this Encoding encoding, String value)
         {
             var length = encoding.GetByteCount(value);
-            var pooledBytes = ArrayPool<byte>.Shared.Rent(length);
+            var pooledBytes = ArrayPool<Byte>.Shared.Rent(length);
             encoding.GetBytes(value, 0, value.Length, pooledBytes, 0);
             return new PooledBytes(pooledBytes, length);
         }

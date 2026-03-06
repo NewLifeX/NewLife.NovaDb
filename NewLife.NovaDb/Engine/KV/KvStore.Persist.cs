@@ -393,7 +393,7 @@ public partial class KvStore
             if (_fileStream.Read(lenBuf, 0, 4) < 4) break;
 #endif
 
-            var totalLength = Unsafe.ReadUnaligned<int>(ref lenBuf[0]);
+            var totalLength = Unsafe.ReadUnaligned<Int32>(ref lenBuf[0]);
             if (totalLength < 5) break;
 
             var body = ArrayPool<Byte>.Shared.Rent(totalLength);
@@ -420,7 +420,7 @@ public partial class KvStore
         if (dataLength < 0) return;
 
         // 校验 CRC32
-        var expectedChecksum = Unsafe.ReadUnaligned<uint>(ref MemoryMarshal.GetReference(body.Slice(body.Length - 4)));
+        var expectedChecksum = Unsafe.ReadUnaligned<UInt32>(ref MemoryMarshal.GetReference(body.Slice(body.Length - 4)));
         var actualChecksum = Crc32.Compute(body.Slice(0, 1 + dataLength));
         if (expectedChecksum != actualChecksum) return;
 
@@ -548,7 +548,7 @@ public partial class KvStore
                     if (kvp.Value.IsExpired()) continue;
 
                     using var pk = ReadValueFromDiskNoLock(kvp.Value);
-                    var value = pk != null ? pk.GetSpan() : ReadOnlySpan<byte>.Empty;
+                    var value = pk != null ? pk.GetSpan() : ReadOnlySpan<Byte>.Empty;
 
                     var valueOffset = WriteSetRecordToStream(tempStream, kvp.Key, value, kvp.Value.ExpiresAt);
                     newEntries[kvp.Key] = new KvEntry

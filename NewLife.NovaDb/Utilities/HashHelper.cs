@@ -67,7 +67,7 @@ namespace NewLife.NovaDb.Utilities
         }
 
 #if NET5_0_OR_GREATER
-        private static bool TryHashData(HashAlgorithmName alg, ReadOnlySpan<Byte> data, Span<Byte> dest)
+        private static Boolean TryHashData(HashAlgorithmName alg, ReadOnlySpan<Byte> data, Span<Byte> dest)
         {
             if (alg == HashAlgorithmName.MD5)
                 return MD5.TryHashData(data, dest, out _);

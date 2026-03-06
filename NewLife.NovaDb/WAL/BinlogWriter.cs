@@ -236,7 +236,7 @@ public class BinlogWriter : IDisposable
     {
         if (_stream == null) return;
 
-        sql ??= string.Empty;
+        sql ??= String.Empty;
 
         var encoding = Encoding.UTF8;
 

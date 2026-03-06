@@ -96,7 +96,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
 {
     /// <summary>地球平均半径（米）</summary>
     private const Double EarthRadiusMeters = 6_371_000.0;
-    private const double DegToRad = Math.PI / 180.0;
+    private const Double DegToRad = Math.PI / 180.0;
 
     /// <summary>纬度（-90 到 90）</summary>
     public Double Latitude { get; } = latitude;

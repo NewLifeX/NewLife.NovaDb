@@ -161,7 +161,7 @@ public partial class FluxEngine
         WriteFluxRecord(RecordType_FluxPurge, pooledBytes.Buffer, 0, pooledBytes.Length);
     }
 
-    private void WriteFluxRecord(byte recordType, Byte[] data, int offset, int count)
+    private void WriteFluxRecord(Byte recordType, Byte[] data, Int32 offset, Int32 count)
     {
         // recordLength: [recordType(1)] + [payload(count)] + [crc32(4)]
         var recordLength = checked(1 + count + 4);
@@ -217,7 +217,7 @@ public partial class FluxEngine
         finally
         {
             if (rented is not null)
-                ArrayPool<byte>.Shared.Return(rented);
+                ArrayPool<Byte>.Shared.Return(rented);
         }
     }
 
@@ -226,7 +226,7 @@ public partial class FluxEngine
     #region 字段序列化
 
     /// <summary>写入 UTF-8 字符串（长度前缀）</summary>
-    private static void WriteString(ref PooledBufferWriter w, string value)
+    private static void WriteString(ref PooledBufferWriter w, String value)
     {
         using var bytes = value.ToPooledUtf8Bytes();
         w.WriteInt32(bytes.Length);
@@ -273,7 +273,7 @@ public partial class FluxEngine
             default:
                 // 其他类型统一转为 String
                 w.WriteByte(TypeTag_String);
-                WriteString(ref w, value.ToString() ?? string.Empty);
+                WriteString(ref w, value.ToString() ?? String.Empty);
                 break;
         }
     }

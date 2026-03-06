@@ -400,8 +400,8 @@ public partial class KvStore : IDisposable
                 expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            const int length = sizeof(long);
-            Span<byte> valueBytes = stackalloc byte[length];
+            const Int32 length = sizeof(Int64);
+            Span<Byte> valueBytes = stackalloc Byte[length];
             Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(valueBytes), newValue);
 
             var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
@@ -446,8 +446,8 @@ public partial class KvStore : IDisposable
                 expiresAt = ttl != null ? DateTime.UtcNow.Add(ttl.Value) : _defaultTtl != null ? DateTime.UtcNow.Add(_defaultTtl.Value) : DateTime.MaxValue;
             }
 
-            const int length = sizeof(double);
-            Span<byte> valueBytes = stackalloc byte[length];
+            const Int32 length = sizeof(Double);
+            Span<Byte> valueBytes = stackalloc Byte[length];
             Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(valueBytes), newValue);
 
             var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
