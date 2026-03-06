@@ -20,6 +20,12 @@ namespace NewLife.NovaDb.Utilities
         private Byte[] _buffer;
         private Int32 _pos;
 
+        public PooledBufferWriter()
+        {
+            _buffer = ArrayPool<Byte>.Shared.Rent(256);
+            _pos = 0;
+        }
+
         public PooledBufferWriter(Int32 initialCapacity)
         {
             _buffer = ArrayPool<Byte>.Shared.Rent(initialCapacity);
