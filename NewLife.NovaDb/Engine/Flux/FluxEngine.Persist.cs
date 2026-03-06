@@ -207,7 +207,7 @@ public partial class FluxEngine
                 }
                 finally
                 {
-                    ArrayPool<byte>.Shared.Return(tempBuffer);
+                    ArrayPool<Byte>.Shared.Return(tempBuffer);
                 }
             }
 #endif

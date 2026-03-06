@@ -207,7 +207,7 @@ internal static class KvPacket
     public static IPacket EncodeSetAll(String tableName, IDictionary<String, Byte[]?> values, Int32 ttlSeconds)
     {
         using var tableBytes = _encoding.GetPooledEncodedBytes(tableName ?? "default");
-        var valueBytesLengthTotal = values.Sum(kvp => 8 + _encoding.GetByteCount(kvp.Key) + kvp.Value?.Length ?? 0);
+        var valueBytesLengthTotal = values.Sum(kvp => 8 + _encoding.GetByteCount(kvp.Key) + (kvp.Value?.Length ?? 0));
         var bufSize = 32 + tableBytes.Length + valueBytesLengthTotal;
         var buf = new Byte[bufSize];
         var writer = new SpanWriter(buf, 0, bufSize);
@@ -540,7 +540,7 @@ internal static class KvPacket
     }
 
 #if NET45
-    private static readonly byte[] EmptyBytes = new byte[0];
+    private static readonly Byte[] EmptyBytes = new Byte[0];
 #else
     private static readonly Byte[] EmptyBytes = Array.Empty<Byte>();
 #endif
