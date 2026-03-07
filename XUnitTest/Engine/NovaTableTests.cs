@@ -224,9 +224,9 @@ public class NovaTableTests : IDisposable
         using var tx = txManager.BeginTransaction();
 
         // 插入多行
-        table.Insert(tx, new Object?[] { 1, "Alice", 25 });
-        table.Insert(tx, new Object?[] { 2, "Bob", 30 });
-        table.Insert(tx, new Object?[] { 3, "Charlie", 35 });
+        table.Insert(tx, [1, "Alice", 25]);
+        table.Insert(tx, [2, "Bob", 30]);
+        table.Insert(tx, [3, "Charlie", 35]);
 
         // 获取所有行
         var all = table.GetAll(tx);
@@ -284,7 +284,7 @@ public class NovaTableTests : IDisposable
 
         // 插入数据
         using var tx1 = txManager.BeginTransaction();
-        table.Insert(tx1, new Object?[] { 1, "Alice", 25 });
+        table.Insert(tx1, [1, "Alice", 25]);
         tx1.Commit();
 
         // 读取触发热度追踪
@@ -309,8 +309,8 @@ public class NovaTableTests : IDisposable
 
         // 插入数据后分片统计应更新
         using var tx = txManager.BeginTransaction();
-        table.Insert(tx, new Object?[] { 1, "Alice", 25 });
-        table.Insert(tx, new Object?[] { 2, "Bob", 30 });
+        table.Insert(tx, [1, "Alice", 25]);
+        table.Insert(tx, [2, "Bob", 30]);
         tx.Commit();
 
         var writeShard = table.Shards.GetWriteShard();

@@ -1,5 +1,5 @@
 ﻿using NewLife.Buffers;
-using NewLife.Data;
+using NewLife.Serialization;
 
 namespace NewLife.NovaDb.WAL;
 
@@ -22,11 +22,20 @@ public enum WalRecordType : Byte
     Checkpoint = 5
 }
 
-/// <summary>WAL 记录</summary>
-public class WalRecord
+/// <summary>WAL 记录头，仅描述元信息，不携带负载数据以减少内存分配</summary>
+/// <remarks>
+/// 头部布局（37 字节）：
+/// - 0-7: LSN (日志序列号)
+/// - 8-15: TxId (事务 ID)
+/// - 16: RecordType (记录类型)
+/// - 17-24: PageId (页 ID)
+/// - 25-28: DataLength (负载长度)
+/// - 29-36: Timestamp (时间戳)
+/// </remarks>
+public class WalRecord : ISpanSerializable
 {
     /// <summary>头部固定大小（37 字节）</summary>
-    public const Int32 RecordHeaderSize = 37;
+    public const Int32 HeaderSize = 37;
 
     /// <summary>日志序列号（LSN）</summary>
     public UInt64 Lsn { get; set; }
@@ -40,86 +49,33 @@ public class WalRecord
     /// <summary>页 ID（仅用于 UpdatePage）</summary>
     public UInt64 PageId { get; set; }
 
-    /// <summary>数据（页数据或其他）</summary>
-    public Byte[] Data { get; set; } = [];
+    /// <summary>负载数据长度（数据紧跟头部之后存储，头部本身不持有负载）</summary>
+    public Int32 DataLength { get; set; }
 
     /// <summary>时间戳</summary>
     public Int64 Timestamp { get; set; }
 
-    /// <summary>序列化为数据包，使用后需 Dispose 归还到对象池</summary>
-    /// <returns>包含 WAL 记录数据的数据包</returns>
-    public IOwnerPacket ToPacket()
+    /// <summary>将头部成员序列化写入 SpanWriter</summary>
+    /// <param name="writer">Span 写入器</param>
+    public void Write(ref SpanWriter writer)
     {
-        // 头部：LSN(8) + TxId(8) + RecordType(1) + PageId(8) + DataLength(4) + Timestamp(8) = 37 bytes
-        var pk = new OwnerPacket(RecordHeaderSize + Data.Length);
-        var writer = new SpanWriter(pk);
-
-        // LSN
         writer.Write(Lsn);
-
-        // TxId
         writer.Write(TxId);
-
-        // RecordType
         writer.WriteByte((Byte)RecordType);
-
-        // PageId
         writer.Write(PageId);
-
-        // DataLength
-        writer.Write(Data.Length);
-
-        // Timestamp
+        writer.Write(DataLength);
         writer.Write(Timestamp);
-
-        // Data
-        if (Data.Length > 0)
-            writer.Write(Data);
-
-        return pk;
     }
 
-    /// <summary>从数据包反序列化</summary>
-    /// <param name="data">包含 WAL 记录数据的数据包</param>
-    /// <returns>反序列化的 WAL 记录</returns>
-    public static WalRecord Read(IPacket data)
+    /// <summary>从 SpanReader 反序列化读取头部成员</summary>
+    /// <param name="reader">Span 读取器</param>
+    public void Read(ref SpanReader reader)
     {
-        if (data.Length < RecordHeaderSize)
-            throw new ArgumentException("Buffer too short for WalRecord");
-
-        var reader = new SpanReader(data);
-
-        // LSN
-        var lsn = reader.ReadUInt64();
-
-        // TxId
-        var txId = reader.ReadUInt64();
-
-        // RecordType
-        var recordType = (WalRecordType)reader.ReadByte();
-
-        // PageId
-        var pageId = reader.ReadUInt64();
-
-        // DataLength
-        var dataLength = reader.ReadInt32();
-
-        // Timestamp
-        var timestamp = reader.ReadInt64();
-
-        // Data
-        var recordData = dataLength > 0
-            ? reader.ReadBytes(dataLength).ToArray()
-            : [];
-
-        return new WalRecord
-        {
-            Lsn = lsn,
-            TxId = txId,
-            RecordType = recordType,
-            PageId = pageId,
-            Data = recordData,
-            Timestamp = timestamp
-        };
+        Lsn = reader.ReadUInt64();
+        TxId = reader.ReadUInt64();
+        RecordType = (WalRecordType)reader.ReadByte();
+        PageId = reader.ReadUInt64();
+        DataLength = reader.ReadInt32();
+        Timestamp = reader.ReadInt64();
     }
 }

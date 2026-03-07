@@ -53,11 +53,11 @@ public class ReplicaClientTests : IDisposable
     [Fact(DisplayName = "测试应用 WAL 记录")]
     public void TestApplyRecords()
     {
-        var records = new List<WalRecord>
+        var records = new List<(WalRecord, Byte[]?)>
         {
-            new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10, Data = new Byte[] { 1, 2, 3 } },
-            new() { Lsn = 2, RecordType = WalRecordType.CommitTx, TxId = 1, Data = Array.Empty<Byte>() },
-            new() { Lsn = 3, RecordType = WalRecordType.UpdatePage, PageId = 20, Data = new Byte[] { 4, 5, 6 } }
+            (new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10 }, new Byte[] { 1, 2, 3 }),
+            (new() { Lsn = 2, RecordType = WalRecordType.CommitTx, TxId = 1 }, null),
+            (new() { Lsn = 3, RecordType = WalRecordType.UpdatePage, PageId = 20 }, new Byte[] { 4, 5, 6 })
         };
 
         _client.ApplyRecords(records);
@@ -70,10 +70,10 @@ public class ReplicaClientTests : IDisposable
     [Fact(DisplayName = "测试幂等应用")]
     public void TestIdempotentApply()
     {
-        var records = new List<WalRecord>
+        var records = new List<(WalRecord, Byte[]?)>
         {
-            new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10, Data = new Byte[] { 1, 2 } },
-            new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20, Data = new Byte[] { 3, 4 } }
+            (new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10 }, new Byte[] { 1, 2 }),
+            (new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20 }, new Byte[] { 3, 4 })
         };
 
         _client.ApplyRecords(records);
@@ -88,20 +88,20 @@ public class ReplicaClientTests : IDisposable
     [Fact(DisplayName = "测试断点续传")]
     public void TestResumeFromCheckpoint()
     {
-        var batch1 = new List<WalRecord>
+        var batch1 = new List<(WalRecord, Byte[]?)>
         {
-            new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10, Data = new Byte[] { 1 } },
-            new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20, Data = new Byte[] { 2 } }
+            (new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10 }, new Byte[] { 1 }),
+            (new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20 }, new Byte[] { 2 })
         };
 
         _client.ApplyRecords(batch1);
         Assert.Equal(2UL, _client.GetResumePosition());
 
         // 从断点续传
-        var batch2 = new List<WalRecord>
+        var batch2 = new List<(WalRecord, Byte[]?)>
         {
-            new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20, Data = new Byte[] { 2 } },
-            new() { Lsn = 3, RecordType = WalRecordType.UpdatePage, PageId = 30, Data = new Byte[] { 3 } }
+            (new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20 }, new Byte[] { 2 }),
+            (new() { Lsn = 3, RecordType = WalRecordType.UpdatePage, PageId = 30 }, new Byte[] { 3 })
         };
 
         _client.ApplyRecords(batch2);
@@ -112,10 +112,10 @@ public class ReplicaClientTests : IDisposable
     [Fact(DisplayName = "测试重置 LSN")]
     public void TestResetToLsn()
     {
-        var records = new List<WalRecord>
+        var records = new List<(WalRecord, Byte[]?)>
         {
-            new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10, Data = new Byte[] { 1 } },
-            new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20, Data = new Byte[] { 2 } }
+            (new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10 }, new Byte[] { 1 }),
+            (new() { Lsn = 2, RecordType = WalRecordType.UpdatePage, PageId = 20 }, new Byte[] { 2 })
         };
 
         _client.ApplyRecords(records);
@@ -136,11 +136,11 @@ public class ReplicaClientTests : IDisposable
             (pageId, data) => appliedPages[pageId] = data
         );
 
-        var records = new List<WalRecord>
+        var records = new List<(WalRecord, Byte[]?)>
         {
-            new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10, Data = new Byte[] { 1, 2, 3 } },
-            new() { Lsn = 2, RecordType = WalRecordType.CommitTx, TxId = 1, Data = Array.Empty<Byte>() },
-            new() { Lsn = 3, RecordType = WalRecordType.UpdatePage, PageId = 20, Data = new Byte[] { 4, 5, 6 } }
+            (new() { Lsn = 1, RecordType = WalRecordType.UpdatePage, PageId = 10 }, new Byte[] { 1, 2, 3 }),
+            (new() { Lsn = 2, RecordType = WalRecordType.CommitTx, TxId = 1 }, null),
+            (new() { Lsn = 3, RecordType = WalRecordType.UpdatePage, PageId = 20 }, new Byte[] { 4, 5, 6 })
         };
 
         client.ApplyRecords(records);
@@ -173,9 +173,9 @@ public class ReplicaClientTests : IDisposable
         manager.RegisterSlave(new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9001", Role = NodeRole.Slave });
 
         // 主节点写入
-        manager.AppendRecord(new WalRecord { RecordType = WalRecordType.BeginTx, TxId = 1, Data = Array.Empty<Byte>() });
-        manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 100, Data = new Byte[] { 10, 20, 30 } });
-        manager.AppendRecord(new WalRecord { RecordType = WalRecordType.CommitTx, TxId = 1, Data = Array.Empty<Byte>() });
+        manager.AppendRecord(new WalRecord { RecordType = WalRecordType.BeginTx, TxId = 1 });
+        manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 100 }, [10, 20, 30]);
+        manager.AppendRecord(new WalRecord { RecordType = WalRecordType.CommitTx, TxId = 1 });
 
         Assert.Equal(3UL, manager.MasterLsn);
         Assert.Equal(3UL, manager.GetReplicationLag("slave-1"));
@@ -258,7 +258,7 @@ public class ReplicaClientTests : IDisposable
                 new ReplicationEventDto
                 {
                     Lsn = 1, TxId = 1, RecordType = (Byte)WalRecordType.UpdatePage,
-                    PageId = 10, Data = new Byte[] { 1, 2 }, Timestamp = 12345
+                    PageId = 10, Data = [1, 2], Timestamp = 12345
                 },
                 new ReplicationEventDto
                 {

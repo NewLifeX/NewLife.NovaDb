@@ -1,6 +1,4 @@
-﻿using System.Buffers;
-using System.Buffers.Binary;
-using NewLife.Data;
+﻿using NewLife.Buffers;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
@@ -71,8 +69,11 @@ public class WalWriter : IDisposable
         }
     }
 
-    /// <summary>写入 WAL 记录</summary>
-    public UInt64 Write(WalRecord record)
+    /// <summary>写入 WAL 记录（头部+负载分离）</summary>
+    /// <param name="record">WAL 记录头</param>
+    /// <param name="data">负载数据，可为空</param>
+    /// <returns>分配的 LSN</returns>
+    public UInt64 Write(WalRecord record, Byte[]? data = null)
     {
         lock (_lock)
         {
@@ -85,24 +86,19 @@ public class WalWriter : IDisposable
             // 分配 LSN
             record.Lsn = _nextLsn++;
             record.Timestamp = DateTime.UtcNow.Ticks;
+            record.DataLength = data?.Length ?? 0;
 
-            // 序列化记录
-            using var pk = record.ToPacket();
-            pk.TryGetArray(out var segment);
+            // 使用 SpanWriter 流模式写入长度前缀和头部，缓冲区满时自动刷入流
+            var totalLength = WalRecord.HeaderSize + record.DataLength;
+            Span<Byte> headerBuf = stackalloc Byte[256];
+            var writer = new SpanWriter(headerBuf, _fileStream);
+            writer.Write(totalLength);
+            record.Write(ref writer);
+            writer.Flush();
 
-            // 写入长度前缀（4 字节）
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-            Span<Byte> lengthPrefix = stackalloc Byte[4];
-            BinaryPrimitives.WriteInt32LittleEndian(lengthPrefix, pk.Length);
-            _fileStream.Write(lengthPrefix);
-#else
-            var lengthPrefix = new Byte[4];
-            BinaryPrimitives.WriteInt32LittleEndian(lengthPrefix, pk.Length);
-            _fileStream.Write(lengthPrefix, 0, 4);
-#endif
-
-            // 写入记录数据
-            _fileStream.Write(segment.Array!, segment.Offset, segment.Count);
+            // 写入负载数据
+            if (data != null && data.Length > 0)
+                _fileStream.Write(data, 0, data.Length);
 
             // 根据模式刷盘
             if (_mode == WalMode.Full)
@@ -170,70 +166,44 @@ public class WalWriter : IDisposable
     }
 
     /// <summary>扫描 WAL 文件以找到最大 LSN</summary>
+    /// <remarks>使用 SpanReader 流模式，仅读取每条记录的头部（37 字节），跳过负载数据，避免大缓冲区分配</remarks>
     private UInt64 ScanWalForMaxLsn()
     {
         if (_fileStream == null || _fileStream.Length == 0)
-        {
             return 0;
-        }
 
         UInt64 maxLsn = 0;
         _fileStream.Seek(0, SeekOrigin.Begin);
 
-        // 复用长度前缀缓冲区
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        Span<Byte> lengthPrefix = stackalloc Byte[4];
-#else
-        var lengthPrefix = new Byte[4];
-#endif
-        // 复用记录体缓冲区
-        var dataBuf = ArrayPool<Byte>.Shared.Rent(4096);
-        try
+        while (_fileStream.Position < _fileStream.Length)
         {
-            while (_fileStream.Position < _fileStream.Length)
+            try
             {
-                try
-                {
-                    // 读取长度前缀
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-                    if (_fileStream.Read(lengthPrefix) != 4)
-                        break;
-                    var length = BitConverter.ToInt32(lengthPrefix);
-#else
-                    if (_fileStream.Read(lengthPrefix, 0, 4) != 4)
-                        break;
-                    var length = BitConverter.ToInt32(lengthPrefix, 0);
-#endif
-                    if (length <= 0 || length > 1024 * 1024) // 最大 1MB
-                        break;
+                var recordStart = _fileStream.Position;
 
-                    // 确保缓冲区足够大
-                    if (dataBuf.Length < length)
-                    {
-                        ArrayPool<Byte>.Shared.Return(dataBuf);
-                        dataBuf = ArrayPool<Byte>.Shared.Rent(length);
-                    }
+                // 通过 SpanReader 流模式按需读取，内部缓冲区仅 256 字节
+                var reader = new SpanReader(_fileStream, bufferSize: 256);
 
-                    // 读取记录数据
-                    if (_fileStream.Read(dataBuf, 0, length) != length)
-                        break;
+                // 读取 4 字节长度前缀
+                var totalLength = reader.ReadInt32();
+                if (totalLength <= 0 || totalLength > 1024 * 1024) break;
+                if (totalLength < WalRecord.HeaderSize) break;
 
-                    var record = WalRecord.Read(new ArrayPacket(dataBuf, 0, length));
-                    if (record.Lsn > maxLsn)
-                    {
-                        maxLsn = record.Lsn;
-                    }
-                }
-                catch
-                {
-                    // 忽略损坏的记录
-                    break;
-                }
+                // 仅读取头部获取 LSN，不读取负载数据
+                var record = new WalRecord();
+                record.Read(ref reader);
+
+                if (record.Lsn > maxLsn)
+                    maxLsn = record.Lsn;
+
+                // 直接定位到下一条记录，跳过负载数据
+                _fileStream.Position = recordStart + 4 + totalLength;
             }
-        }
-        finally
-        {
-            ArrayPool<Byte>.Shared.Return(dataBuf);
+            catch
+            {
+                // 忽略损坏的记录
+                break;
+            }
         }
 
         return maxLsn;

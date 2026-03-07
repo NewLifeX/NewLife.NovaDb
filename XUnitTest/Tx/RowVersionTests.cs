@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Xunit;
 using NewLife.NovaDb.Tx;
 
@@ -25,7 +25,7 @@ public class RowVersionTests
     [Fact(DisplayName = "测试标记删除")]
     public void TestMarkDeleted()
     {
-        var row = new RowVersion(1UL, 123, new Byte[] { 1, 2, 3 });
+        var row = new RowVersion(1UL, 123, [1, 2, 3]);
 
         Assert.Equal(0UL, row.DeletedByTx);
 
@@ -41,7 +41,7 @@ public class RowVersionTests
 
         // 创建事务并提交
         var tx1 = manager.BeginTransaction();
-        var row = new RowVersion(tx1.TxId, 123, new Byte[] { 1, 2, 3 });
+        var row = new RowVersion(tx1.TxId, 123, [1, 2, 3]);
         tx1.Commit();
 
         // 新事务应该能看到已提交的行
@@ -65,7 +65,7 @@ public class RowVersionTests
         var tx = manager.BeginTransaction();
 
         // 事务创建的行对自己可见
-        var row = new RowVersion(tx.TxId, 123, new Byte[] { 1, 2, 3 });
+        var row = new RowVersion(tx.TxId, 123, [1, 2, 3]);
         Assert.True(row.IsVisible(manager, tx.TxId));
 
         // 事务删除的行对自己不可见
@@ -80,7 +80,7 @@ public class RowVersionTests
 
         // 事务 1 创建行但不提交
         var tx1 = manager.BeginTransaction();
-        var row = new RowVersion(tx1.TxId, 123, new Byte[] { 1, 2, 3 });
+        var row = new RowVersion(tx1.TxId, 123, [1, 2, 3]);
 
         // 事务 2 不应该看到事务 1 未提交的修改
         var tx2 = manager.BeginTransaction();

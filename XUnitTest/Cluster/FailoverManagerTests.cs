@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Generic;
+﻿using System;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.WAL;
@@ -38,8 +37,8 @@ public class FailoverManagerTests : IDisposable
         _replication.RegisterSlave(slave);
 
         // 追加一些记录并让从节点同步
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = [1] });
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = [2] });
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, [1]);
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 }, [2]);
         _replication.AcknowledgeReplication("slave-1", 2);
 
         // 执行故障切换
@@ -62,10 +61,8 @@ public class FailoverManagerTests : IDisposable
         // 写入大量记录但从节点不同步
         for (var i = 0; i < 200; i++)
         {
-            _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = (UInt64)i, Data = [1] });
+            _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = (UInt64)i }, [1]);
         }
-
-        _failover.MaxAllowedLag = 100;
 
         var ex = Assert.Throws<NovaException>(() => _failover.Promote("slave-1"));
         Assert.Equal(ErrorCode.ReplicationLag, ex.Code);
@@ -79,7 +76,7 @@ public class FailoverManagerTests : IDisposable
 
         for (var i = 0; i < 200; i++)
         {
-            _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = (UInt64)i, Data = [1] });
+            _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = (UInt64)i }, [1]);
         }
 
         var result = _failover.ForcePromote("slave-1");
@@ -96,9 +93,9 @@ public class FailoverManagerTests : IDisposable
         _replication.RegisterSlave(slave1);
         _replication.RegisterSlave(slave2);
 
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = [1] });
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = [2] });
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 3, Data = [3] });
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, [1]);
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 }, [2]);
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 3 }, [3]);
 
         // slave-2 同步更多
         _replication.AcknowledgeReplication("slave-1", 1);
@@ -141,7 +138,7 @@ public class FailoverManagerTests : IDisposable
     {
         var slave = new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9001", Role = NodeRole.Slave };
         _replication.RegisterSlave(slave);
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = [1] });
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, [1]);
         _replication.AcknowledgeReplication("slave-1", 1);
 
         _failover.Promote("slave-1");
@@ -159,7 +156,7 @@ public class FailoverManagerTests : IDisposable
         _replication.RegisterSlave(slave1);
         _replication.RegisterSlave(slave2);
 
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = [1] });
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, [1]);
         _replication.AcknowledgeReplication("slave-1", 1);
         _replication.AcknowledgeReplication("slave-2", 1);
 
@@ -178,9 +175,9 @@ public class FailoverManagerTests : IDisposable
         var slave = new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9001", Role = NodeRole.Slave };
         _replication.RegisterSlave(slave);
 
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = [1] });
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = [2] });
-        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 3, Data = [3] });
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, [1]);
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 }, [2]);
+        _replication.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 3 }, [3]);
 
         // 从节点只同步了 1 条
         _replication.AcknowledgeReplication("slave-1", 1);

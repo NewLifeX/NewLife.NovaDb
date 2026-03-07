@@ -231,18 +231,19 @@ public class ReplicaClient : IDisposable
         if (result?.Events == null || result.Events.Length == 0) return;
 
         // 转换并应用
-        var records = new List<WalRecord>(result.Events.Length);
+        var records = new List<(WalRecord, Byte[]?)>(result.Events.Length);
         foreach (var evt in result.Events)
         {
-            records.Add(new WalRecord
+            var record = new WalRecord
             {
                 Lsn = evt.Lsn,
                 TxId = evt.TxId,
                 RecordType = (WalRecordType)evt.RecordType,
                 PageId = evt.PageId,
-                Data = evt.Data ?? [],
+                DataLength = evt.Data?.Length ?? 0,
                 Timestamp = evt.Timestamp
-            });
+            };
+            records.Add((record, evt.Data));
         }
 
         ApplyRecords(records);
@@ -264,8 +265,8 @@ public class ReplicaClient : IDisposable
     }
 
     /// <summary>应用 WAL 记录（从主节点接收后重放）</summary>
-    /// <param name="records">WAL 记录集合</param>
-    public void ApplyRecords(IEnumerable<WalRecord> records)
+    /// <param name="records">WAL 记录头与负载数据的集合</param>
+    public void ApplyRecords(IEnumerable<(WalRecord Header, Byte[]? Data)> records)
     {
         if (records == null) throw new ArgumentNullException(nameof(records));
 
@@ -273,20 +274,20 @@ public class ReplicaClient : IDisposable
         {
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicaClient));
 
-            foreach (var record in records)
+            foreach (var (header, data) in records)
             {
                 // 幂等：跳过已应用的记录
-                if (record.Lsn <= _lastAppliedLsn) continue;
+                if (header.Lsn <= _lastAppliedLsn) continue;
 
                 // 对 UpdatePage 类型调用回调
-                if (record.RecordType == WalRecordType.UpdatePage && _applyCallback != null)
+                if (header.RecordType == WalRecordType.UpdatePage && _applyCallback != null)
                 {
-                    _applyCallback(record.PageId, record.Data);
+                    _applyCallback(header.PageId, data ?? []);
                 }
 
-                _lastAppliedLsn = record.Lsn;
-                _appliedRecords.Add(record);
-                _localNode.ReplicatedLsn = record.Lsn;
+                _lastAppliedLsn = header.Lsn;
+                _appliedRecords.Add(header);
+                _localNode.ReplicatedLsn = header.Lsn;
             }
         }
     }

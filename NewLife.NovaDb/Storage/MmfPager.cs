@@ -90,21 +90,12 @@ public class MmfPager : IDisposable
             else if (!isNewFile)
             {
                 // 已有文件验证文件头
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-                Span<Byte> headerBytes = stackalloc Byte[FileHeader.HeaderSize];
-                var bytesRead = _fileStream.Read(headerBytes);
-                if (bytesRead < FileHeader.HeaderSize)
-                    throw new NovaException(ErrorCode.FileCorrupted, $"File too short, cannot read header: {_filePath}");
-
-                var fileHeader = FileHeader.Read((ReadOnlySpan<Byte>)headerBytes);
-#else
                 var headerBytes = new Byte[FileHeader.HeaderSize];
                 var bytesRead = _fileStream.Read(headerBytes, 0, FileHeader.HeaderSize);
                 if (bytesRead < FileHeader.HeaderSize)
                     throw new NovaException(ErrorCode.FileCorrupted, $"File too short, cannot read header: {_filePath}");
 
                 var fileHeader = FileHeader.Read(new ArrayPacket(headerBytes));
-#endif
 
                 if (fileHeader.PageSize != _pageSize)
                     throw new NovaException(ErrorCode.IncompatibleFileFormat, $"Page size mismatch: file={fileHeader.PageSize}, expected={_pageSize}");

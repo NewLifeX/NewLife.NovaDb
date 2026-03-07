@@ -27,7 +27,7 @@ public class ReplicationManager : IDisposable
 #endif
     private Boolean _disposed;
 
-    private readonly List<WalRecord> _replicationBuffer = [];
+    private readonly List<(WalRecord Header, Byte[]? Data)> _replicationBuffer = [];
     private UInt64 _masterLsn;
 
     private BinlogWriter? _binlogWriter;
@@ -196,8 +196,9 @@ public class ReplicationManager : IDisposable
 
     #region 记录追加
     /// <summary>追加 WAL 记录到复制缓冲区</summary>
-    /// <param name="record">WAL 记录</param>
-    public void AppendRecord(WalRecord record)
+    /// <param name="record">WAL 记录头</param>
+    /// <param name="data">负载数据，可为空</param>
+    public void AppendRecord(WalRecord record, Byte[]? data = null)
     {
         if (record == null) throw new ArgumentNullException(nameof(record));
 
@@ -207,7 +208,8 @@ public class ReplicationManager : IDisposable
 
             _masterLsn++;
             record.Lsn = _masterLsn;
-            _replicationBuffer.Add(record);
+            record.DataLength = data?.Length ?? 0;
+            _replicationBuffer.Add((record, data));
 
             // 超过缓冲区限制时移除最旧的记录
             while (_replicationBuffer.Count > MaxBufferSize)
@@ -220,8 +222,8 @@ public class ReplicationManager : IDisposable
     /// <summary>获取从节点待复制的记录</summary>
     /// <param name="nodeId">节点 ID</param>
     /// <param name="maxCount">最大返回数量</param>
-    /// <returns>待复制的 WAL 记录列表</returns>
-    public List<WalRecord> GetPendingRecords(String nodeId, Int32 maxCount = 100)
+    /// <returns>待复制的 WAL 记录头与负载列表</returns>
+    public List<(WalRecord Header, Byte[]? Data)> GetPendingRecords(String nodeId, Int32 maxCount = 100)
     {
         if (nodeId == null) throw new ArgumentNullException(nameof(nodeId));
 
@@ -233,13 +235,13 @@ public class ReplicationManager : IDisposable
                 throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
 
             var ackedLsn = _slavePositions[nodeId];
-            var pending = new List<WalRecord>();
+            var pending = new List<(WalRecord, Byte[]?)>();
 
-            foreach (var record in _replicationBuffer)
+            foreach (var item in _replicationBuffer)
             {
-                if (record.Lsn > ackedLsn)
+                if (item.Header.Lsn > ackedLsn)
                 {
-                    pending.Add(record);
+                    pending.Add(item);
                     if (pending.Count >= maxCount) break;
                 }
             }
@@ -331,7 +333,7 @@ public class ReplicationManager : IDisposable
             if (minAckedLsn == 0) return 0;
 
             // 移除 LSN <= minAckedLsn 的记录
-            var removed = _replicationBuffer.RemoveAll(r => r.Lsn <= minAckedLsn);
+            var removed = _replicationBuffer.RemoveAll(r => r.Header.Lsn <= minAckedLsn);
             return removed;
         }
     }
@@ -401,16 +403,16 @@ public class ReplicationManager : IDisposable
 
         // 序列化 Binlog 事件为传输格式
         var events = new List<ReplicationEventDto>(pending.Count);
-        foreach (var record in pending)
+        foreach (var (header, data) in pending)
         {
             events.Add(new ReplicationEventDto
             {
-                Lsn = record.Lsn,
-                TxId = record.TxId,
-                RecordType = (Byte)record.RecordType,
-                PageId = record.PageId,
-                Data = record.Data,
-                Timestamp = record.Timestamp
+                Lsn = header.Lsn,
+                TxId = header.TxId,
+                RecordType = (Byte)header.RecordType,
+                PageId = header.PageId,
+                Data = data ?? [],
+                Timestamp = header.Timestamp
             });
         }
 

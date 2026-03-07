@@ -9,7 +9,7 @@ namespace NewLife.NovaDb.Utilities;
 internal struct PooledBytes : IDisposable
 {
 #if NET45
-        private static readonly Byte[] EmptyBytes = new Byte[0];
+        private static readonly Byte[] EmptyBytes = [];
 #else
     private static readonly Byte[] EmptyBytes = Array.Empty<Byte>();
 #endif

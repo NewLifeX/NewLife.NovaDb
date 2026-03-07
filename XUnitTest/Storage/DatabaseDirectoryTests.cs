@@ -87,7 +87,7 @@ public class DatabaseDirectoryTests : IDisposable
     {
         Directory.CreateDirectory(_testPath);
         var metaFile = _testPath.CombinePath("nova.db").AsFile();
-        File.WriteAllBytes(metaFile.FullName, new Byte[] { 1 });
+        File.WriteAllBytes(metaFile.FullName, [1]);
 
         var db = new DatabaseDirectory(_testPath, _options);
         var ex = Assert.Throws<NovaException>(() => db.Create());

@@ -1,5 +1,4 @@
-﻿using System.Buffers;
-using NewLife.Data;
+﻿using NewLife.Buffers;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
@@ -38,74 +37,48 @@ public class WalRecovery
 
         NewLife.Log.XTrace.WriteLine($"Starting WAL recovery from {_walPath}");
 
-        // 复用长度前缀缓冲区
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        Span<Byte> lengthPrefix = stackalloc Byte[4];
-#else
-        var lengthPrefix = new Byte[4];
-#endif
-        // 复用记录体缓冲区
-        var dataBuf = ArrayPool<Byte>.Shared.Rent(4096);
-        try
+        // 扫描所有记录，通过 SpanReader 流模式仅读取头部，按需读取负载
+        while (fs.Position < fs.Length)
         {
-            // 第一遍：扫描所有记录，找出已提交的事务
-            while (fs.Position < fs.Length)
+            try
             {
-                try
+                var recordStart = fs.Position;
+
+                // 通过 SpanReader 流模式按需读取，内部缓冲区仅 256 字节
+                var reader = new SpanReader(fs, bufferSize: 256);
+
+                // 读取 4 字节长度前缀
+                var totalLength = reader.ReadInt32();
+                if (totalLength <= 0 || totalLength > 10 * 1024 * 1024) break;
+                if (totalLength < WalRecord.HeaderSize) break;
+
+                // 读取头部
+                var record = new WalRecord();
+                record.Read(ref reader);
+
+                if (record.RecordType == WalRecordType.CommitTx)
                 {
-                    // 读取长度前缀
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-                    if (fs.Read(lengthPrefix) != 4) break;
-                    var length = BitConverter.ToInt32(lengthPrefix);
-#else
-                    if (fs.Read(lengthPrefix, 0, 4) != 4) break;
-                    var length = BitConverter.ToInt32(lengthPrefix, 0);
-#endif
-
-                    if (length <= 0 || length > 10 * 1024 * 1024)
-                    {
-                        NewLife.Log.XTrace.WriteLine($"Invalid WAL record length: {length}");
-                        break;
-                    }
-
-                    // 确保缓冲区足够大
-                    if (dataBuf.Length < length)
-                    {
-                        ArrayPool<Byte>.Shared.Return(dataBuf);
-                        dataBuf = ArrayPool<Byte>.Shared.Rent(length);
-                    }
-
-                    // 读取记录数据
-                    var bytesRead = fs.Read(dataBuf, 0, length);
-                    if (bytesRead != length)
-                    {
-                        NewLife.Log.XTrace.WriteLine($"Incomplete WAL record: expected {length} bytes, got {bytesRead}");
-                        break;
-                    }
-
-                    var record = WalRecord.Read(new ArrayPacket(dataBuf, 0, length));
-
-                    if (record.RecordType == WalRecordType.CommitTx)
-                    {
-                        committedTxs.Add(record.TxId);
-                    }
-                    else if (record.RecordType == WalRecordType.UpdatePage)
-                    {
-                        pageUpdates.Add((record.TxId, record.PageId, record.Data));
-                    }
-
-                    LastCommittedLsn = Math.Max(LastCommittedLsn, record.Lsn);
+                    committedTxs.Add(record.TxId);
                 }
-                catch (Exception ex)
+                else if (record.RecordType == WalRecordType.UpdatePage && record.DataLength > 0)
                 {
-                    NewLife.Log.XTrace.WriteLine($"WAL record read error (position {fs.Position}): {ex.Message}");
-                    break;
+                    // 定位到负载数据位置，仅在需要时才从流中读取
+                    fs.Position = recordStart + 4 + WalRecord.HeaderSize;
+                    var data = new Byte[record.DataLength];
+                    if (fs.Read(data, 0, data.Length) != data.Length) break;
+                    pageUpdates.Add((record.TxId, record.PageId, data));
                 }
+
+                LastCommittedLsn = Math.Max(LastCommittedLsn, record.Lsn);
+
+                // 定位到下一条记录
+                fs.Position = recordStart + 4 + totalLength;
             }
-        }
-        finally
-        {
-            ArrayPool<Byte>.Shared.Return(dataBuf);
+            catch (Exception ex)
+            {
+                NewLife.Log.XTrace.WriteLine($"WAL record read error (position {fs.Position}): {ex.Message}");
+                break;
+            }
         }
 
         // 第二遍：重放已提交事务的页更新

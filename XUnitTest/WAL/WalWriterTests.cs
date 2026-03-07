@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.WAL;
@@ -83,10 +83,9 @@ public class WalWriterTests : IDisposable
             TxId = 1,
             RecordType = WalRecordType.UpdatePage,
             PageId = 5,
-            Data = pageData
         };
 
-        var lsn = writer.Write(record);
+        var lsn = writer.Write(record, pageData);
         Assert.Equal(1UL, lsn);
         Assert.Equal(1UL, record.Lsn);
     }

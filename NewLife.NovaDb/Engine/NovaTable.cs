@@ -194,9 +194,8 @@ public partial class NovaTable : IDisposable
                     RecordType = WalRecordType.UpdatePage,
                     TxId = tx.TxId,
                     PageId = 0,
-                    Data = payload
                 };
-                _walWriter.Write(record);
+                _walWriter.Write(record, payload);
             }
 
             // 注册回滚动作
@@ -338,9 +337,8 @@ public partial class NovaTable : IDisposable
                     RecordType = WalRecordType.UpdatePage,
                     TxId = tx.TxId,
                     PageId = 0,
-                    Data = payload
                 };
-                _walWriter.Write(record);
+                _walWriter.Write(record, payload);
             }
 
             // 注册回滚动作
@@ -431,7 +429,6 @@ public partial class NovaTable : IDisposable
                     RecordType = WalRecordType.UpdatePage,
                     TxId = tx.TxId,
                     PageId = 0,
-                    Data = []
                 };
                 _walWriter.Write(record);
             }

@@ -29,8 +29,8 @@ public class PageCacheTests
         var cache = new PageCache(1);
         Assert.Equal(1, cache.Capacity);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 }); // 淘汰 1
+        cache.Put(1, [1]);
+        cache.Put(2, [2]); // 淘汰 1
 
         Assert.Equal(1, cache.Count);
         Assert.False(cache.TryGet(1, out _));
@@ -71,8 +71,8 @@ public class PageCacheTests
     {
         var cache = new PageCache(3);
 
-        cache.Put(1, new Byte[] { 10 });
-        cache.Put(1, new Byte[] { 20 }); // 更新同一个 key
+        cache.Put(1, [10]);
+        cache.Put(1, [20]); // 更新同一个 key
 
         Assert.Equal(1, cache.Count);
         Assert.True(cache.TryGet(1, out var data));
@@ -95,11 +95,11 @@ public class PageCacheTests
     {
         var cache = new PageCache(2);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
 
         // 缓存已满，添加第三个应淘汰第一个（最久未访问）
-        cache.Put(3, new Byte[] { 3 });
+        cache.Put(3, [3]);
 
         Assert.False(cache.TryGet(1, out _)); // 已淘汰
         Assert.True(cache.TryGet(2, out _));
@@ -111,14 +111,14 @@ public class PageCacheTests
     {
         var cache = new PageCache(2);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
 
         // 访问 key=1，让它变成最近使用
         cache.TryGet(1, out _);
 
         // 添加第三个，应淘汰 key=2（最久未访问）
-        cache.Put(3, new Byte[] { 3 });
+        cache.Put(3, [3]);
 
         Assert.True(cache.TryGet(1, out _));  // 被访问过，不淘汰
         Assert.False(cache.TryGet(2, out _)); // 被淘汰
@@ -130,14 +130,14 @@ public class PageCacheTests
     {
         var cache = new PageCache(2);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
 
         // 更新 key=1，让它变成最近使用
-        cache.Put(1, new Byte[] { 10 });
+        cache.Put(1, [10]);
 
         // 添加第三个，应淘汰 key=2
-        cache.Put(3, new Byte[] { 3 });
+        cache.Put(3, [3]);
 
         Assert.True(cache.TryGet(1, out var data));
         Assert.Equal(10, data![0]); // 确认是更新后的值
@@ -150,17 +150,17 @@ public class PageCacheTests
     {
         var cache = new PageCache(3);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
-        cache.Put(3, new Byte[] { 3 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
+        cache.Put(3, [3]);
 
         // 此时 LRU 序：3(头) → 2 → 1(尾)
         // 再加入 4，应淘汰 1
-        cache.Put(4, new Byte[] { 4 });
+        cache.Put(4, [4]);
         Assert.False(cache.TryGet(1, out _));
 
         // 再加入 5，应淘汰 2
-        cache.Put(5, new Byte[] { 5 });
+        cache.Put(5, [5]);
         Assert.False(cache.TryGet(2, out _));
 
         Assert.True(cache.TryGet(3, out _));
@@ -175,7 +175,7 @@ public class PageCacheTests
     {
         var cache = new PageCache(3);
 
-        cache.Put(1, new Byte[] { 1, 2, 3 });
+        cache.Put(1, [1, 2, 3]);
         Assert.True(cache.TryGet(1, out _));
 
         var removed = cache.Remove(1);
@@ -197,12 +197,12 @@ public class PageCacheTests
     {
         var cache = new PageCache(2);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
 
         // 移除一个后再添加不应触发淘汰
         cache.Remove(1);
-        cache.Put(3, new Byte[] { 3 });
+        cache.Put(3, [3]);
 
         Assert.True(cache.TryGet(2, out _));
         Assert.True(cache.TryGet(3, out _));
@@ -216,8 +216,8 @@ public class PageCacheTests
     {
         var cache = new PageCache(3);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
 
         Assert.Equal(2, cache.Count);
 
@@ -233,7 +233,7 @@ public class PageCacheTests
     {
         var cache = new PageCache(3);
 
-        cache.Put(1, new Byte[] { 1 });
+        cache.Put(1, [1]);
         cache.TryGet(1, out _); // hit
         cache.TryGet(2, out _); // miss
 
@@ -251,12 +251,12 @@ public class PageCacheTests
     {
         var cache = new PageCache(2);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
         cache.Clear();
 
         // 清空后可正常复用
-        cache.Put(3, new Byte[] { 3 });
+        cache.Put(3, [3]);
         Assert.Equal(1, cache.Count);
         Assert.True(cache.TryGet(3, out _));
     }
@@ -268,8 +268,8 @@ public class PageCacheTests
     {
         var cache = new PageCache(3);
 
-        cache.Put(1, new Byte[] { 1 });
-        cache.Put(2, new Byte[] { 2 });
+        cache.Put(1, [1]);
+        cache.Put(2, [2]);
 
         cache.TryGet(1, out _); // hit
         cache.TryGet(2, out _); // hit
@@ -291,7 +291,7 @@ public class PageCacheTests
         // 并发写入和读取不应抛异常
         Parallel.For(0, 1000, i =>
         {
-            cache.Put((UInt64)i, new Byte[] { (Byte)(i % 256) });
+            cache.Put((UInt64)i, [(Byte)(i % 256)]);
             cache.TryGet((UInt64)(i / 2), out _);
         });
 

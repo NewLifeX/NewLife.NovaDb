@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -49,7 +49,7 @@ public class KvStorePersistTests : IDisposable
         {
             store.SetString("key1", "value1");
             store.SetString("key2", "value2");
-            store.Set("key3", new Byte[] { 1, 2, 3 });
+            store.Set("key3", [1, 2, 3]);
         }
 
         // 重新打开，验证恢复
@@ -264,7 +264,7 @@ public class KvStorePersistTests : IDisposable
     public void TestTryGetSuccess()
     {
         using var store = CreateStore();
-        store.Set("key1", new Byte[] { 1, 2, 3 });
+        store.Set("key1", [1, 2, 3]);
 
         Assert.True(store.TryGet("key1", out var value));
         Assert.NotNull(value);
@@ -285,7 +285,7 @@ public class KvStorePersistTests : IDisposable
     public void TestTryGetExpired()
     {
         using var store = CreateStore();
-        store.Set("key1", new Byte[] { 1 }, TimeSpan.FromMilliseconds(10));
+        store.Set("key1", [1], TimeSpan.FromMilliseconds(10));
 
         Thread.Sleep(50);
 
@@ -320,10 +320,10 @@ public class KvStorePersistTests : IDisposable
     public void TestReplaceKeepsTtl()
     {
         using var store = CreateStore();
-        store.Set("key1", new Byte[] { 1 }, TimeSpan.FromHours(2));
+        store.Set("key1", [1], TimeSpan.FromHours(2));
         var originalTtl = store.GetExpiration("key1");
 
-        store.Replace("key1", new Byte[] { 2 })?.Dispose();
+        store.Replace("key1", [2])?.Dispose();
 
         var afterTtl = store.GetExpiration("key1");
         Assert.NotNull(originalTtl);
@@ -335,9 +335,9 @@ public class KvStorePersistTests : IDisposable
     public void TestReplaceOverridesTtl()
     {
         using var store = CreateStore();
-        store.Set("key1", new Byte[] { 1 }, TimeSpan.FromHours(2));
+        store.Set("key1", [1], TimeSpan.FromHours(2));
 
-        store.Replace("key1", new Byte[] { 2 }, TimeSpan.FromMinutes(5))?.Dispose();
+        store.Replace("key1", [2], TimeSpan.FromMinutes(5))?.Dispose();
 
         var expiration = store.GetExpiration("key1");
         Assert.NotNull(expiration);
@@ -493,7 +493,7 @@ public class KvStorePersistTests : IDisposable
         store.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => store.Get("key1"));
-        Assert.Throws<ObjectDisposedException>(() => store.Set("key2", new Byte[] { 1 }));
+        Assert.Throws<ObjectDisposedException>(() => store.Set("key2", [1]));
         Assert.Throws<ObjectDisposedException>(() => store.Delete("key1"));
         Assert.Throws<ObjectDisposedException>(() => store.Exists("key1"));
         Assert.Throws<ObjectDisposedException>(() => store.Clear());

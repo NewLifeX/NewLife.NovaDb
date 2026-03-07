@@ -352,46 +352,24 @@ public class BinlogWriter : IDisposable
         fs.Position = HeaderSize;
         var pos = 0L;
 
-        // 复用长度前缀缓冲区
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        Span<Byte> lenBuf = stackalloc Byte[4];
-#else
-        var lenBuf = new Byte[4];
-#endif
-        // 复用记录体缓冲区
-        var bodyBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        var buf = ArrayPool<Byte>.Shared.Rent(4096);
         try
         {
             while (fs.Position < fs.Length)
             {
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-                if (fs.Read(lenBuf) < 4) break;
-                var recordLength = BitConverter.ToInt32(lenBuf);
-#else
-                if (fs.Read(lenBuf, 0, 4) < 4) break;
-                var recordLength = BitConverter.ToInt32(lenBuf, 0);
-#endif
+                if (!fs.TryReadLengthPrefixedBlock(ref buf, out var recordLength)) break;
                 if (recordLength < 5) break;
-
-                // 确保缓冲区足够大
-                if (bodyBuf.Length < recordLength)
-                {
-                    ArrayPool<Byte>.Shared.Return(bodyBuf);
-                    bodyBuf = ArrayPool<Byte>.Shared.Rent(recordLength);
-                }
-
-                if (fs.Read(bodyBuf, 0, recordLength) < recordLength) break;
 
                 var dataLength = recordLength - 4;
                 if (dataLength < 1) break;
 
                 // 校验 CRC32
-                var expectedChecksum = BitConverter.ToUInt32(bodyBuf, dataLength);
-                var actualChecksum = Crc32.Compute(bodyBuf, 0, dataLength);
+                var expectedChecksum = BitConverter.ToUInt32(buf, dataLength);
+                var actualChecksum = Crc32.Compute(buf, 0, dataLength);
                 if (expectedChecksum != actualChecksum) continue;
 
                 // 使用 SpanReader 解析事件，避免 MemoryStream + BinaryReader 分配
-                var reader = new SpanReader(bodyBuf, 0, dataLength);
+                var reader = new SpanReader(buf, 0, dataLength);
 
                 var evt = new BinlogEvent
                 {
@@ -401,11 +379,11 @@ public class BinlogWriter : IDisposable
                 };
 
                 var dbLen = reader.ReadInt32();
-                evt.Database = Encoding.UTF8.GetString(bodyBuf, reader.Position, dbLen);
+                evt.Database = Encoding.UTF8.GetString(buf, reader.Position, dbLen);
                 reader.Advance(dbLen);
 
                 var sqlLen = reader.ReadInt32();
-                evt.Sql = Encoding.UTF8.GetString(bodyBuf, reader.Position, sqlLen);
+                evt.Sql = Encoding.UTF8.GetString(buf, reader.Position, sqlLen);
                 reader.Advance(sqlLen);
 
                 evt.AffectedRows = reader.ReadInt32();
@@ -415,7 +393,7 @@ public class BinlogWriter : IDisposable
         }
         finally
         {
-            ArrayPool<Byte>.Shared.Return(bodyBuf);
+            ArrayPool<Byte>.Shared.Return(buf);
         }
 
         return events;

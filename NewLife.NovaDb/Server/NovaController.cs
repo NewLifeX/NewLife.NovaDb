@@ -146,15 +146,15 @@ internal class NovaController : IApi
         var events = new ReplicationEventDto[pending.Count];
         for (var i = 0; i < pending.Count; i++)
         {
-            var record = pending[i];
+            var (header, data) = pending[i];
             events[i] = new ReplicationEventDto
             {
-                Lsn = record.Lsn,
-                TxId = record.TxId,
-                RecordType = (Byte)record.RecordType,
-                PageId = record.PageId,
-                Data = record.Data,
-                Timestamp = record.Timestamp
+                Lsn = header.Lsn,
+                TxId = header.TxId,
+                RecordType = (Byte)header.RecordType,
+                PageId = header.PageId,
+                Data = data ?? [],
+                Timestamp = header.Timestamp
             };
         }
 

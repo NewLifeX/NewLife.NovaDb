@@ -187,53 +187,28 @@ public partial class NovaTable
         var liveRows = new Dictionary<String, Byte[]>();
         var deletedKeys = new HashSet<String>();
 
-        // 复用长度前缀缓冲区
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        Span<Byte> lenBuf = stackalloc Byte[4];
-#else
-        var lenBuf = new Byte[4];
-#endif
-        // 复用记录体缓冲区，按需扩容
-        var bodyBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        // 单缓冲区：读取长度前缀 + 数据体
+        var buf = ArrayPool<Byte>.Shared.Rent(4096);
         try
         {
             while (_rowLogStream.Position < _rowLogStream.Length)
             {
-                // 读取 RecordLength
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-                if (_rowLogStream.Read(lenBuf) < 4) break;
-                var recordLength = BitConverter.ToInt32(lenBuf);
-#else
-                if (_rowLogStream.Read(lenBuf, 0, 4) < 4) break;
-                var recordLength = BitConverter.ToInt32(lenBuf, 0);
-#endif
-
+                if (!_rowLogStream.TryReadLengthPrefixedBlock(ref buf, out var recordLength)) break;
                 if (recordLength < 5) break; // 至少 1B type + 4B checksum
 
-                // 确保 bodyBuf 足够大
-                if (bodyBuf.Length < recordLength)
-                {
-                    ArrayPool<Byte>.Shared.Return(bodyBuf);
-                    bodyBuf = ArrayPool<Byte>.Shared.Rent(recordLength);
-                }
-
-                // 读取记录体
-                var read = _rowLogStream.Read(bodyBuf, 0, recordLength);
-                if (read < recordLength) break; // 截断记录，忽略
-
-                var recordType = bodyBuf[0];
+                var recordType = buf[0];
                 var dataLength = recordLength - 1 - 4;
                 if (dataLength < 0) break;
 
                 // 校验 CRC32
-                var expectedChecksum = BitConverter.ToUInt32(bodyBuf, recordLength - 4);
-                var actualChecksum = Crc32.Compute(bodyBuf, 0, 1 + dataLength);
+                var expectedChecksum = BitConverter.ToUInt32(buf, recordLength - 4);
+                var actualChecksum = Crc32.Compute(buf, 0, 1 + dataLength);
                 if (expectedChecksum != actualChecksum) continue; // CRC 不匹配，跳过损坏记录
 
                 if (recordType == RecordType_Put && dataLength > 0)
                 {
                     // payload 需要长期持有，必须独立分配
-                    var payload = bodyBuf.AsSpan(1, dataLength).ToArray();
+                    var payload = buf.AsSpan(1, dataLength).ToArray();
 
                     // 反序列化行以提取主键
                     var row = DeserializeRow(payload);
@@ -246,8 +221,8 @@ public partial class NovaTable
                 }
                 else if (recordType == RecordType_Delete && dataLength > 0)
                 {
-                    // 直接从 bodyBuf 解码主键，无需分配 keyData
-                    var pkValue = _codec.Decode(bodyBuf, 1, pkCol.DataType);
+                    // 直接从 buf 解码主键，无需分配 keyData
+                    var pkValue = _codec.Decode(buf, 1, pkCol.DataType);
                     if (pkValue == null) continue;
 
                     var keyStr = pkValue.ToString()!;
@@ -258,7 +233,7 @@ public partial class NovaTable
         }
         finally
         {
-            ArrayPool<Byte>.Shared.Return(bodyBuf);
+            ArrayPool<Byte>.Shared.Return(buf);
         }
 
         // 将存活的行加载到内存索引

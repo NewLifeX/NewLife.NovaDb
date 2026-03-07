@@ -19,6 +19,12 @@ internal static class KvPacket
 {
     private static readonly Encoding _encoding = Encoding.UTF8;
 
+#if NET45
+    private static readonly Byte[] EmptyBytes = [];
+#else
+    private static readonly Byte[] EmptyBytes = Array.Empty<Byte>();
+#endif
+
     #region 编码请求
 
     /// <summary>编码 Set 请求</summary>
@@ -546,11 +552,5 @@ internal static class KvPacket
         return reader.ReadBytes(len).ToArray();
     }
 
-#if NET45
-    private static readonly Byte[] EmptyBytes = new Byte[0];
-#else
-    private static readonly Byte[] EmptyBytes = Array.Empty<Byte>();
-#endif
-
-    #endregion
+#endregion
 }

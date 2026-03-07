@@ -314,58 +314,36 @@ public partial class FluxEngine
 
         _fluxLogStream.Position = FluxLogHeaderSize;
 
-        // 复用长度前缀缓冲区
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        Span<Byte> lenBuf = stackalloc Byte[4];
-#else
-        var lenBuf = new Byte[4];
-#endif
-        // 复用记录体缓冲区
-        var bodyBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        var buf = ArrayPool<Byte>.Shared.Rent(4096);
         try
         {
             while (_fluxLogStream.Position < _fluxLogStream.Length)
             {
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-                if (_fluxLogStream.Read(lenBuf) < 4) break;
-                var recordLength = BitConverter.ToInt32(lenBuf);
-#else
-                if (_fluxLogStream.Read(lenBuf, 0, 4) < 4) break;
-                var recordLength = BitConverter.ToInt32(lenBuf, 0);
-#endif
+                if (!_fluxLogStream.TryReadLengthPrefixedBlock(ref buf, out var recordLength)) break;
                 if (recordLength < 5) break;
 
-                // 确保缓冲区足够大
-                if (bodyBuf.Length < recordLength)
-                {
-                    ArrayPool<Byte>.Shared.Return(bodyBuf);
-                    bodyBuf = ArrayPool<Byte>.Shared.Rent(recordLength);
-                }
-
-                if (_fluxLogStream.Read(bodyBuf, 0, recordLength) < recordLength) break;
-
-                var recordType = bodyBuf[0];
+                var recordType = buf[0];
                 var dataLength = recordLength - 1 - 4;
                 if (dataLength < 0) break;
 
                 // 校验 CRC32
-                var expectedChecksum = BitConverter.ToUInt32(bodyBuf, recordLength - 4);
-                var actualChecksum = Crc32.Compute(bodyBuf, 0, 1 + dataLength);
+                var expectedChecksum = BitConverter.ToUInt32(buf, recordLength - 4);
+                var actualChecksum = Crc32.Compute(buf, 0, 1 + dataLength);
                 if (expectedChecksum != actualChecksum) continue;
 
                 if (recordType == RecordType_FluxAppend && dataLength >= 12)
                 {
-                    ReplayFluxAppend(bodyBuf, 1, dataLength);
+                    ReplayFluxAppend(buf, 1, dataLength);
                 }
                 else if (recordType == RecordType_FluxPurge && dataLength > 0)
                 {
-                    ReplayFluxPurge(bodyBuf, 1, dataLength);
+                    ReplayFluxPurge(buf, 1, dataLength);
                 }
             }
         }
         finally
         {
-            ArrayPool<Byte>.Shared.Return(bodyBuf);
+            ArrayPool<Byte>.Shared.Return(buf);
         }
     }
 

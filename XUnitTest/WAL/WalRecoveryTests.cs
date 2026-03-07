@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Collections.Generic;
 using NewLife.NovaDb.Core;
@@ -39,8 +39,7 @@ public class WalRecoveryTests : IDisposable
                 TxId = 1,
                 RecordType = WalRecordType.UpdatePage,
                 PageId = 10,
-                Data = new byte[] { 1, 2, 3, 4, 5 }
-            });
+            }, [1, 2, 3, 4, 5]);
             writer.Write(new WalRecord { TxId = 1, RecordType = WalRecordType.CommitTx });
         }
 
@@ -68,8 +67,7 @@ public class WalRecoveryTests : IDisposable
                 TxId = 1,
                 RecordType = WalRecordType.UpdatePage,
                 PageId = 10,
-                Data = new byte[] { 1, 2, 3, 4, 5 }
-            });
+            }, [1, 2, 3, 4, 5]);
         }
 
         var recovery = new WalRecovery(_walFile, (pageId, data) =>
@@ -90,14 +88,14 @@ public class WalRecoveryTests : IDisposable
             writer.Open();
 
             writer.Write(new WalRecord { TxId = 1, RecordType = WalRecordType.BeginTx });
-            writer.Write(new WalRecord { TxId = 1, RecordType = WalRecordType.UpdatePage, PageId = 1, Data = new byte[] { 1 } });
+            writer.Write(new WalRecord { TxId = 1, RecordType = WalRecordType.UpdatePage, PageId = 1 }, [1]);
             writer.Write(new WalRecord { TxId = 1, RecordType = WalRecordType.CommitTx });
 
             writer.Write(new WalRecord { TxId = 2, RecordType = WalRecordType.BeginTx });
-            writer.Write(new WalRecord { TxId = 2, RecordType = WalRecordType.UpdatePage, PageId = 2, Data = new byte[] { 2 } });
+            writer.Write(new WalRecord { TxId = 2, RecordType = WalRecordType.UpdatePage, PageId = 2 }, [2]);
 
             writer.Write(new WalRecord { TxId = 3, RecordType = WalRecordType.BeginTx });
-            writer.Write(new WalRecord { TxId = 3, RecordType = WalRecordType.UpdatePage, PageId = 3, Data = new byte[] { 3 } });
+            writer.Write(new WalRecord { TxId = 3, RecordType = WalRecordType.UpdatePage, PageId = 3 }, [3]);
             writer.Write(new WalRecord { TxId = 3, RecordType = WalRecordType.CommitTx });
         }
 

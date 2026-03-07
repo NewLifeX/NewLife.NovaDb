@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -12,16 +12,22 @@ using Xunit;
 
 namespace XUnitTest.Server;
 
+[Collection("IntegrationTests")]
 public class KvControllerTests : IDisposable
 {
     private readonly String _testDir;
     private readonly KvStore _kvStore;
     private readonly KvController _controller;
+    private readonly KvStore? _originalKvStore;
+    private readonly NovaServer? _originalServer;
 
     public KvControllerTests()
     {
         _testDir = Path.Combine(Path.GetTempPath(), "KvControllerTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_testDir);
+
+        _originalKvStore = KvController.SharedKvStore;
+        _originalServer = KvController.SharedServer;
 
         _kvStore = CreateStore();
         KvController.SharedKvStore = _kvStore;
@@ -32,8 +38,8 @@ public class KvControllerTests : IDisposable
 
     public void Dispose()
     {
-        KvController.SharedKvStore = null;
-        KvController.SharedServer = null;
+        KvController.SharedKvStore = _originalKvStore;
+        KvController.SharedServer = _originalServer;
 
         _kvStore.Dispose();
 
@@ -660,7 +666,7 @@ public class KvControllerTests : IDisposable
         try
         {
             KvController.SharedKvStore = null;
-            var count = CtrlSetAll("default", new Dictionary<String, Byte[]?> { ["k1"] = new Byte[] { 1 } });
+            var count = CtrlSetAll("default", new Dictionary<String, Byte[]?> { ["k1"] = [1] });
             Assert.Equal(0, count);
         }
         finally

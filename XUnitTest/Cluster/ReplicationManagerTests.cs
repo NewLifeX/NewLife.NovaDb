@@ -84,14 +84,14 @@ public class ReplicationManagerTests : IDisposable
     [Fact(DisplayName = "测试追加复制记录")]
     public void TestAppendRecord()
     {
-        var record1 = new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = new Byte[] { 1, 2, 3 } };
-        var record2 = new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = new Byte[] { 4, 5, 6 } };
+        var record1 = new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 };
+        var record2 = new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 };
 
-        _manager.AppendRecord(record1);
+        _manager.AppendRecord(record1, [1, 2, 3]);
         Assert.Equal(1UL, _manager.MasterLsn);
         Assert.Equal(1UL, record1.Lsn);
 
-        _manager.AppendRecord(record2);
+        _manager.AppendRecord(record2, [4, 5, 6]);
         Assert.Equal(2UL, _manager.MasterLsn);
         Assert.Equal(2UL, record2.Lsn);
     }
@@ -108,16 +108,15 @@ public class ReplicationManagerTests : IDisposable
             _manager.AppendRecord(new WalRecord
             {
                 RecordType = WalRecordType.UpdatePage,
-                PageId = (UInt64)i,
-                Data = new Byte[] { (Byte)i }
-            });
+                PageId = (UInt64)i
+            }, [(Byte)i]);
         }
 
         // 获取全部待复制记录
         var pending = _manager.GetPendingRecords("slave-1");
         Assert.Equal(3, pending.Count);
-        Assert.Equal(1UL, pending[0].Lsn);
-        Assert.Equal(3UL, pending[2].Lsn);
+        Assert.Equal(1UL, pending[0].Header.Lsn);
+        Assert.Equal(3UL, pending[2].Header.Lsn);
 
         // 使用 maxCount 限制
         var limited = _manager.GetPendingRecords("slave-1", 2);
@@ -130,14 +129,14 @@ public class ReplicationManagerTests : IDisposable
         var slave = new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9001", Role = NodeRole.Slave };
         _manager.RegisterSlave(slave);
 
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = Array.Empty<Byte>() });
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = Array.Empty<Byte>() });
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, []);
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 }, []);
 
         // 确认第一条
         _manager.AcknowledgeReplication("slave-1", 1);
         var pending = _manager.GetPendingRecords("slave-1");
         Assert.Single(pending);
-        Assert.Equal(2UL, pending[0].Lsn);
+        Assert.Equal(2UL, pending[0].Header.Lsn);
         Assert.Equal(NodeState.Syncing, slave.State);
 
         // 确认全部
@@ -153,9 +152,9 @@ public class ReplicationManagerTests : IDisposable
         var slave = new NodeInfo { NodeId = "slave-1", Endpoint = "127.0.0.1:9001", Role = NodeRole.Slave };
         _manager.RegisterSlave(slave);
 
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = Array.Empty<Byte>() });
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = Array.Empty<Byte>() });
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 3, Data = Array.Empty<Byte>() });
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, []);
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 }, []);
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 3 }, []);
 
         Assert.Equal(3UL, _manager.GetReplicationLag("slave-1"));
 
@@ -177,8 +176,8 @@ public class ReplicationManagerTests : IDisposable
         _manager.RegisterSlave(slave1);
         _manager.RegisterSlave(slave2);
 
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1, Data = Array.Empty<Byte>() });
-        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2, Data = Array.Empty<Byte>() });
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 1 }, []);
+        _manager.AppendRecord(new WalRecord { RecordType = WalRecordType.UpdatePage, PageId = 2 }, []);
 
         Assert.False(_manager.IsFullySynced(2));
 
@@ -202,9 +201,8 @@ public class ReplicationManagerTests : IDisposable
             _manager.AppendRecord(new WalRecord
             {
                 RecordType = WalRecordType.UpdatePage,
-                PageId = (UInt64)i,
-                Data = Array.Empty<Byte>()
-            });
+                PageId = (UInt64)i
+            }, []);
         }
 
         // slave1 确认到 3，slave2 确认到 2，最小值为 2
@@ -217,7 +215,7 @@ public class ReplicationManagerTests : IDisposable
         // 验证 slave-2 的待复制记录从 LSN 3 开始
         var pending = _manager.GetPendingRecords("slave-2");
         Assert.Equal(3, pending.Count);
-        Assert.Equal(3UL, pending[0].Lsn);
+        Assert.Equal(3UL, pending[0].Header.Lsn);
     }
 
     [Fact(DisplayName = "测试注册主节点角色抛出异常")]
@@ -307,7 +305,7 @@ public class ReplicationManagerTests : IDisposable
             TxId = 7,
             RecordType = (Byte)WalRecordType.UpdatePage,
             PageId = 100,
-            Data = new Byte[] { 1, 2, 3 },
+            Data = [1, 2, 3],
             Timestamp = DateTime.UtcNow.Ticks
         };
 
@@ -347,14 +345,13 @@ public class ReplicationManagerTests : IDisposable
             _manager.AppendRecord(new WalRecord
             {
                 RecordType = WalRecordType.UpdatePage,
-                PageId = i,
-                Data = Array.Empty<Byte>()
-            });
+                PageId = i
+            }, []);
         }
 
         // 从 LSN 10 开始的待复制记录应为 5 条（11, 12, 13, 14, 15）
         var pending = _manager.GetPendingRecords("slave-1");
         Assert.Equal(5, pending.Count);
-        Assert.Equal(11UL, pending[0].Lsn);
+        Assert.Equal(11UL, pending[0].Header.Lsn);
     }
 }
