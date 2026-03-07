@@ -108,11 +108,9 @@ public class WalRecord
         var timestamp = reader.ReadInt64();
 
         // Data
-        var recordData = new Byte[dataLength];
-        if (dataLength > 0)
-        {
-            reader.ReadBytes(dataLength).CopyTo(recordData);
-        }
+        var recordData = dataLength > 0
+            ? reader.ReadBytes(dataLength).ToArray()
+            : [];
 
         return new WalRecord
         {

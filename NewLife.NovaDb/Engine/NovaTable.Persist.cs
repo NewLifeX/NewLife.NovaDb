@@ -1,4 +1,6 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Buffers;
+using NewLife.Buffers;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
@@ -185,56 +187,78 @@ public partial class NovaTable
         var liveRows = new Dictionary<String, Byte[]>();
         var deletedKeys = new HashSet<String>();
 
-        while (_rowLogStream.Position < _rowLogStream.Length)
+        // 复用长度前缀缓冲区
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+        Span<Byte> lenBuf = stackalloc Byte[4];
+#else
+        var lenBuf = new Byte[4];
+#endif
+        // 复用记录体缓冲区，按需扩容
+        var bodyBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        try
         {
-            // 读取 RecordLength
-            var lenBuf = new Byte[4];
-            if (_rowLogStream.Read(lenBuf, 0, 4) < 4) break;
-            var recordLength = BitConverter.ToInt32(lenBuf, 0);
-
-            if (recordLength < 5) break; // 至少 1B type + 4B checksum
-
-            // 读取记录体
-            var body = new Byte[recordLength];
-            var read = _rowLogStream.Read(body, 0, recordLength);
-            if (read < recordLength) break; // 截断记录，忽略
-
-            var recordType = body[0];
-            var dataLength = recordLength - 1 - 4;
-            if (dataLength < 0) break;
-
-            // 校验 CRC32
-            var expectedChecksum = BitConverter.ToUInt32(body, recordLength - 4);
-            var actualChecksum = Crc32.Compute(body, 0, 1 + dataLength);
-            if (expectedChecksum != actualChecksum) continue; // CRC 不匹配，跳过损坏记录
-
-            if (recordType == RecordType_Put && dataLength > 0)
+            while (_rowLogStream.Position < _rowLogStream.Length)
             {
-                var payload = new Byte[dataLength];
-                Array.Copy(body, 1, payload, 0, dataLength);
+                // 读取 RecordLength
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+                if (_rowLogStream.Read(lenBuf) < 4) break;
+                var recordLength = BitConverter.ToInt32(lenBuf);
+#else
+                if (_rowLogStream.Read(lenBuf, 0, 4) < 4) break;
+                var recordLength = BitConverter.ToInt32(lenBuf, 0);
+#endif
 
-                // 反序列化行以提取主键
-                var row = DeserializeRow(payload);
-                var pkValue = row[pkCol.Ordinal];
-                if (pkValue == null) continue;
+                if (recordLength < 5) break; // 至少 1B type + 4B checksum
 
-                var keyStr = pkValue.ToString()!;
-                liveRows[keyStr] = payload;
-                deletedKeys.Remove(keyStr);
+                // 确保 bodyBuf 足够大
+                if (bodyBuf.Length < recordLength)
+                {
+                    ArrayPool<Byte>.Shared.Return(bodyBuf);
+                    bodyBuf = ArrayPool<Byte>.Shared.Rent(recordLength);
+                }
+
+                // 读取记录体
+                var read = _rowLogStream.Read(bodyBuf, 0, recordLength);
+                if (read < recordLength) break; // 截断记录，忽略
+
+                var recordType = bodyBuf[0];
+                var dataLength = recordLength - 1 - 4;
+                if (dataLength < 0) break;
+
+                // 校验 CRC32
+                var expectedChecksum = BitConverter.ToUInt32(bodyBuf, recordLength - 4);
+                var actualChecksum = Crc32.Compute(bodyBuf, 0, 1 + dataLength);
+                if (expectedChecksum != actualChecksum) continue; // CRC 不匹配，跳过损坏记录
+
+                if (recordType == RecordType_Put && dataLength > 0)
+                {
+                    // payload 需要长期持有，必须独立分配
+                    var payload = bodyBuf.AsSpan(1, dataLength).ToArray();
+
+                    // 反序列化行以提取主键
+                    var row = DeserializeRow(payload);
+                    var pkValue = row[pkCol.Ordinal];
+                    if (pkValue == null) continue;
+
+                    var keyStr = pkValue.ToString()!;
+                    liveRows[keyStr] = payload;
+                    deletedKeys.Remove(keyStr);
+                }
+                else if (recordType == RecordType_Delete && dataLength > 0)
+                {
+                    // 直接从 bodyBuf 解码主键，无需分配 keyData
+                    var pkValue = _codec.Decode(bodyBuf, 1, pkCol.DataType);
+                    if (pkValue == null) continue;
+
+                    var keyStr = pkValue.ToString()!;
+                    liveRows.Remove(keyStr);
+                    deletedKeys.Add(keyStr);
+                }
             }
-            else if (recordType == RecordType_Delete && dataLength > 0)
-            {
-                var keyData = new Byte[dataLength];
-                Array.Copy(body, 1, keyData, 0, dataLength);
-
-                // 反序列化主键
-                var pkValue = _codec.Decode(keyData, 0, pkCol.DataType);
-                if (pkValue == null) continue;
-
-                var keyStr = pkValue.ToString()!;
-                liveRows.Remove(keyStr);
-                deletedKeys.Add(keyStr);
-            }
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(bodyBuf);
         }
 
         // 将存活的行加载到内存索引

@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using NewLife.Buffers;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
 using NewLife.NovaDb.Utilities;
@@ -706,29 +707,32 @@ public partial class NovaTable : IDisposable
             if (headerPk.TryGetArray(out var segment))
                 fs.Write(segment.Array!, segment.Offset, segment.Count);
 
-            // 写入索引条目
-            using var bw = new BinaryWriter(fs, System.Text.Encoding.UTF8, leaveOpen: true);
+            // 使用 SpanWriter + 流模式写入索引条目，避免 BinaryWriter 分配
+            Span<Byte> spanBuf = stackalloc Byte[4096];
+            var writer = new SpanWriter(spanBuf, fs);
 
             var allEntries = idx.GetAll();
-            bw.Write(allEntries.Count);
+            writer.Write(allEntries.Count);
 
             foreach (var entry in allEntries)
             {
                 // 编码索引键
                 var keyBytes = _codec.Encode(entry.Key.Value, indexKeyType);
-                bw.Write(keyBytes.Length);
-                bw.Write(keyBytes);
+                writer.Write(keyBytes.Length);
+                writer.Write(keyBytes);
 
                 // 写入主键列表
                 var pkList = entry.Value;
-                bw.Write(pkList.Count);
+                writer.Write(pkList.Count);
                 foreach (var pk in pkList)
                 {
                     var pkBytes = _codec.Encode(pk.Value, pkCol.DataType);
-                    bw.Write(pkBytes.Length);
-                    bw.Write(pkBytes);
+                    writer.Write(pkBytes.Length);
+                    writer.Write(pkBytes);
                 }
             }
+
+            writer.Flush();
         }
     }
 
@@ -769,27 +773,24 @@ public partial class NovaTable : IDisposable
             _codec.Encode(row[i], colDef.DataType, segment.Array!, segment.Offset);
         }
 
-        var len = w.WrittenCount;
-        var result = new Byte[len];
-        Buffer.BlockCopy(w.Buffer, 0, result, 0, len);
-        return result;
+        return w.Buffer.AsSpan(0, w.WrittenCount).ToArray();
     }
 
     /// <summary>反序列化行数据</summary>
     private Object?[] DeserializeRow(Byte[] payload)
     {
-        using var ms = new MemoryStream(payload);
-        using var br = new BinaryReader(ms);
+        var reader = new SpanReader(payload);
 
-        var colCount = br.ReadInt32();
+        var colCount = reader.ReadInt32();
         var row = new Object?[colCount];
 
         for (var i = 0; i < colCount; i++)
         {
-            var length = br.ReadInt32();
-            var encoded = br.ReadBytes(length);
+            var length = reader.ReadInt32();
             var colDef = _schema.Columns[i];
-            row[i] = _codec.Decode(encoded, 0, colDef.DataType);
+            // 直接传递原始 payload 及当前偏移，避免 ReadBytes 的额外分配
+            row[i] = _codec.Decode(payload, reader.Position, colDef.DataType);
+            reader.Advance(length);
         }
 
         return row;

@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Buffers.Binary;
 using System.Text;
+using NewLife.Buffers;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
@@ -313,63 +314,87 @@ public partial class FluxEngine
 
         _fluxLogStream.Position = FluxLogHeaderSize;
 
-        while (_fluxLogStream.Position < _fluxLogStream.Length)
+        // 复用长度前缀缓冲区
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+        Span<Byte> lenBuf = stackalloc Byte[4];
+#else
+        var lenBuf = new Byte[4];
+#endif
+        // 复用记录体缓冲区
+        var bodyBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        try
         {
-            var lenBuf = new Byte[4];
-            if (_fluxLogStream.Read(lenBuf, 0, 4) < 4) break;
-            var recordLength = BitConverter.ToInt32(lenBuf, 0);
-            if (recordLength < 5) break;
-
-            var body = new Byte[recordLength];
-            if (_fluxLogStream.Read(body, 0, recordLength) < recordLength) break;
-
-            var recordType = body[0];
-            var dataLength = recordLength - 1 - 4;
-            if (dataLength < 0) break;
-
-            // 校验 CRC32
-            var expectedChecksum = BitConverter.ToUInt32(body, recordLength - 4);
-            var actualChecksum = Crc32.Compute(body, 0, 1 + dataLength);
-            if (expectedChecksum != actualChecksum) continue;
-
-            if (recordType == RecordType_FluxAppend && dataLength >= 12)
+            while (_fluxLogStream.Position < _fluxLogStream.Length)
             {
-                ReplayFluxAppend(body, 1, dataLength);
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+                if (_fluxLogStream.Read(lenBuf) < 4) break;
+                var recordLength = BitConverter.ToInt32(lenBuf);
+#else
+                if (_fluxLogStream.Read(lenBuf, 0, 4) < 4) break;
+                var recordLength = BitConverter.ToInt32(lenBuf, 0);
+#endif
+                if (recordLength < 5) break;
+
+                // 确保缓冲区足够大
+                if (bodyBuf.Length < recordLength)
+                {
+                    ArrayPool<Byte>.Shared.Return(bodyBuf);
+                    bodyBuf = ArrayPool<Byte>.Shared.Rent(recordLength);
+                }
+
+                if (_fluxLogStream.Read(bodyBuf, 0, recordLength) < recordLength) break;
+
+                var recordType = bodyBuf[0];
+                var dataLength = recordLength - 1 - 4;
+                if (dataLength < 0) break;
+
+                // 校验 CRC32
+                var expectedChecksum = BitConverter.ToUInt32(bodyBuf, recordLength - 4);
+                var actualChecksum = Crc32.Compute(bodyBuf, 0, 1 + dataLength);
+                if (expectedChecksum != actualChecksum) continue;
+
+                if (recordType == RecordType_FluxAppend && dataLength >= 12)
+                {
+                    ReplayFluxAppend(bodyBuf, 1, dataLength);
+                }
+                else if (recordType == RecordType_FluxPurge && dataLength > 0)
+                {
+                    ReplayFluxPurge(bodyBuf, 1, dataLength);
+                }
             }
-            else if (recordType == RecordType_FluxPurge && dataLength > 0)
-            {
-                ReplayFluxPurge(body, 1, dataLength);
-            }
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(bodyBuf);
         }
     }
 
     /// <summary>回放 Append 记录</summary>
     private void ReplayFluxAppend(Byte[] body, Int32 offset, Int32 dataLength)
     {
-        using var ms = new MemoryStream(body, offset, dataLength);
-        using var br = new BinaryReader(ms);
+        var reader = new SpanReader(body, offset, dataLength);
 
         var entry = new FluxEntry
         {
-            Timestamp = br.ReadInt64(),
-            SequenceId = br.ReadInt32()
+            Timestamp = reader.ReadInt64(),
+            SequenceId = reader.ReadInt32()
         };
 
         // Fields
-        var fieldCount = br.ReadInt32();
+        var fieldCount = reader.ReadInt32();
         for (var i = 0; i < fieldCount; i++)
         {
-            var key = ReadString(br);
-            var value = ReadFieldValue(br);
+            var key = ReadSpanString(ref reader);
+            var value = ReadSpanFieldValue(ref reader, body);
             entry.Fields[key] = value;
         }
 
         // Tags
-        var tagCount = br.ReadInt32();
+        var tagCount = reader.ReadInt32();
         for (var i = 0; i < tagCount; i++)
         {
-            var key = ReadString(br);
-            var value = ReadString(br);
+            var key = ReadSpanString(ref reader);
+            var value = ReadSpanString(ref reader);
             entry.Tags[key] = value;
         }
 
@@ -381,6 +406,40 @@ public partial class FluxEngine
             _partitions[partKey] = list;
         }
         list.Add(entry);
+    }
+
+    /// <summary>使用 SpanReader 读取 UTF-8 字符串（长度前缀）</summary>
+    private static String ReadSpanString(ref SpanReader reader)
+    {
+        var len = reader.ReadInt32();
+        if (len <= 0) return String.Empty;
+        var bytes = reader.ReadBytes(len);
+        return _encoding.GetString(bytes);
+    }
+
+    /// <summary>使用 SpanReader 读取字段值（带类型标签）</summary>
+    private static Object? ReadSpanFieldValue(ref SpanReader reader, Byte[] body)
+    {
+        var tag = reader.ReadByte();
+        switch (tag)
+        {
+            case TypeTag_Null:
+                return null;
+            case TypeTag_Int32:
+                return reader.ReadInt32();
+            case TypeTag_Int64:
+                return reader.ReadInt64();
+            case TypeTag_Double:
+                return reader.ReadDouble();
+            case TypeTag_Boolean:
+                return reader.ReadByte() != 0;
+            case TypeTag_Bytes:
+                var len = reader.ReadInt32();
+                return reader.ReadBytes(len).ToArray();
+            case TypeTag_String:
+            default:
+                return ReadSpanString(ref reader);
+        }
     }
 
     /// <summary>回放 Purge 记录</summary>

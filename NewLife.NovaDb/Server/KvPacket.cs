@@ -337,44 +337,51 @@ internal static class KvPacket
 
     #region 编码响应
 
+    /// <summary>缓存的 Boolean 响应包</summary>
+    private static readonly IPacket TruePacket = new ArrayPacket([1]);
+    private static readonly IPacket FalsePacket = new ArrayPacket([0]);
+
+    /// <summary>缓存的空响应包</summary>
+    private static readonly IPacket EmptyPacket = new ArrayPacket(EmptyBytes);
+
     /// <summary>编码 Boolean 响应（1 字节）</summary>
-    public static IPacket EncodeBoolean(Boolean value) => new ArrayPacket(new Byte[] { value ? (Byte)1 : (Byte)0 });
+    public static IPacket EncodeBoolean(Boolean value) => value ? TruePacket : FalsePacket;
 
     /// <summary>编码 Int32 响应（4 字节小端）</summary>
     public static IPacket EncodeInt32(Int32 value)
     {
-        var buf = new Byte[4];
-        new SpanWriter(buf, 0, 4).Write(value);
-        return new ArrayPacket(buf);
+        var pk = new OwnerPacket(4);
+        new SpanWriter(pk).Write(value);
+        return pk;
     }
 
     /// <summary>编码 Int64 响应（8 字节小端）</summary>
     public static IPacket EncodeInt64(Int64 value)
     {
-        var buf = new Byte[8];
-        new SpanWriter(buf, 0, 8).Write(value);
-        return new ArrayPacket(buf);
+        var pk = new OwnerPacket(8);
+        new SpanWriter(pk).Write(value);
+        return pk;
     }
 
     /// <summary>编码 Double 响应（8 字节小端）</summary>
     public static IPacket EncodeDouble(Double value)
     {
-        var buf = new Byte[8];
-        new SpanWriter(buf, 0, 8).Write(value);
-        return new ArrayPacket(buf);
+        var pk = new OwnerPacket(8);
+        new SpanWriter(pk).Write(value);
+        return pk;
     }
 
     /// <summary>编码空响应（用于 Clear 等无返回值操作，以及 Get 未找到键时的空包）</summary>
-    public static IPacket EncodeEmpty() => new ArrayPacket(EmptyBytes);
+    public static IPacket EncodeEmpty() => EmptyPacket;
 
     /// <summary>编码字符串数组响应（Int32 count + 每项 EncodedString）</summary>
     public static IPacket EncodeStringArray(String[] keys)
     {
         if (keys.Length == 0)
         {
-            var emptyBuf = new Byte[4];
-            new SpanWriter(emptyBuf, 0, 4).Write(0);
-            return new ArrayPacket(emptyBuf, 0, 4);
+            var emptyPk = new OwnerPacket(4);
+            new SpanWriter(emptyPk).Write(0);
+            return emptyPk;
         }
 
         var bufSize = 4 + keys.Sum(k => 4 + _encoding.GetByteCount(k));

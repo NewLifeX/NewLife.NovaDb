@@ -1,5 +1,7 @@
-﻿using System.Buffers.Binary;
+﻿using System.Buffers;
+using System.Buffers.Binary;
 using System.Text;
+using NewLife.Buffers;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
@@ -350,44 +352,70 @@ public class BinlogWriter : IDisposable
         fs.Position = HeaderSize;
         var pos = 0L;
 
-        while (fs.Position < fs.Length)
+        // 复用长度前缀缓冲区
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+        Span<Byte> lenBuf = stackalloc Byte[4];
+#else
+        var lenBuf = new Byte[4];
+#endif
+        // 复用记录体缓冲区
+        var bodyBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        try
         {
-            var lenBuf = new Byte[4];
-            if (fs.Read(lenBuf, 0, 4) < 4) break;
-            var recordLength = BitConverter.ToInt32(lenBuf, 0);
-            if (recordLength < 5) break;
-
-            var body = new Byte[recordLength];
-            if (fs.Read(body, 0, recordLength) < recordLength) break;
-
-            var dataLength = recordLength - 4;
-            if (dataLength < 1) break;
-
-            // 校验 CRC32
-            var expectedChecksum = BitConverter.ToUInt32(body, dataLength);
-            var actualChecksum = Crc32.Compute(body, 0, dataLength);
-            if (expectedChecksum != actualChecksum) continue;
-
-            // 解析事件
-            using var ms = new MemoryStream(body, 0, dataLength);
-            using var br = new BinaryReader(ms);
-
-            var evt = new BinlogEvent
+            while (fs.Position < fs.Length)
             {
-                Position = pos++,
-                EventType = (BinlogEventType)br.ReadByte(),
-                Timestamp = br.ReadInt64()
-            };
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+                if (fs.Read(lenBuf) < 4) break;
+                var recordLength = BitConverter.ToInt32(lenBuf);
+#else
+                if (fs.Read(lenBuf, 0, 4) < 4) break;
+                var recordLength = BitConverter.ToInt32(lenBuf, 0);
+#endif
+                if (recordLength < 5) break;
 
-            var dbLen = br.ReadInt32();
-            evt.Database = Encoding.UTF8.GetString(br.ReadBytes(dbLen));
+                // 确保缓冲区足够大
+                if (bodyBuf.Length < recordLength)
+                {
+                    ArrayPool<Byte>.Shared.Return(bodyBuf);
+                    bodyBuf = ArrayPool<Byte>.Shared.Rent(recordLength);
+                }
 
-            var sqlLen = br.ReadInt32();
-            evt.Sql = Encoding.UTF8.GetString(br.ReadBytes(sqlLen));
+                if (fs.Read(bodyBuf, 0, recordLength) < recordLength) break;
 
-            evt.AffectedRows = br.ReadInt32();
+                var dataLength = recordLength - 4;
+                if (dataLength < 1) break;
 
-            events.Add(evt);
+                // 校验 CRC32
+                var expectedChecksum = BitConverter.ToUInt32(bodyBuf, dataLength);
+                var actualChecksum = Crc32.Compute(bodyBuf, 0, dataLength);
+                if (expectedChecksum != actualChecksum) continue;
+
+                // 使用 SpanReader 解析事件，避免 MemoryStream + BinaryReader 分配
+                var reader = new SpanReader(bodyBuf, 0, dataLength);
+
+                var evt = new BinlogEvent
+                {
+                    Position = pos++,
+                    EventType = (BinlogEventType)reader.ReadByte(),
+                    Timestamp = reader.ReadInt64()
+                };
+
+                var dbLen = reader.ReadInt32();
+                evt.Database = Encoding.UTF8.GetString(bodyBuf, reader.Position, dbLen);
+                reader.Advance(dbLen);
+
+                var sqlLen = reader.ReadInt32();
+                evt.Sql = Encoding.UTF8.GetString(bodyBuf, reader.Position, sqlLen);
+                reader.Advance(sqlLen);
+
+                evt.AffectedRows = reader.ReadInt32();
+
+                events.Add(evt);
+            }
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(bodyBuf);
         }
 
         return events;

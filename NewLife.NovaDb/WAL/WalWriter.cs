@@ -1,4 +1,5 @@
-﻿using System.Buffers.Binary;
+﻿using System.Buffers;
+using System.Buffers.Binary;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 
@@ -179,35 +180,60 @@ public class WalWriter : IDisposable
         UInt64 maxLsn = 0;
         _fileStream.Seek(0, SeekOrigin.Begin);
 
-        while (_fileStream.Position < _fileStream.Length)
+        // 复用长度前缀缓冲区
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+        Span<Byte> lengthPrefix = stackalloc Byte[4];
+#else
+        var lengthPrefix = new Byte[4];
+#endif
+        // 复用记录体缓冲区
+        var dataBuf = ArrayPool<Byte>.Shared.Rent(4096);
+        try
         {
-            try
+            while (_fileStream.Position < _fileStream.Length)
             {
-                // 读取长度前缀
-                var lengthPrefix = new Byte[4];
-                if (_fileStream.Read(lengthPrefix, 0, 4) != 4)
-                    break;
-
-                var length = BitConverter.ToInt32(lengthPrefix, 0);
-                if (length <= 0 || length > 1024 * 1024) // 最大 1MB
-                    break;
-
-                // 读取记录数据
-                var data = new Byte[length];
-                if (_fileStream.Read(data, 0, length) != length)
-                    break;
-
-                var record = WalRecord.Read(new ArrayPacket(data));
-                if (record.Lsn > maxLsn)
+                try
                 {
-                    maxLsn = record.Lsn;
+                    // 读取长度前缀
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
+                    if (_fileStream.Read(lengthPrefix) != 4)
+                        break;
+                    var length = BitConverter.ToInt32(lengthPrefix);
+#else
+                    if (_fileStream.Read(lengthPrefix, 0, 4) != 4)
+                        break;
+                    var length = BitConverter.ToInt32(lengthPrefix, 0);
+#endif
+                    if (length <= 0 || length > 1024 * 1024) // 最大 1MB
+                        break;
+
+                    // 确保缓冲区足够大
+                    if (dataBuf.Length < length)
+                    {
+                        ArrayPool<Byte>.Shared.Return(dataBuf);
+                        dataBuf = ArrayPool<Byte>.Shared.Rent(length);
+                    }
+
+                    // 读取记录数据
+                    if (_fileStream.Read(dataBuf, 0, length) != length)
+                        break;
+
+                    var record = WalRecord.Read(new ArrayPacket(dataBuf, 0, length));
+                    if (record.Lsn > maxLsn)
+                    {
+                        maxLsn = record.Lsn;
+                    }
+                }
+                catch
+                {
+                    // 忽略损坏的记录
+                    break;
                 }
             }
-            catch
-            {
-                // 忽略损坏的记录
-                break;
-            }
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(dataBuf);
         }
 
         return maxLsn;
