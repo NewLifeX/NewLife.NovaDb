@@ -58,8 +58,7 @@ public class NovaServer : DisposeBase
             return _kvStore;
 
         var dbPath = DbPath;
-        if (String.IsNullOrEmpty(dbPath))
-            dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NovaData");
+        if (dbPath.IsNullOrEmpty()) dbPath = "NovaData".GetFullPath();
 
         return _kvStores.GetOrAdd(tableName, name =>
         {
@@ -91,8 +90,7 @@ public class NovaServer : DisposeBase
 
         // 初始化 SQL 引擎
         var dbPath = DbPath;
-        if (String.IsNullOrEmpty(dbPath))
-            dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NovaData");
+        if (dbPath.IsNullOrEmpty()) dbPath = "NovaData".GetFullPath();
 
         // 初始化数据库管理器，创建/打开系统库并扫描发现所有数据库
         var dbOptions = Options;
