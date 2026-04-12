@@ -45,7 +45,7 @@ public class TableFileManager
             ? $"{_tableName}_{shardId.Value}.data"
             : $"{_tableName}.data";
 
-        return System.IO.Path.Combine(_databasePath, fileName);
+        return Path.Combine(_databasePath, fileName);
     }
 
     /// <summary>获取主键索引文件路径</summary>
@@ -57,7 +57,7 @@ public class TableFileManager
             ? $"{_tableName}_{shardId.Value}.idx"
             : $"{_tableName}.idx";
 
-        return System.IO.Path.Combine(_databasePath, fileName);
+        return Path.Combine(_databasePath, fileName);
     }
 
     /// <summary>获取二级索引文件路径</summary>
@@ -73,7 +73,7 @@ public class TableFileManager
             ? $"{_tableName}_{shardId.Value}_{indexName}.idx"
             : $"{_tableName}_{indexName}.idx";
 
-        return System.IO.Path.Combine(_databasePath, fileName);
+        return Path.Combine(_databasePath, fileName);
     }
 
     /// <summary>获取 WAL 文件路径</summary>
@@ -85,7 +85,7 @@ public class TableFileManager
             ? $"{_tableName}_{shardId.Value}.wal"
             : $"{_tableName}.wal";
 
-        return System.IO.Path.Combine(_databasePath, fileName);
+        return Path.Combine(_databasePath, fileName);
     }
 
     /// <summary>列举所有数据分片 ID</summary>
@@ -101,7 +101,7 @@ public class TableFileManager
         var shardIds = new List<Int32>();
         foreach (var file in files)
         {
-            var fileName = System.IO.Path.GetFileNameWithoutExtension(file);
+            var fileName = Path.GetFileNameWithoutExtension(file);
             // fileName 格式：{TableName}_{ShardId}
             var parts = fileName.Split('_');
             if (parts.Length >= 2 && Int32.TryParse(parts[^1], out var shardId))
@@ -126,7 +126,7 @@ public class TableFileManager
         var indexes = new HashSet<String>();
         foreach (var file in files)
         {
-            var fileName = System.IO.Path.GetFileNameWithoutExtension(file);
+            var fileName = Path.GetFileNameWithoutExtension(file);
             // fileName 格式：{TableName}_{IndexName} 或 {TableName}_{ShardId}_{IndexName}
 
             // 移除表名前缀

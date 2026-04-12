@@ -1,13 +1,15 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
-using NewLife.Data;
+using System.Text;
+using NewLife;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Storage;
 using Xunit;
 
 namespace XUnitTest;
 
-/// <summary>嵌入式模式集成测试，通过 ADO.NET 直接操作本地文件数据库</summary>
+/// <summary>嵌入式模式集成测试，通过 ADO.NET 直接驱动嵌入式引擎进行数据读写</summary>
 [TestCaseOrderer("NewLife.UnitTest.DefaultOrderer", "NewLife.UnitTest")]
 public class EmbeddedIntegrationTests : IDisposable
 {
@@ -15,20 +17,26 @@ public class EmbeddedIntegrationTests : IDisposable
 
     public EmbeddedIntegrationTests()
     {
-        _dbPath = Path.Combine(Path.GetTempPath(), $"NovaEmbedded_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_dbPath);
+        //_dbPath = Path.Combine(Path.GetTempPath(), $"NovaEmbedded_{Guid.NewGuid():N}");
+        _dbPath = "../TestData/NovaEmbedded".GetFullPath();
+        if (Directory.Exists(_dbPath))
+            Directory.Delete(_dbPath, true);
+        //else
+        //    Directory.CreateDirectory(_dbPath);
     }
 
     public void Dispose()
     {
+#if !DEBUG
         if (!String.IsNullOrEmpty(_dbPath) && Directory.Exists(_dbPath))
         {
             try { Directory.Delete(_dbPath, recursive: true); }
             catch { }
         }
+#endif
     }
 
-    /// <summary>创建并打开嵌入式连接</summary>
+    /// <summary>创建默认嵌入式连接</summary>
     private NovaConnection CreateConnection()
     {
         var conn = new NovaConnection { ConnectionString = $"Data Source={_dbPath}" };
@@ -37,7 +45,7 @@ public class EmbeddedIntegrationTests : IDisposable
     }
 
     /// <summary>创建指定 WAL 模式的嵌入式连接</summary>
-    /// <param name="walMode">WAL 模式：Full/Normal/None</param>
+    /// <param name="walMode">WAL 模式，Full/Normal/None</param>
     private NovaConnection CreateConnection(String walMode)
     {
         var conn = new NovaConnection { ConnectionString = $"Data Source={_dbPath};WalMode={walMode}" };
@@ -48,10 +56,10 @@ public class EmbeddedIntegrationTests : IDisposable
     /// <summary>获取表的 .data 文件路径</summary>
     private String GetDataFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.data");
 
-    /// <summary>获取表的 .idx 文件路径</summary>
+    /// <summary>获取表主键索引的 .idx 文件路径</summary>
     private String GetIdxFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.idx");
 
-    /// <summary>获取二级索引的 .idx 文件路径</summary>
+    /// <summary>获取表二级索引的 .idx 文件路径</summary>
     /// <param name="tableName">表名</param>
     /// <param name="indexName">索引名</param>
     private String GetSecondaryIdxFilePath(String tableName, String indexName) => Path.Combine(_dbPath, $"{tableName}_{indexName}.idx");
@@ -59,18 +67,7 @@ public class EmbeddedIntegrationTests : IDisposable
     /// <summary>获取表的 .wal 文件路径</summary>
     private String GetWalFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.wal");
 
-    /// <summary>读取文件头（前 32 字节）</summary>
-    /// <param name="filePath">文件路径</param>
-    private static FileHeader ReadFileHeader(String filePath)
-    {
-        var bytes = new Byte[FileHeader.HeaderSize];
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        if (fs.Read(bytes, 0, FileHeader.HeaderSize) < FileHeader.HeaderSize)
-            throw new InvalidOperationException($"文件过短，无法读取文件头: {filePath}");
-        return FileHeader.Read(bytes);
-    }
-
-    /// <summary>统计 WAL 文件中的记录数</summary>
+    /// <summary>统计 WAL 文件记录数</summary>
     /// <param name="filePath">WAL 文件路径</param>
     private static Int32 CountWalRecords(String filePath)
     {

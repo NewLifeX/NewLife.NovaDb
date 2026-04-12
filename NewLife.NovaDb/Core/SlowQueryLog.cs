@@ -61,7 +61,7 @@ public class SlowQueryLog
         if (!Enabled || elapsedMs < ThresholdMs) return false;
         if (String.IsNullOrEmpty(sql)) return false;
 
-        System.Threading.Interlocked.Increment(ref _totalCount);
+        Interlocked.Increment(ref _totalCount);
 
         var entry = new SlowQueryEntry
         {

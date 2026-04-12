@@ -55,15 +55,6 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
     private String WalFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.wal");
     private String IdxFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.idx");
 
-    private static FileHeader ReadFileHeader(String filePath)
-    {
-        var bytes = new Byte[FileHeader.HeaderSize];
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        if (fs.Read(bytes, 0, FileHeader.HeaderSize) < FileHeader.HeaderSize)
-            throw new InvalidOperationException($"文件过短: {filePath}");
-        return FileHeader.Read(bytes);
-    }
-
     #endregion
 
     #region DDL 测试
@@ -83,7 +74,7 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
 
         // 验证文件头版本、类型、页大小
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal((Byte)1, header.Version);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);

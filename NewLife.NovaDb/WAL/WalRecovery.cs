@@ -26,7 +26,7 @@ public class WalRecovery
     {
         if (!File.Exists(_walPath))
         {
-            NewLife.Log.XTrace.WriteLine("WAL file not found, no recovery needed");
+            Log.XTrace.WriteLine("WAL file not found, no recovery needed");
             return;
         }
 
@@ -35,7 +35,7 @@ public class WalRecovery
         var committedTxs = new HashSet<UInt64>();
         var pageUpdates = new List<(UInt64 txId, UInt64 pageId, Byte[] data)>();
 
-        NewLife.Log.XTrace.WriteLine($"Starting WAL recovery from {_walPath}");
+        Log.XTrace.WriteLine($"Starting WAL recovery from {_walPath}");
 
         // 扫描所有记录，通过 SpanReader 流模式仅读取头部，按需读取负载
         while (fs.Position < fs.Length)
@@ -76,7 +76,7 @@ public class WalRecovery
             }
             catch (Exception ex)
             {
-                NewLife.Log.XTrace.WriteLine($"WAL record read error (position {fs.Position}): {ex.Message}");
+                Log.XTrace.WriteLine($"WAL record read error (position {fs.Position}): {ex.Message}");
                 break;
             }
         }
@@ -94,14 +94,14 @@ public class WalRecovery
                 }
                 catch (Exception ex)
                 {
-                    NewLife.Log.XTrace.WriteException(ex);
+                    Log.XTrace.WriteException(ex);
                     throw new NovaException(ErrorCode.IoError,
                         $"Failed to apply page update during recovery: pageId={pageId}, txId={txId}", ex);
                 }
             }
         }
 
-        NewLife.Log.XTrace.WriteLine($"WAL recovery completed: {committedTxs.Count} committed transactions, " +
+        Log.XTrace.WriteLine($"WAL recovery completed: {committedTxs.Count} committed transactions, " +
             $"{appliedCount} page updates applied, last LSN={LastCommittedLsn}");
     }
 }

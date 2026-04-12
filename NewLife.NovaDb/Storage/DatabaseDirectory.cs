@@ -78,7 +78,7 @@ public class DatabaseDirectory
         // PageSize 一致性检查
         if (header.PageSize != _options.PageSize)
         {
-            NewLife.Log.XTrace.WriteLine($"Warning: Database options mismatch. " +
+            Log.XTrace.WriteLine($"Warning: Database options mismatch. " +
                 $"File PageSize={header.PageSize}, Current PageSize={_options.PageSize}");
         }
     }

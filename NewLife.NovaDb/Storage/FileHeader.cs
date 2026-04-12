@@ -1,5 +1,6 @@
 ﻿using NewLife.Buffers;
 using NewLife.Data;
+using NewLife.NovaDb.Core;
 using NewLife.Security;
 
 namespace NewLife.NovaDb.Storage;
@@ -7,7 +8,7 @@ namespace NewLife.NovaDb.Storage;
 /// <summary>文件头结构（每个 .data/.idx/.wal 文件的开头，固定 32 字节）</summary>
 /// <remarks>
 /// 文件头布局（32 字节）：
-/// - 0-3: Magic Number (0x4E4F5641 "NOVA")
+/// - 0-3: Magic Number (0x41564F4E，小端写入磁盘即 "NOVA" 4E 4F 56 41)
 /// - 4: Version (当前版本 1)
 /// - 5: FileType (1=Data, 2=Index, 3=Wal, 4=Binlog, 5=Metadata)
 /// - 6: PageSizeShift (页大小位移，实际页大小 = 1 &lt;&lt; shift)
@@ -18,8 +19,8 @@ namespace NewLife.NovaDb.Storage;
 /// </remarks>
 public class FileHeader
 {
-    /// <summary>魔数标识（固定 "NOVA" 0x4E4F5641）</summary>
-    public const UInt32 MagicNumber = 0x4E4F5641;
+    /// <summary>魔数标识（小端写入磁盘 = "NOVA" 0x4E 0x4F 0x56 0x41）</summary>
+    public const UInt32 MagicNumber = 0x41564F4E;
 
     /// <summary>文件头固定大小（32 字节）</summary>
     public const Int32 HeaderSize = 32;
@@ -52,7 +53,7 @@ public class FileHeader
 
         var writer = new SpanWriter(span);
 
-        // Magic Number (4 bytes)
+        // Magic Number (4 bytes) - 小端写入，MagicNumber=0x41564F4E，磁盘字节 = 4E 4F 56 41 = "NOVA"
         writer.Write(MagicNumber);
 
         // Version (1 byte)
@@ -93,7 +94,7 @@ public class FileHeader
     /// <param name="span">包含文件头数据的 Span（至少 32 字节）</param>
     /// <returns>反序列化的文件头对象</returns>
     /// <exception cref="ArgumentException">span 长度不足 32 字节</exception>
-    /// <exception cref="Core.NovaException">魔数验证失败、文件类型无效或校验和验证失败</exception>
+    /// <exception cref="NovaException">魔数验证失败、文件类型无效或校验和验证失败</exception>
     public static FileHeader Read(ReadOnlySpan<Byte> span)
     {
         if (span.Length < HeaderSize)
@@ -101,10 +102,10 @@ public class FileHeader
 
         var reader = new SpanReader(span);
 
-        // Magic Number 验证
+        // Magic Number 验证 - 小端读取，MagicNumber=0x41564F4E，对应磁盘 "NOVA"
         var magic = reader.ReadUInt32();
         if (magic != MagicNumber)
-            throw new Core.NovaException(Core.ErrorCode.FileCorrupted, $"Invalid magic number: 0x{magic:X8}, expected 0x{MagicNumber:X8}");
+            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid magic number: 0x{magic:X8}, expected 0x{MagicNumber:X8}");
 
         // Version
         var version = reader.ReadByte();
@@ -112,14 +113,14 @@ public class FileHeader
         // FileType
         var fileTypeByte = reader.ReadByte();
         if (!Enum.IsDefined(typeof(FileType), fileTypeByte))
-            throw new Core.NovaException(Core.ErrorCode.FileCorrupted, $"Invalid file type: {fileTypeByte}");
+            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid file type: {fileTypeByte}");
 
         var fileType = (FileType)fileTypeByte;
 
         // PageSizeShift 验证（最大 2^24 = 16MB）
         var pageSizeShift = reader.ReadByte();
         if (pageSizeShift > 24)
-            throw new Core.NovaException(Core.ErrorCode.FileCorrupted, $"Invalid page size shift: {pageSizeShift}, must be 0-24");
+            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid page size shift: {pageSizeShift}, must be 0-24");
 
         var pageSize = 1u << pageSizeShift;
 
@@ -136,7 +137,7 @@ public class FileHeader
         var storedChecksum = reader.ReadUInt32();
         var computedChecksum = Crc32.Compute(span[..28]);
         if (storedChecksum != computedChecksum)
-            throw new Core.NovaException(Core.ErrorCode.ChecksumFailed, $"FileHeader checksum mismatch: stored=0x{storedChecksum:X8}, computed=0x{computedChecksum:X8}");
+            throw new NovaException(ErrorCode.ChecksumFailed, $"FileHeader checksum mismatch: stored=0x{storedChecksum:X8}, computed=0x{computedChecksum:X8}");
 
         return new FileHeader
         {
@@ -154,13 +155,33 @@ public class FileHeader
     /// <returns>反序列化的文件头对象</returns>
     /// <exception cref="ArgumentNullException">data 为 null</exception>
     /// <exception cref="ArgumentException">data 长度不足 32 字节</exception>
-    /// <exception cref="Core.NovaException">魔数验证失败或文件类型无效</exception>
+    /// <exception cref="NovaException">魔数验证失败或文件类型无效</exception>
     public static FileHeader Read(IPacket data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
         return Read(data.GetSpan());
+    }
+
+    /// <summary>从文件路径直接读取文件头（32 字节）</summary>
+    /// <param name="fileName">文件路径</param>
+    /// <returns>反序列化的文件头对象</returns>
+    /// <exception cref="ArgumentNullException">fileName 为 null</exception>
+    /// <exception cref="NovaException">文件过短、不是 NOVA 文件、文件类型无效或校验和验证失败</exception>
+    public static FileHeader Read(String fileName)
+    {
+        if (fileName == null) throw new ArgumentNullException(nameof(fileName));
+
+        using var fs = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        if (fs.Length < HeaderSize)
+            throw new NovaException(ErrorCode.FileCorrupted, $"文件过短，无法读取文件头（期望 {HeaderSize} 字节，实际 {fs.Length} 字节）: {fileName}");
+
+        var buf = new Byte[HeaderSize];
+        if (fs.Read(buf, 0, HeaderSize) < HeaderSize)
+            throw new NovaException(ErrorCode.FileCorrupted, $"读取文件头失败，数据不足: {fileName}");
+
+        return Read(buf);
     }
 
     /// <summary>计算页大小的位移值（页大小必须为 2 的幂次）</summary>

@@ -113,10 +113,17 @@ public class FileHeaderTests
 
         using var pk = header.ToPacket();
         var bytes = pk.GetSpan().ToArray();
-        var magic = BitConverter.ToUInt32(bytes, 0);
 
-        Assert.Equal(FileHeader.MagicNumber, magic);
-        Assert.Equal(0x4E4F5641u, magic); // "NOVA"
+        // 修正大端字节序后，文件中物理字节应为 "NOVA"（4E 4F 56 41）
+        // 使用 BitConverter.ToUInt32(LE) 读取会得到 0x41564F4E，故改为直接检验物理字节
+        Assert.Equal((Byte)'N', bytes[0]); // 0x4E
+        Assert.Equal((Byte)'O', bytes[1]); // 0x4F
+        Assert.Equal((Byte)'V', bytes[2]); // 0x56
+        Assert.Equal((Byte)'A', bytes[3]); // 0x41
+
+        // 往返：Read 应成功解析并返回正确文件类型
+        var deserialized = FileHeader.Read(bytes);
+        Assert.Equal(FileType.Data, deserialized.FileType);
     }
 
     [Fact]
