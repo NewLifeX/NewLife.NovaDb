@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Storage;
@@ -77,11 +78,8 @@ public partial class SqlEngine : IDisposable
                 };
 
                 using var pk = header.ToPacket();
-                if (pk.TryGetArray(out var segment))
-                {
-                    using var fs = new FileStream(metaPath, FileMode.Create, FileAccess.Write);
-                    fs.Write(segment.Array!, segment.Offset, segment.Count);
-                }
+                using var fs = new FileStream(metaPath, FileMode.Create, FileAccess.Write);
+                pk.CopyTo(fs);
             }
         }
     }

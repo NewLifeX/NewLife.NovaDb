@@ -98,7 +98,7 @@ public partial class SqlEngine
         // WHERE 过滤
         if (select.Where != null)
         {
-            var filterExtra = new System.Collections.Generic.List<String>();
+            var filterExtra = new List<String>();
             if (select.Where != null)
                 filterExtra.Add("WHERE filter applied");
 

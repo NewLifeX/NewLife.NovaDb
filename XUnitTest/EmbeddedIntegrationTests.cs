@@ -84,6 +84,31 @@ public class EmbeddedIntegrationTests : IDisposable
         return count;
     }
 
+    #region 基础测试
+
+    [Fact(DisplayName = "嵌入式-打开连接创建数据库文件")]
+    public void OpenConnectionCreatesDatabase()
+    {
+        var metaFile = Path.Combine(_dbPath, "nova.db");
+
+        //// 打开连接前，数据库目录应不包含 nova.db 元数据文件
+        //Assert.True(Directory.Exists(_dbPath), "数据库目录应该已存在并可写入");
+
+        using var conn = CreateConnection();
+
+        // 打开连接后应生成 nova.db 元数据文件
+        Assert.True(File.Exists(metaFile), "打开连接后 nova.db 文件应已存在");
+
+        // 验证 nova.db 文件头正确，魔数 NOVA，版本，页面大小
+        var header = FileHeader.Read(metaFile);
+        Assert.Equal((Byte)1, header.Version);
+        Assert.Equal(FileType.Data, header.FileType);
+        Assert.Equal(4096u, header.PageSize);
+        Assert.True(header.CreateTime.Year >= 2020, "CreateTime 应为有效时间");
+    }
+
+    #endregion
+
     #region DDL 测试
 
     [Fact(DisplayName = "嵌入式-创建表")]
