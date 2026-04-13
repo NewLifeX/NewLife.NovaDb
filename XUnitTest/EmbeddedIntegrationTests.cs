@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -130,7 +130,7 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
 
         // 验证 .data 文件头内容
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal((Byte)1, header.Version);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
@@ -183,7 +183,7 @@ public class EmbeddedIntegrationTests : IDisposable
         // 建表后文件应存在且文件头正确
         var dataFile = GetDataFilePath("emb_ddl_drop");
         Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
 
@@ -218,7 +218,7 @@ public class EmbeddedIntegrationTests : IDisposable
 
         // 删表后元数据文件应仍然存在
         Assert.True(File.Exists(metaFile), "数据库元数据文件 nova.db 应在删表后保留");
-        var metaHeader = ReadFileHeader(metaFile);
+        var metaHeader = FileHeader.Read(metaFile);
         Assert.Equal(FileType.Data, metaHeader.FileType);
         Assert.Equal(4096u, metaHeader.PageSize);
 
@@ -287,7 +287,7 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.True(new FileInfo(idxFile).Length >= FileHeader.HeaderSize, "索引文件应至少包含文件头");
 
         // 验证索引文件头
-        var idxHeader = ReadFileHeader(idxFile);
+        var idxHeader = FileHeader.Read(idxFile);
         Assert.Equal(FileType.Index, idxHeader.FileType);
     }
 
@@ -356,7 +356,7 @@ public class EmbeddedIntegrationTests : IDisposable
         // 建表后 .data 文件应存在且文件头正确
         var dataFile = GetDataFilePath("emb_dml_ins1");
         Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
 
@@ -514,7 +514,7 @@ public class EmbeddedIntegrationTests : IDisposable
         var idxSizeEmpty = new FileInfo(idxFile).Length;
 
         // 验证索引文件头
-        var idxHeader = ReadFileHeader(idxFile);
+        var idxHeader = FileHeader.Read(idxFile);
         Assert.Equal(FileType.Index, idxHeader.FileType);
         Assert.Equal(4096u, idxHeader.PageSize);
 
@@ -528,7 +528,7 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.True(idxSizeAfterInsert > idxSizeEmpty, "插入数据后索引 .idx 文件大小应增长");
 
         // 重新读取文件头，确认格式正确
-        var idxHeaderAfter = ReadFileHeader(idxFile);
+        var idxHeaderAfter = FileHeader.Read(idxFile);
         Assert.Equal(FileType.Index, idxHeaderAfter.FileType);
 
         // 通过查询验证数据正确性
@@ -584,7 +584,7 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.Equal(2, Convert.ToInt32(cmd.ExecuteScalar()));
 
         // 索引文件头仍然正确
-        var idxHeader = ReadFileHeader(idxFile);
+        var idxHeader = FileHeader.Read(idxFile);
         Assert.Equal(FileType.Index, idxHeader.FileType);
     }
 
@@ -1208,7 +1208,7 @@ public class EmbeddedIntegrationTests : IDisposable
 
         // 验证 .data 文件头
         var dataFile = GetDataFilePath("emb_wal_full");
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal((UInt16)1, header.Version);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
@@ -1248,7 +1248,7 @@ public class EmbeddedIntegrationTests : IDisposable
         }
 
         // 连接关闭后 WAL 缓冲区已刷盘，验证 .data 文件头
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal(FileType.Data, header.FileType);
 
         // 验证 .wal 文件内容
@@ -1279,7 +1279,7 @@ public class EmbeddedIntegrationTests : IDisposable
         // .data 文件应存在且文件头正确
         var dataFile = GetDataFilePath("emb_wal_none");
         Assert.True(File.Exists(dataFile), "WalMode=None 时 .data 文件应存在");
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal(FileType.Data, header.FileType);
         Assert.Equal(4096u, header.PageSize);
     }
@@ -1295,7 +1295,7 @@ public class EmbeddedIntegrationTests : IDisposable
 
         // 验证 .data 文件头
         var dataFile = GetDataFilePath("emb_wal_grow");
-        var header = ReadFileHeader(dataFile);
+        var header = FileHeader.Read(dataFile);
         Assert.Equal(FileType.Data, header.FileType);
 
         var walFile = GetWalFilePath("emb_wal_grow");
