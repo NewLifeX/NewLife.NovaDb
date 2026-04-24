@@ -43,8 +43,19 @@ public class NovaCommand : DbCommand
     protected override DbTransaction? DbTransaction { get; set; }
     #endregion
 
-    #region 方法
+    #region 构造
+    /// <summary>默认构造</summary>
+    public NovaCommand() { }
 
+    /// <summary>带命令文本和连接的构造</summary>
+    public NovaCommand(String commandText, NovaConnection? connection = null)
+    {
+        CommandText = commandText;
+        DbConnection = connection;
+    }
+    #endregion
+
+    #region 方法
     /// <summary>取消正在执行的命令</summary>
     public override void Cancel() => _cts?.Cancel();
 

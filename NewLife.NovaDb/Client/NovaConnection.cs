@@ -151,6 +151,22 @@ public class NovaConnection : DbConnection
     }
     #endregion
 
+    #region 架构信息
+    /// <summary>获取架构信息</summary>
+    public override DataTable GetSchema() => GetSchema(null, null);
+
+    /// <summary>获取架构信息</summary>
+    public override DataTable GetSchema(String collectionName) => GetSchema(collectionName, null);
+
+    private SchemaProvider? _schemaProvider;
+    /// <summary>获取架构信息</summary>
+    public override DataTable GetSchema(String? collectionName, String?[]? restrictionValues)
+    {
+        var provider = _schemaProvider ??= new SchemaProvider(this);
+        return provider.GetSchema(collectionName, restrictionValues).AsDataTable();
+    }
+    #endregion
+
     #region 释放
     /// <summary>释放资源</summary>
     /// <param name="disposing">是否由 Dispose 调用</param>
