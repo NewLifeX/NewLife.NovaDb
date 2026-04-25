@@ -45,11 +45,17 @@ public partial class SqlEngine
             if (!show.LikePattern.IsNullOrEmpty() && !MatchLike(schema.TableName, show.LikePattern))
                 continue;
 
+            var stats = GetTableStatsNoLock(schema.TableName);
             rows.Add([
-                schema.TableName,         // 0: Tables_in_db
-                "BASE TABLE",             // 1: Table_type
-                schema.EngineName,        // 2: Engine
-                schema.Comment ?? String.Empty // 3: Comment
+                schema.TableName,                          // 0: Tables_in_db
+                "BASE TABLE",                              // 1: Table_type
+                schema.EngineName,                         // 2: Engine
+                schema.Comment ?? String.Empty,            // 3: Comment
+                (Object?)(stats?.ColumnCount ?? 0),        // 4: ColumnCount
+                (Object?)(stats?.IndexCount ?? 0),         // 5: IndexCount
+                (Object?)(stats?.TableRows ?? 0L),         // 6: TableRows
+                (Object?)(stats?.DataLength ?? 0L),        // 7: DataLength
+                stats?.CreateTime,                         // 8: CreateTime
             ]);
         }
 
@@ -57,7 +63,7 @@ public partial class SqlEngine
         var colName = $"Tables_in_{dbName}";
         return new SqlResult
         {
-            ColumnNames = [colName, "Table_type", "Engine", "Comment"],
+            ColumnNames = [colName, "Table_type", "Engine", "Comment", "ColumnCount", "IndexCount", "TableRows", "DataLength", "CreateTime"],
             Rows = rows
         };
     }

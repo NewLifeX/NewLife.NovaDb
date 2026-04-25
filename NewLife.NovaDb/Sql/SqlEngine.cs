@@ -45,6 +45,45 @@ public partial class SqlEngine : IDisposable
             return _schemas.Keys.ToList().AsReadOnly();
         }
     }
+
+    /// <summary>获取单张表的统计信息</summary>
+    /// <param name="tableName">表名</param>
+    /// <returns>表统计信息，不存在时返回 null</returns>
+    public TableStats? GetTableStats(String tableName)
+    {
+        using var _ = _metaLock.AcquireRead();
+        return GetTableStatsNoLock(tableName);
+    }
+
+    /// <summary>获取单张表的统计信息（调用方已持有读锁）</summary>
+    private TableStats? GetTableStatsNoLock(String tableName)
+    {
+        if (!_schemas.TryGetValue(tableName, out var schema))
+            return null;
+
+        var stats = new TableStats
+        {
+            ColumnCount = schema.Columns.Count,
+            // 主键算一个索引，加上二级索引
+            IndexCount = (schema.PrimaryKeyIndex.HasValue ? 1 : 0) + schema.Indexes.Count,
+            Comment = schema.Comment,
+            EngineName = schema.EngineName,
+        };
+
+        if (_tables.TryGetValue(tableName, out var table))
+        {
+            var shards = table.Shards.GetAllShards();
+            foreach (var shard in shards)
+            {
+                stats.TableRows += shard.RowCount;
+                stats.DataLength += shard.SizeBytes;
+            }
+            if (shards.Count > 0)
+                stats.CreateTime = shards.Min(s => s.CreatedAt);
+        }
+
+        return stats;
+    }
     #endregion
 
     #region 构造

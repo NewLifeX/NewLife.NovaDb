@@ -1,4 +1,4 @@
-namespace NewLife.NovaDb.Sql;
+﻿namespace NewLife.NovaDb.Sql;
 
 /// <summary>SQL 执行结果</summary>
 public class SqlResult
@@ -23,4 +23,29 @@ public class SqlResult
             return Rows[0][0];
         return null;
     }
+}
+
+/// <summary>表统计信息</summary>
+public class TableStats
+{
+    /// <summary>存储引擎名称</summary>
+    public String EngineName { get; set; } = "Nova";
+
+    /// <summary>列数</summary>
+    public Int32 ColumnCount { get; set; }
+
+    /// <summary>索引数（含主键）</summary>
+    public Int32 IndexCount { get; set; }
+
+    /// <summary>估算行数</summary>
+    public Int64 TableRows { get; set; }
+
+    /// <summary>数据文件总大小（字节）</summary>
+    public Int64 DataLength { get; set; }
+
+    /// <summary>最早分片创建时间</summary>
+    public DateTime? CreateTime { get; set; }
+
+    /// <summary>表注释</summary>
+    public String? Comment { get; set; }
 }

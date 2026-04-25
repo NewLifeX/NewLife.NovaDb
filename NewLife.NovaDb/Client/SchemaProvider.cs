@@ -743,13 +743,20 @@ internal class SchemaProvider(NovaConnection connection)
         {
             if (!tableFilter.IsNullOrEmpty() && tableName != tableFilter) continue;
 
+            var stats = engine.GetTableStats(tableName);
             var row = schema.AddRow();
             row["TABLE_CATALOG"] = null;
             row["TABLE_SCHEMA"] = schemaName;
             row["TABLE_NAME"] = tableName;
             row["TABLE_TYPE"] = "BASE TABLE";
-            row["ENGINE"] = "Nova";
-            row["TABLE_COMMENT"] = String.Empty;
+            row["ENGINE"] = stats?.EngineName ?? "Nova";
+            row["VERSION"] = stats?.ColumnCount ?? 0;       // 列数
+            row["INDEX_LENGTH"] = stats?.IndexCount ?? 0;   // 索引数（含主键）
+            row["TABLE_ROWS"] = stats?.TableRows ?? 0L;
+            row["DATA_LENGTH"] = stats?.DataLength ?? 0L;
+            if (stats?.CreateTime != null)
+                row["CREATE_TIME"] = stats.CreateTime;
+            row["TABLE_COMMENT"] = stats?.Comment ?? String.Empty;
         }
     }
 
@@ -778,6 +785,16 @@ internal class SchemaProvider(NovaConnection connection)
             row["TABLE_TYPE"] = table_type;
             row["ENGINE"] = GetString(reader, 2);
             row["TABLE_COMMENT"] = GetString(reader, 3);
+            // 扩展字段（服务端列索引 4-8）
+            if (reader.FieldCount > 4)
+            {
+                row["VERSION"] = reader.GetValue(4);       // ColumnCount
+                row["INDEX_LENGTH"] = reader.GetValue(5);  // IndexCount
+                row["TABLE_ROWS"] = reader.GetValue(6);
+                row["DATA_LENGTH"] = reader.GetValue(7);
+                if (!reader.IsDBNull(8))
+                    row["CREATE_TIME"] = reader.GetValue(8);
+            }
         }
     }
 
