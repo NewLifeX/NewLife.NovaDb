@@ -1,4 +1,4 @@
-namespace NewLife.NovaDb.Sql;
+﻿namespace NewLife.NovaDb.Sql;
 
 /// <summary>SQL 词法单元类型</summary>
 public enum SqlTokenType
@@ -134,6 +134,16 @@ public enum SqlTokenType
     Explain,
     /// <summary>MERGE</summary>
     Merge,
+    /// <summary>SHOW</summary>
+    Show,
+    /// <summary>COLUMNS</summary>
+    Columns,
+    /// <summary>DATABASES</summary>
+    Databases,
+    /// <summary>TABLES</summary>
+    Tables,
+    /// <summary>VARIABLES</summary>
+    Variables,
 
     // 标识符与字面量
     /// <summary>标识符</summary>

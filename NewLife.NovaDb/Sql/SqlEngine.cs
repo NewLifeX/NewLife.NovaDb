@@ -128,6 +128,9 @@ public partial class SqlEngine : IDisposable
             // 查询计划
             ExplainStatement explain => ExecuteExplain(explain, parameters),
 
+            // SHOW 命令
+            ShowStatement show => ExecuteShow(show),
+
             _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
         };
 

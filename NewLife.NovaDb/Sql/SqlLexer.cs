@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -77,6 +77,11 @@ public class SqlLexer
         ["DUPLICATE"] = SqlTokenType.Duplicate,
         ["EXPLAIN"] = SqlTokenType.Explain,
         ["MERGE"] = SqlTokenType.Merge,
+        ["SHOW"] = SqlTokenType.Show,
+        ["COLUMNS"] = SqlTokenType.Columns,
+        ["DATABASES"] = SqlTokenType.Databases,
+        ["TABLES"] = SqlTokenType.Tables,
+        ["VARIABLES"] = SqlTokenType.Variables,
     };
 
     /// <summary>创建词法分析器</summary>

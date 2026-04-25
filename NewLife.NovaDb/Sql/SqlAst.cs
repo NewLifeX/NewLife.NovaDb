@@ -34,7 +34,48 @@ public enum SqlStatementType
     /// <summary>MERGE INTO（冲突时自动更新）</summary>
     Merge,
     /// <summary>EXPLAIN 查询计划</summary>
-    Explain
+    Explain,
+    /// <summary>SHOW 命令</summary>
+    Show
+}
+
+/// <summary>SHOW 命令子类型</summary>
+public enum ShowType
+{
+    /// <summary>SHOW DATABASES</summary>
+    Databases,
+    /// <summary>SHOW TABLES [FROM db] [LIKE x]</summary>
+    Tables,
+    /// <summary>SHOW COLUMNS FROM [db.]table</summary>
+    Columns,
+    /// <summary>SHOW INDEX FROM [db.]table</summary>
+    Index,
+    /// <summary>SHOW USERS</summary>
+    Users,
+    /// <summary>SHOW VARIABLES [LIKE x]</summary>
+    Variables,
+}
+
+/// <summary>SHOW 语句</summary>
+public class ShowStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.Show;
+
+    /// <summary>SHOW 子命令类型</summary>
+    public ShowType ShowType { get; set; }
+
+    /// <summary>数据库名（TABLES / INDEX / COLUMNS 使用）</summary>
+    public String? DatabaseName { get; set; }
+
+    /// <summary>表名（INDEX / COLUMNS 使用）</summary>
+    public String? TableName { get; set; }
+
+    /// <summary>LIKE 模式过滤（DATABASES / TABLES / VARIABLES 使用）</summary>
+    public String? LikePattern { get; set; }
+
+    /// <summary>WHERE 条件字符串（USERS 使用）</summary>
+    public String? Where { get; set; }
 }
 
 /// <summary>SQL 语句基类</summary>

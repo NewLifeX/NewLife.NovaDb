@@ -36,6 +36,7 @@ public class SqlParser
             SqlTokenType.Alter => ParseAlter(),
             SqlTokenType.Truncate => ParseTruncate(),
             SqlTokenType.Explain => ParseExplain(),
+            SqlTokenType.Show => ParseShow(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -44,6 +45,122 @@ public class SqlParser
             Advance();
 
         return stmt;
+    }
+
+    private ShowStatement ParseShow()
+    {
+        Expect(SqlTokenType.Show);
+        var stmt = new ShowStatement();
+
+        var next = Peek();
+
+        // SHOW DATABASES [LIKE 'pattern']
+        if (next.Type == SqlTokenType.Databases)
+        {
+            Advance();
+            stmt.ShowType = ShowType.Databases;
+            if (Peek().Type == SqlTokenType.Like)
+            {
+                Advance();
+                stmt.LikePattern = Expect(SqlTokenType.StringLiteral).Value;
+            }
+            return stmt;
+        }
+
+        // SHOW TABLES [FROM db] [LIKE 'pattern']
+        if (next.Type == SqlTokenType.Tables)
+        {
+            Advance();
+            stmt.ShowType = ShowType.Tables;
+            if (Peek().Type == SqlTokenType.From)
+            {
+                Advance();
+                stmt.DatabaseName = ExpectIdentifier();
+            }
+            if (Peek().Type == SqlTokenType.Like)
+            {
+                Advance();
+                stmt.LikePattern = Expect(SqlTokenType.StringLiteral).Value;
+            }
+            return stmt;
+        }
+
+        // SHOW COLUMNS FROM [`db`.`table` | `table`]
+        if (next.Type == SqlTokenType.Columns)
+        {
+            Advance();
+            stmt.ShowType = ShowType.Columns;
+            if (Peek().Type == SqlTokenType.From)
+            {
+                Advance();
+                var first = ExpectIdentifier();
+                if (Peek().Type == SqlTokenType.Dot)
+                {
+                    Advance();
+                    stmt.DatabaseName = first;
+                    stmt.TableName = ExpectIdentifier();
+                }
+                else
+                {
+                    stmt.TableName = first;
+                }
+            }
+            return stmt;
+        }
+
+        // SHOW INDEX FROM [`db`.`table` | `table`]
+        if (next.Type == SqlTokenType.Index)
+        {
+            Advance();
+            stmt.ShowType = ShowType.Index;
+            if (Peek().Type == SqlTokenType.From)
+            {
+                Advance();
+                var first = ExpectIdentifier();
+                if (Peek().Type == SqlTokenType.Dot)
+                {
+                    Advance();
+                    stmt.DatabaseName = first;
+                    stmt.TableName = ExpectIdentifier();
+                }
+                else
+                {
+                    stmt.TableName = first;
+                }
+            }
+            return stmt;
+        }
+
+        // SHOW VARIABLES [LIKE 'pattern']
+        if (next.Type == SqlTokenType.Variables)
+        {
+            Advance();
+            stmt.ShowType = ShowType.Variables;
+            if (Peek().Type == SqlTokenType.Like)
+            {
+                Advance();
+                stmt.LikePattern = Expect(SqlTokenType.StringLiteral).Value;
+            }
+            return stmt;
+        }
+
+        // SHOW USERS [WHERE ...]
+        if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("USERS"))
+        {
+            Advance();
+            stmt.ShowType = ShowType.Users;
+            // 消费剩余 token 作为 Where 字符串（简单处理）
+            if (Peek().Type == SqlTokenType.Where)
+            {
+                var start = _pos;
+                while (Peek().Type != SqlTokenType.Eof && Peek().Type != SqlTokenType.Semicolon)
+                    Advance();
+                stmt.Where = String.Join(" ", _tokens.Skip(start).TakeWhile(t => t.Type != SqlTokenType.Eof && t.Type != SqlTokenType.Semicolon).Select(t => t.Value));
+            }
+            return stmt;
+        }
+
+        throw SyntaxError($"Unexpected token '{next.Value}' after SHOW");
     }
 
     private ExplainStatement ParseExplain()
@@ -1088,6 +1205,20 @@ public class SqlParser
                 return new ColumnRefExpression { ColumnName = token.Value };
 
             default:
+                // 软关键字（STATUS/COLUMNS/FULL/DATABASES 等）在表达式上下文中作为列名
+                if (IsSoftKeyword(token.Type))
+                {
+                    Advance();
+                    if (Peek().Type == SqlTokenType.LeftParen)
+                        return ParseScalarFunction(token.Value);
+                    if (Peek().Type == SqlTokenType.Dot)
+                    {
+                        Advance();
+                        var colName = ExpectIdentifier();
+                        return new ColumnRefExpression { TablePrefix = token.Value, ColumnName = colName };
+                    }
+                    return new ColumnRefExpression { ColumnName = token.Value };
+                }
                 throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
         }
     }
@@ -1225,12 +1356,24 @@ public class SqlParser
     private String ExpectIdentifier()
     {
         var token = Peek();
-        if (token.Type != SqlTokenType.Identifier)
+        if (token.Type != SqlTokenType.Identifier && !IsSoftKeyword(token.Type))
             throw SyntaxError($"Expected identifier, got '{token.Value}' ({token.Type}) at position {token.Position}");
 
         Advance();
         return token.Value;
     }
+
+    /// <summary>判断关键字是否可作为标识符（软关键字）</summary>
+    private static Boolean IsSoftKeyword(SqlTokenType type) => type switch
+    {
+        SqlTokenType.Columns
+        or SqlTokenType.Databases or SqlTokenType.Tables or SqlTokenType.Variables
+        or SqlTokenType.Comment or SqlTokenType.Index
+        or SqlTokenType.Column or SqlTokenType.Database or SqlTokenType.Key
+        or SqlTokenType.Offset or SqlTokenType.Left
+        or SqlTokenType.Right or SqlTokenType.Inner or SqlTokenType.Set => true,
+        _ => false
+    };
 
     private Boolean TryConsume(SqlTokenType type)
     {

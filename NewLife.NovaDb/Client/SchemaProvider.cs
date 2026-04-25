@@ -513,12 +513,13 @@ internal class SchemaProvider(NovaConnection connection)
 
         try
         {
-            var sql = $"SHOW FULL COLUMNS FROM `{schema}`.`{tableName}`";
+            var sql = $"SHOW COLUMNS FROM `{schema}`.`{tableName}`";
             using var cmd = new NovaCommand(sql, connection);
             var pos = 1;
             using var reader = cmd.ExecuteReader(CommandBehavior.Default);
             while (reader.Read())
             {
+                // SHOW COLUMNS 列：Field(0), Type(1), Null(2), Key(3), Default(4), Extra(5), Comment(6)
                 var @string = reader.GetString(0);
                 if (columnRestriction == null || !(@string != columnRestriction))
                 {
@@ -528,21 +529,21 @@ internal class SchemaProvider(NovaConnection connection)
                     row["TABLE_NAME"] = tableName;
                     row["COLUMN_NAME"] = @string;
                     row["ORDINAL_POSITION"] = pos++;
-                    row["COLUMN_DEFAULT"] = reader.GetValue(5);
-                    row["IS_NULLABLE"] = reader.GetString(3);
+                    row["COLUMN_DEFAULT"] = reader.GetValue(4);
+                    row["IS_NULLABLE"] = reader.GetString(2);
                     row["DATA_TYPE"] = reader.GetString(1);
                     row["CHARACTER_MAXIMUM_LENGTH"] = DBNull.Value;
                     row["CHARACTER_OCTET_LENGTH"] = DBNull.Value;
                     row["NUMERIC_PRECISION"] = DBNull.Value;
                     row["NUMERIC_SCALE"] = DBNull.Value;
-                    row["CHARACTER_SET_NAME"] = reader.GetValue(2);
-                    row["COLLATION_NAME"] = row["CHARACTER_SET_NAME"];
+                    row["CHARACTER_SET_NAME"] = DBNull.Value;
+                    row["COLLATION_NAME"] = DBNull.Value;
                     row["COLUMN_TYPE"] = reader.GetString(1);
-                    row["COLUMN_KEY"] = reader.GetString(4);
-                    row["EXTRA"] = reader.GetString(6);
-                    row["PRIVILEGES"] = reader.GetString(7);
-                    row["COLUMN_COMMENT"] = reader.GetString(8);
-                    row["GENERATION_EXPRESSION"] = reader.GetString(6).Contains("VIRTUAL") ? reader.GetString(9) : String.Empty;
+                    row["COLUMN_KEY"] = reader.GetString(3);
+                    row["EXTRA"] = reader.GetString(5);
+                    row["PRIVILEGES"] = String.Empty;
+                    row["COLUMN_COMMENT"] = reader.GetString(6);
+                    row["GENERATION_EXPRESSION"] = String.Empty;
                     ParseColumnRow(row);
                 }
             }
@@ -759,7 +760,7 @@ internal class SchemaProvider(NovaConnection connection)
         var schemaName = restrictions[1];
         var stringBuilder = new StringBuilder();
         var stringBuilder2 = new StringBuilder();
-        stringBuilder.AppendFormat(CultureInfo.InvariantCulture, "SHOW TABLE STATUS FROM `{0}`", schemaName);
+        stringBuilder.AppendFormat(CultureInfo.InvariantCulture, "SHOW TABLES FROM `{0}`", schemaName);
         if (restrictions.Length >= 3 && restrictions[2] != null)
         {
             stringBuilder2.AppendFormat(CultureInfo.InvariantCulture, " LIKE '{0}'", restrictions[2]);
@@ -775,23 +776,8 @@ internal class SchemaProvider(NovaConnection connection)
             row["TABLE_SCHEMA"] = schemaName;
             row["TABLE_NAME"] = reader.GetString(0);
             row["TABLE_TYPE"] = table_type;
-            row["ENGINE"] = GetString(reader, 1);
-            row["VERSION"] = reader.GetValue(2);
-            row["ROW_FORMAT"] = GetString(reader, 3);
-            row["TABLE_ROWS"] = reader.GetValue(4);
-            row["AVG_ROW_LENGTH"] = reader.GetValue(5);
-            row["DATA_LENGTH"] = reader.GetValue(6);
-            row["MAX_DATA_LENGTH"] = reader.GetValue(7);
-            row["INDEX_LENGTH"] = reader.GetValue(8);
-            row["DATA_FREE"] = reader.GetValue(9);
-            row["AUTO_INCREMENT"] = reader.GetValue(10);
-            row["CREATE_TIME"] = reader.GetValue(11);
-            row["UPDATE_TIME"] = reader.GetValue(12);
-            row["CHECK_TIME"] = reader.GetValue(13);
-            row["TABLE_COLLATION"] = GetString(reader, 14);
-            row["CHECKSUM"] = reader.GetValue(15);
-            row["CREATE_OPTIONS"] = GetString(reader, 16);
-            row["TABLE_COMMENT"] = GetString(reader, 17);
+            row["ENGINE"] = GetString(reader, 2);
+            row["TABLE_COMMENT"] = GetString(reader, 3);
         }
     }
 
