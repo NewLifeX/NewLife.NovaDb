@@ -12,6 +12,7 @@ public partial class SqlEngine
         {
             ShowType.Databases => ExecuteShowDatabases(show),
             ShowType.Tables => ExecuteShowTables(show),
+            ShowType.TableStatus => ExecuteShowTableStatus(show),
             ShowType.Columns => ExecuteShowColumns(show),
             ShowType.Index => ExecuteShowIndex(show),
             ShowType.Users => ExecuteShowUsers(show),
@@ -64,6 +65,50 @@ public partial class SqlEngine
         return new SqlResult
         {
             ColumnNames = [colName, "Table_type", "Engine", "Comment", "ColumnCount", "IndexCount", "TableRows", "DataLength", "CreateTime"],
+            Rows = rows
+        };
+    }
+
+    private SqlResult ExecuteShowTableStatus(ShowStatement show)
+    {
+        // MySQL SHOW TABLE STATUS 兼容输出，列顺序与 MySQL 一致（XCode 等元数据按列名取值）
+        var rows = new List<Object?[]>();
+
+        using var _ = _metaLock.AcquireRead();
+        foreach (var schema in _schemas.Values)
+        {
+            if (!show.LikePattern.IsNullOrEmpty() && !MatchLike(schema.TableName, show.LikePattern))
+                continue;
+
+            var stats = GetTableStatsNoLock(schema.TableName);
+            rows.Add([
+                schema.TableName,                          // 0: Name
+                schema.EngineName,                         // 1: Engine
+                10,                                        // 2: Version
+                "Dynamic",                                 // 3: Row_format
+                (Object?)(stats?.TableRows ?? 0L),         // 4: Rows
+                (Object?)0L,                               // 5: Avg_row_length
+                (Object?)(stats?.DataLength ?? 0L),        // 6: Data_length
+                (Object?)0L,                               // 7: Max_data_length
+                (Object?)0L,                               // 8: Index_length
+                (Object?)0L,                               // 9: Data_free
+                (Object?)DBNull.Value,                     // 10: Auto_increment
+                (Object?)(stats?.CreateTime ?? (Object?)DBNull.Value), // 11: Create_time
+                (Object?)DBNull.Value,                     // 12: Update_time
+                (Object?)DBNull.Value,                     // 13: Check_time
+                "utf8mb4_general_ci",                      // 14: Collation
+                (Object?)DBNull.Value,                     // 15: Checksum
+                String.Empty,                              // 16: Create_options
+                schema.Comment ?? String.Empty             // 17: Comment
+            ]);
+        }
+
+        return new SqlResult
+        {
+            ColumnNames = ["Name", "Engine", "Version", "Row_format", "Rows", "Avg_row_length",
+                           "Data_length", "Max_data_length", "Index_length", "Data_free",
+                           "Auto_increment", "Create_time", "Update_time", "Check_time",
+                           "Collation", "Checksum", "Create_options", "Comment"],
             Rows = rows
         };
     }

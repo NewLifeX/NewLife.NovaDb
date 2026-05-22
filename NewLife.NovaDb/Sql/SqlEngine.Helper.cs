@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 
 namespace NewLife.NovaDb.Sql;
@@ -208,13 +208,13 @@ partial class SqlEngine
         return typeName.ToUpper() switch
         {
             "BOOL" or "BOOLEAN" => DataType.Boolean,
-            "INT" or "INT32" or "INTEGER" => DataType.Int32,
+            "TINYINT" or "SMALLINT" or "MEDIUMINT" or "INT" or "INT32" or "INTEGER" => DataType.Int32,
             "BIGINT" or "INT64" or "LONG" => DataType.Int64,
             "FLOAT" or "DOUBLE" or "REAL" => DataType.Double,
             "DECIMAL" or "NUMERIC" => DataType.Decimal,
-            "CHAR" or "NCHAR" or "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" => DataType.String,
-            "BINARY" or "VARBINARY" or "BYTES" or "BLOB" => DataType.Binary,
-            "DATETIME" or "TIMESTAMP" or "DATE" => DataType.DateTime,
+            "CHAR" or "NCHAR" or "VARCHAR" or "NVARCHAR" or "TEXT" or "TINYTEXT" or "MEDIUMTEXT" or "LONGTEXT" or "STRING" or "JSON" or "ENUM" or "SET" => DataType.String,
+            "BINARY" or "VARBINARY" or "BYTES" or "BLOB" or "TINYBLOB" or "MEDIUMBLOB" or "LONGBLOB" => DataType.Binary,
+            "DATETIME" or "TIMESTAMP" or "DATE" or "TIME" or "YEAR" => DataType.DateTime,
             "GEOPOINT" => DataType.GeoPoint,
             "VECTOR" => DataType.Vector,
             _ => throw new NovaException(ErrorCode.SyntaxError, $"Unknown data type: {typeName}")

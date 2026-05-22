@@ -85,6 +85,29 @@ public class SqlParser
             return stmt;
         }
 
+        // SHOW TABLE STATUS [FROM db] [LIKE 'pattern']，MySQL 兼容（XCode 元数据用）
+        if (next.Type == SqlTokenType.Table)
+        {
+            Advance();
+            var after = Peek();
+            if (after.Type != SqlTokenType.Identifier || !after.Value.EqualIgnoreCase("STATUS"))
+                throw SyntaxError($"Expected STATUS after SHOW TABLE, got '{after.Value}'");
+            Advance();
+
+            stmt.ShowType = ShowType.TableStatus;
+            if (Peek().Type == SqlTokenType.From)
+            {
+                Advance();
+                stmt.DatabaseName = ExpectIdentifier();
+            }
+            if (Peek().Type == SqlTokenType.Like)
+            {
+                Advance();
+                stmt.LikePattern = Expect(SqlTokenType.StringLiteral).Value;
+            }
+            return stmt;
+        }
+
         // SHOW COLUMNS FROM [`db`.`table` | `table`]
         if (next.Type == SqlTokenType.Columns)
         {
@@ -291,6 +314,50 @@ public class SqlParser
                 Advance();
                 col.Comment = Expect(SqlTokenType.StringLiteral).Value;
             }
+            else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("AUTO_INCREMENT"))
+            {
+                // MySQL 兼容：自增列
+                Advance();
+                col.IsAutoIncrement = true;
+            }
+            else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("DEFAULT"))
+            {
+                // MySQL 兼容：DEFAULT <literal | identifier>
+                Advance();
+                var v = Peek();
+                // 支持负号前缀
+                var sign = String.Empty;
+                if (v.Type == SqlTokenType.Minus)
+                {
+                    sign = "-";
+                    Advance();
+                    v = Peek();
+                }
+                if (v.Type == SqlTokenType.StringLiteral || v.Type == SqlTokenType.IntegerLiteral
+                    || v.Type == SqlTokenType.FloatLiteral || v.Type == SqlTokenType.Null
+                    || v.Type == SqlTokenType.True || v.Type == SqlTokenType.False
+                    || v.Type == SqlTokenType.Identifier)
+                {
+                    col.DefaultValue = sign + v.Value;
+                    Advance();
+                    // 兼容 CURRENT_TIMESTAMP() / NOW() 等带括号形式，跳过参数列表
+                    if (Peek().Type == SqlTokenType.LeftParen)
+                    {
+                        Advance();
+                        var depth = 1;
+                        while (depth > 0 && Peek().Type != SqlTokenType.Eof)
+                        {
+                            if (Peek().Type == SqlTokenType.LeftParen) depth++;
+                            else if (Peek().Type == SqlTokenType.RightParen) depth--;
+                            Advance();
+                        }
+                    }
+                }
+                else
+                {
+                    throw SyntaxError($"Expected default value, got '{v.Value}' ({v.Type}) at position {v.Position}");
+                }
+            }
             else
             {
                 break;
@@ -343,6 +410,24 @@ public class SqlParser
                 Advance();
                 TryConsume(SqlTokenType.Equals);
                 stmt.Comment = Expect(SqlTokenType.StringLiteral).Value;
+            }
+            else if (next.Type == SqlTokenType.Identifier &&
+                (next.Value.EqualIgnoreCase("DEFAULT") || next.Value.EqualIgnoreCase("CHARSET")
+                || next.Value.EqualIgnoreCase("CHARACTER") || next.Value.EqualIgnoreCase("COLLATE")
+                || next.Value.EqualIgnoreCase("AUTO_INCREMENT") || next.Value.EqualIgnoreCase("ROW_FORMAT")))
+            {
+                // MySQL 兼容：DEFAULT CHARSET=utf8mb4 / CHARACTER SET=xxx / COLLATE=xxx / AUTO_INCREMENT=1 / ROW_FORMAT=DYNAMIC
+                Advance();
+                // 可能后续还有一个修饰词（DEFAULT CHARSET / CHARACTER SET）
+                if (Peek().Type == SqlTokenType.Identifier &&
+                    (Peek().Value.EqualIgnoreCase("CHARSET") || Peek().Value.EqualIgnoreCase("SET")))
+                    Advance();
+                TryConsume(SqlTokenType.Equals);
+                // 消费一个标识符/字面量作为值
+                var v = Peek();
+                if (v.Type == SqlTokenType.Identifier || v.Type == SqlTokenType.StringLiteral
+                    || v.Type == SqlTokenType.IntegerLiteral || v.Type == SqlTokenType.FloatLiteral)
+                    Advance();
             }
             else
             {

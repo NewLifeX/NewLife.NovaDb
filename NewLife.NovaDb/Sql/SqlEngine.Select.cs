@@ -21,6 +21,12 @@ partial class SqlEngine
             return ExecuteSystemTableQuery(stmt, parameters);
         }
 
+        // MySQL 兼容的 information_schema 视图（XCode 元数据访问入口）
+        if (stmt.TableName.StartsWith("information_schema.", StringComparison.OrdinalIgnoreCase))
+        {
+            return ExecuteInformationSchemaQuery(stmt, parameters);
+        }
+
         // JOIN 查询
         if (stmt.HasJoin)
         {
@@ -123,11 +129,18 @@ partial class SqlEngine
     private (TableSchema Schema, List<Object?[]> Rows) BuildSysTablesData()
     {
         var schema = new TableSchema("_sys.tables");
+        // NovaDb 原生字段
         schema.AddColumn(new ColumnDefinition("name", DataType.String, false));
         schema.AddColumn(new ColumnDefinition("column_count", DataType.Int32, false));
         schema.AddColumn(new ColumnDefinition("primary_key", DataType.String, true));
         schema.AddColumn(new ColumnDefinition("row_count", DataType.Int32, false));
+        // MySQL information_schema.tables 兼容字段（XCode 等会使用）
+        schema.AddColumn(new ColumnDefinition("table_schema", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("table_name", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("table_rows", DataType.Int64, true));
+        schema.AddColumn(new ColumnDefinition("table_comment", DataType.String, true));
 
+        var dbName = GetCurrentDatabaseName();
         var rows = new List<Object?[]>();
         using var rl1 = _metaLock.AcquireRead();
         {
@@ -145,7 +158,17 @@ partial class SqlEngine
                     tx.Commit();
                 }
 
-                rows.Add([tableName, tableSchema.Columns.Count, pkCol?.Name, rowCount]);
+                rows.Add(
+                [
+                    tableName,
+                    tableSchema.Columns.Count,
+                    pkCol?.Name,
+                    rowCount,
+                    dbName,
+                    tableName,
+                    (Int64)rowCount,
+                    tableSchema.Comment
+                ]);
             }
         }
 
@@ -292,6 +315,168 @@ partial class SqlEngine
         }
 
         return (schema, rows);
+    }
+
+    #endregion
+
+    #region information_schema 视图
+
+    /// <summary>information_schema 前缀</summary>
+    private const String InformationSchemaPrefix = "information_schema.";
+
+    /// <summary>执行 MySQL 兼容的 information_schema 视图查询</summary>
+    /// <remarks>XCode 等元数据访问会先 SHOW TABLE STATUS，再查 information_schema.columns / statistics</remarks>
+    private SqlResult ExecuteInformationSchemaQuery(SelectStatement stmt, Dictionary<String, Object?>? parameters)
+    {
+        var name = stmt.TableName!.Substring(InformationSchemaPrefix.Length).ToLower();
+
+        var (schema, rows) = name switch
+        {
+            "columns" => BuildInformationSchemaColumns(),
+            "statistics" => BuildInformationSchemaStatistics(),
+            "tables" => BuildInformationSchemaTables(),
+            _ => throw new NovaException(ErrorCode.TableNotFound, $"System view '{stmt.TableName}' not found")
+        };
+
+        if (stmt.Where != null)
+            rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
+
+        if (stmt.OrderBy != null)
+            rows = ApplyOrderBy(rows, stmt.OrderBy, schema);
+
+        if (stmt.OffsetValue.HasValue)
+            rows = rows.Skip(stmt.OffsetValue.Value).ToList();
+        if (stmt.Limit.HasValue)
+            rows = rows.Take(stmt.Limit.Value).ToList();
+
+        return BuildSelectResult(stmt, rows, schema, parameters);
+    }
+
+    /// <summary>当前数据库名（取自数据目录名称）</summary>
+    private String GetCurrentDatabaseName()
+        => Path.GetFileName(_dbPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildInformationSchemaTables()
+    {
+        var schema = new TableSchema("information_schema.tables");
+        schema.AddColumn(new ColumnDefinition("TABLE_SCHEMA", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("TABLE_NAME", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("TABLE_TYPE", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("ENGINE", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("TABLE_ROWS", DataType.Int64, true));
+        schema.AddColumn(new ColumnDefinition("TABLE_COMMENT", DataType.String, true));
+
+        var dbName = GetCurrentDatabaseName();
+        var rows = new List<Object?[]>();
+        using var _ = _metaLock.AcquireRead();
+        foreach (var ts in _schemas.Values)
+        {
+            var stats = GetTableStatsNoLock(ts.TableName);
+            rows.Add([dbName, ts.TableName, "BASE TABLE", ts.EngineName, (Object?)(stats?.TableRows ?? 0L), ts.Comment ?? String.Empty]);
+        }
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildInformationSchemaColumns()
+    {
+        var schema = new TableSchema("information_schema.columns");
+        schema.AddColumn(new ColumnDefinition("TABLE_SCHEMA", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("TABLE_NAME", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("COLUMN_NAME", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("ORDINAL_POSITION", DataType.Int32, false));
+        schema.AddColumn(new ColumnDefinition("COLUMN_DEFAULT", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("IS_NULLABLE", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("DATA_TYPE", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("CHARACTER_MAXIMUM_LENGTH", DataType.Int64, true));
+        schema.AddColumn(new ColumnDefinition("NUMERIC_PRECISION", DataType.Int32, true));
+        schema.AddColumn(new ColumnDefinition("NUMERIC_SCALE", DataType.Int32, true));
+        schema.AddColumn(new ColumnDefinition("COLUMN_TYPE", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("COLUMN_KEY", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("EXTRA", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("COLUMN_COMMENT", DataType.String, true));
+
+        var dbName = GetCurrentDatabaseName();
+        var rows = new List<Object?[]>();
+        using var _ = _metaLock.AcquireRead();
+        foreach (var ts in _schemas.Values)
+        {
+            for (var i = 0; i < ts.Columns.Count; i++)
+            {
+                var col = ts.Columns[i];
+                var (dataType, columnType, precision, scale, maxLength) = MapToMySqlType(col.DataType);
+                rows.Add(
+                [
+                    dbName,                                                 // TABLE_SCHEMA
+                    ts.TableName,                                           // TABLE_NAME
+                    col.Name,                                               // COLUMN_NAME
+                    i + 1,                                                  // ORDINAL_POSITION
+                    (Object?)DBNull.Value,                                  // COLUMN_DEFAULT
+                    col.Nullable ? "YES" : "NO",                            // IS_NULLABLE
+                    dataType,                                               // DATA_TYPE
+                    (Object?)(maxLength.HasValue ? maxLength.Value : DBNull.Value), // CHARACTER_MAXIMUM_LENGTH
+                    (Object?)(precision.HasValue ? precision.Value : DBNull.Value), // NUMERIC_PRECISION
+                    (Object?)(scale.HasValue ? scale.Value : DBNull.Value),         // NUMERIC_SCALE
+                    columnType,                                             // COLUMN_TYPE
+                    col.IsPrimaryKey ? "PRI" : String.Empty,                // COLUMN_KEY
+                    String.Empty,                                           // EXTRA
+                    col.Comment ?? String.Empty                             // COLUMN_COMMENT
+                ]);
+            }
+        }
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildInformationSchemaStatistics()
+    {
+        var schema = new TableSchema("information_schema.statistics");
+        schema.AddColumn(new ColumnDefinition("TABLE_SCHEMA", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("TABLE_NAME", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("NON_UNIQUE", DataType.Int32, false));
+        schema.AddColumn(new ColumnDefinition("INDEX_NAME", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("SEQ_IN_INDEX", DataType.Int32, false));
+        schema.AddColumn(new ColumnDefinition("COLUMN_NAME", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("COLLATION", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("INDEX_TYPE", DataType.String, true));
+
+        var dbName = GetCurrentDatabaseName();
+        var rows = new List<Object?[]>();
+        using var _ = _metaLock.AcquireRead();
+        foreach (var ts in _schemas.Values)
+        {
+            // 主键
+            var pk = ts.GetPrimaryKeyColumn();
+            if (pk != null)
+                rows.Add([dbName, ts.TableName, 0, "PRIMARY", 1, pk.Name, "A", "BTREE"]);
+
+            // 二级索引
+            foreach (var idx in ts.Indexes)
+            {
+                for (var i = 0; i < idx.Columns.Count; i++)
+                {
+                    rows.Add([dbName, ts.TableName, idx.IsUnique ? 0 : 1, idx.IndexName, i + 1, idx.Columns[i], "A", "BTREE"]);
+                }
+            }
+        }
+        return (schema, rows);
+    }
+
+    /// <summary>将 NovaDb 数据类型映射为 MySQL 兼容的元数据描述</summary>
+    private static (String DataType, String ColumnType, Int32? Precision, Int32? Scale, Int64? MaxLength) MapToMySqlType(DataType type)
+    {
+        return type switch
+        {
+            DataType.Boolean => ("tinyint", "tinyint(1)", 3, 0, null),
+            DataType.Int32 => ("int", "int(11)", 10, 0, null),
+            DataType.Int64 => ("bigint", "bigint(20)", 19, 0, null),
+            DataType.Double => ("double", "double", 22, null, null),
+            DataType.Decimal => ("decimal", "decimal(18,4)", 18, 4, null),
+            DataType.String => ("varchar", "varchar(255)", null, null, 255L),
+            DataType.Binary => ("blob", "blob", null, null, 65535L),
+            DataType.DateTime => ("datetime", "datetime", null, null, null),
+            DataType.GeoPoint => ("varchar", "varchar(64)", null, null, 64L),
+            DataType.Vector => ("longtext", "longtext", null, null, null),
+            _ => ("varchar", "varchar(255)", null, null, 255L)
+        };
     }
 
     #endregion

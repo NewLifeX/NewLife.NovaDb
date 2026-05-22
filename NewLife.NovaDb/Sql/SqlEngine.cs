@@ -21,6 +21,9 @@ public partial class SqlEngine : IDisposable
     private Boolean _disposed;
     private Int32 _lastAffectedRows;
 
+    /// <summary>最近一次 INSERT 自增主键值（MySQL LAST_INSERT_ID 行为）</summary>
+    internal Int64 LastInsertId;
+
     /// <summary>事务管理器</summary>
     public TransactionManager TxManager => _txManager;
 
@@ -119,6 +122,32 @@ public partial class SqlEngine : IDisposable
                 using var pk = header.ToPacket();
                 using var fs = new FileStream(metaPath, FileMode.Create, FileAccess.Write);
                 pk.CopyTo(fs);
+            }
+        }
+
+        // 加载已持久化的表架构，使表元数据可跨连接/重启复用
+        LoadPersistedSchemas();
+    }
+
+    /// <summary>从磁盘加载持久化的表架构，并为每张表打开对应的 <see cref="NovaTable"/> 实例</summary>
+    private void LoadPersistedSchemas()
+    {
+        if (!Directory.Exists(_dbPath)) return;
+
+        var schemas = SchemaPersister.LoadAll(_dbPath);
+        foreach (var schema in schemas)
+        {
+            if (_schemas.ContainsKey(schema.TableName)) continue;
+
+            try
+            {
+                var table = new NovaTable(schema, _dbPath, _options, _txManager);
+                _schemas[schema.TableName] = schema;
+                _tables[schema.TableName] = table;
+            }
+            catch
+            {
+                // 单个表加载失败不影响其它表
             }
         }
     }

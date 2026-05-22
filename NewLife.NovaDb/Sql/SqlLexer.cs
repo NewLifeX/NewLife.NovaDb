@@ -141,6 +141,14 @@ public class SqlLexer
                 continue;
             }
 
+            // 反引号或双引号包裹的标识符，例如 `Device` 或 "Device"
+            // 兼容 MySQL/ANSI 风格，XCode 等上层 ORM 会主动加引号
+            if (ch == '`' || ch == '"')
+            {
+                tokens.Add(ReadQuotedIdentifier(ch));
+                continue;
+            }
+
             // 运算符和标点
             tokens.Add(ReadOperatorOrPunctuation());
         }
@@ -226,6 +234,34 @@ public class SqlLexer
 
         var value = _sql[start.._pos];
         return new SqlToken(SqlTokenType.Parameter, value, start);
+    }
+
+    private SqlToken ReadQuotedIdentifier(Char quote)
+    {
+        var start = _pos;
+        _pos++; // 跳过起始引号
+        var sb = new System.Text.StringBuilder();
+
+        while (_pos < _sql.Length)
+        {
+            if (_sql[_pos] == quote)
+            {
+                // 双写引号视为转义，例如 `a``b` 表示 a`b
+                if (_pos + 1 < _sql.Length && _sql[_pos + 1] == quote)
+                {
+                    sb.Append(quote);
+                    _pos += 2;
+                    continue;
+                }
+
+                _pos++; // 跳过结束引号
+                return new SqlToken(SqlTokenType.Identifier, sb.ToString(), start);
+            }
+            sb.Append(_sql[_pos]);
+            _pos++;
+        }
+
+        throw new NovaException(ErrorCode.SyntaxError, $"Unterminated quoted identifier at position {start}");
     }
 
     private SqlToken ReadOperatorOrPunctuation()

@@ -46,6 +46,8 @@ public enum ShowType
     Databases,
     /// <summary>SHOW TABLES [FROM db] [LIKE x]</summary>
     Tables,
+    /// <summary>SHOW TABLE STATUS [FROM db] [LIKE x]，MySQL 兼容</summary>
+    TableStatus,
     /// <summary>SHOW COLUMNS FROM [db.]table</summary>
     Columns,
     /// <summary>SHOW INDEX FROM [db.]table</summary>
@@ -121,6 +123,12 @@ public class SqlColumnDef
 
     /// <summary>是否不允许为空</summary>
     public Boolean NotNull { get; set; }
+
+    /// <summary>是否自增列（MySQL AUTO_INCREMENT）</summary>
+    public Boolean IsAutoIncrement { get; set; }
+
+    /// <summary>默认值字面量文本（如 0、'abc'、CURRENT_TIMESTAMP）</summary>
+    public String? DefaultValue { get; set; }
 
     /// <summary>列注释</summary>
     public String? Comment { get; set; }

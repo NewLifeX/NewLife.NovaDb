@@ -1,4 +1,4 @@
-using NewLife.NovaDb.Core;
+﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Storage;
 
@@ -30,7 +30,11 @@ partial class SqlEngine
             foreach (var colDef in stmt.Columns)
             {
                 var dataType = ParseDataType(colDef.DataTypeName);
-                var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey);
+                var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey)
+                {
+                    IsAutoIncrement = colDef.IsAutoIncrement,
+                    DefaultValue = colDef.DefaultValue
+                };
                 if (colDef.Comment != null)
                     column.Comment = colDef.Comment;
                 schema.AddColumn(column);
@@ -40,6 +44,9 @@ partial class SqlEngine
 
             _schemas[stmt.TableName] = schema;
             _tables[stmt.TableName] = table;
+
+            // 持久化表架构，重启后可恢复
+            SchemaPersister.Save(_dbPath, schema);
 
             return new SqlResult { AffectedRows = 0 };
         }
@@ -73,6 +80,9 @@ partial class SqlEngine
             {
                 // 忽略文件系统错误
             }
+
+            // 删除持久化的表架构文件
+            SchemaPersister.Delete(_dbPath, stmt.TableName);
 
             return new SqlResult { AffectedRows = 0 };
         }
@@ -113,6 +123,9 @@ partial class SqlEngine
                 }
             }
 
+            // 持久化索引定义
+            SchemaPersister.Save(_dbPath, schema);
+
             return new SqlResult { AffectedRows = 0 };
         }
     }
@@ -130,6 +143,9 @@ partial class SqlEngine
             // 从 NovaTable 删除二级索引
             if (_tables.TryGetValue(stmt.TableName, out var table))
                 table.DropSecondaryIndex(stmt.IndexName);
+
+            // 持久化索引变更
+            SchemaPersister.Save(_dbPath, schema);
 
             return new SqlResult { AffectedRows = 0 };
         }
@@ -176,7 +192,11 @@ partial class SqlEngine
                     {
                         var colDef = stmt.ColumnDef!;
                         var dataType = ParseDataType(colDef.DataTypeName);
-                        var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey);
+                        var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey)
+                        {
+                            IsAutoIncrement = colDef.IsAutoIncrement,
+                            DefaultValue = colDef.DefaultValue
+                        };
                         if (colDef.Comment != null)
                             column.Comment = colDef.Comment;
                         schema.AddColumn(column);
@@ -209,6 +229,9 @@ partial class SqlEngine
                 default:
                     throw new NovaException(ErrorCode.NotSupported, $"Unsupported ALTER TABLE action: {stmt.Action}");
             }
+
+            // 表结构变更，持久化更新
+            SchemaPersister.Save(_dbPath, schema);
 
             return new SqlResult { AffectedRows = 0 };
         }

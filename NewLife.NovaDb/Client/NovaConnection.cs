@@ -1,4 +1,5 @@
-﻿using System.Data;
+﻿using System.Collections.Concurrent;
+using System.Data;
 using System.Data.Common;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
@@ -16,6 +17,10 @@ public class NovaConnection : DbConnection
     private NovaClient? _client;
     private SqlEngine? _sqlEngine;
     private Boolean _fromPool;
+
+    /// <summary>嵌入模式下按数据库路径共享 SqlEngine 实例。
+    /// 同一进程内同一数据库目录的多次连接复用同一引擎，避免连接关闭时丢失内存中的表元数据。</summary>
+    private static readonly ConcurrentDictionary<String, SqlEngine> _sharedEngines = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>连接字符串设置</summary>
     public NovaConnectionStringBuilder Setting { get; } = [];
@@ -80,13 +85,18 @@ public class NovaConnection : DbConnection
             var dataSource = Setting.DataSource;
             if (!dataSource.IsNullOrEmpty())
             {
-                var options = new DbOptions
+                // 共享 SqlEngine：同一进程内同一数据库路径只创建一次，避免连接关闭时丢失表元数据
+                var key = Path.GetFullPath(dataSource);
+                _sqlEngine = _sharedEngines.GetOrAdd(key, p =>
                 {
-                    Path = dataSource,
-                    WalMode = Setting.WalMode,
-                    ReadOnly = Setting.ReadOnly
-                };
-                _sqlEngine = new SqlEngine(dataSource, options);
+                    var options = new DbOptions
+                    {
+                        Path = p,
+                        WalMode = Setting.WalMode,
+                        ReadOnly = Setting.ReadOnly
+                    };
+                    return new SqlEngine(p, options);
+                });
             }
         }
         else
@@ -119,7 +129,7 @@ public class NovaConnection : DbConnection
             _client = null;
         }
 
-        _sqlEngine?.Dispose();
+        // 共享 SqlEngine 不在连接关闭时释放，由进程生命周期或显式调用 DisposeSharedEngines 管理
         _sqlEngine = null;
 
         _state = ConnectionState.Closed;
@@ -189,8 +199,21 @@ public class NovaConnection : DbConnection
             _client = null;
         }
 
-        _sqlEngine?.Dispose();
+        // 共享 SqlEngine 不随连接销毁
         _sqlEngine = null;
+    }
+
+    /// <summary>释放所有共享的嵌入式 SqlEngine。通常在进程退出前调用，确保元数据与文件正确释放</summary>
+    public static void DisposeSharedEngines()
+    {
+        foreach (var kv in _sharedEngines.ToArray())
+        {
+            if (_sharedEngines.TryRemove(kv.Key, out var engine))
+            {
+                try { engine.Dispose(); }
+                catch { }
+            }
+        }
     }
     #endregion
 }

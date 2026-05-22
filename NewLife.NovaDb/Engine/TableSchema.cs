@@ -47,6 +47,12 @@ public class ColumnDefinition
     /// <summary>列注释</summary>
     public String? Comment { get; set; }
 
+    /// <summary>是否自增列（MySQL AUTO_INCREMENT）</summary>
+    public Boolean IsAutoIncrement { get; set; }
+
+    /// <summary>默认值</summary>
+    public Object? DefaultValue { get; set; }
+
     /// <summary>创建列定义</summary>
     /// <param name="name">列名</param>
     /// <param name="dataType">数据类型</param>
@@ -65,7 +71,7 @@ public class ColumnDefinition
 public class TableSchema
 {
     private readonly List<ColumnDefinition> _columns = [];
-    private readonly Dictionary<String, Int32> _columnIndexes = [];
+    private readonly Dictionary<String, Int32> _columnIndexes = new(StringComparer.OrdinalIgnoreCase);
     private Int32? _primaryKeyIndex;
     private readonly List<IndexDefinition> _indexes = [];
 
@@ -86,6 +92,9 @@ public class TableSchema
 
     /// <summary>存储引擎名称（默认 Nova）</summary>
     public String EngineName { get; set; } = "Nova";
+
+    /// <summary>下一个自增主键值（仅在内存中维护，重启后由表数据初始化）</summary>
+    internal Int64 NextAutoIncrement;
 
     /// <summary>创建表架构</summary>
     /// <param name="tableName">表名</param>

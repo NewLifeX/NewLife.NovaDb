@@ -1,4 +1,5 @@
 ﻿using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Engine;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -42,6 +43,29 @@ partial class SqlEngine
 
             // 类型转换
             ConvertRowTypes(row, schema);
+
+            // 处理自增主键：显式标记 AUTO_INCREMENT，或整数主键值为空时，均自动分配下一个 ID
+            var pkCol = schema.GetPrimaryKeyColumn();
+            var isAuto = pkCol != null && (pkCol.IsAutoIncrement
+                || pkCol.DataType == DataType.Int32 || pkCol.DataType == DataType.Int64);
+            if (pkCol != null && isAuto && row[pkCol.Ordinal] == null)
+            {
+                EnsureAutoIncrementSeed(table, schema, pkCol);
+                var nextId = ++schema.NextAutoIncrement;
+                row[pkCol.Ordinal] = pkCol.DataType == DataType.Int32 ? (Object)(Int32)nextId : nextId;
+                LastInsertId = nextId;
+            }
+            else if (pkCol != null && isAuto && row[pkCol.Ordinal] != null)
+            {
+                // 用户显式提供值，更新种子，避免后续冲突
+                try
+                {
+                    var v = Convert.ToInt64(row[pkCol.Ordinal]);
+                    if (v > schema.NextAutoIncrement) schema.NextAutoIncrement = v;
+                    LastInsertId = v;
+                }
+                catch { }
+            }
 
             table.Insert(tx, row);
             affectedRows++;
@@ -297,6 +321,28 @@ partial class SqlEngine
 
         tx.Commit();
         return new SqlResult { AffectedRows = affectedRows };
+    }
+
+    /// <summary>首次需要自增时，从已存在的数据中初始化种子，使重启后仍可继续递增</summary>
+    private void EnsureAutoIncrementSeed(NovaTable table, TableSchema schema, ColumnDefinition pkCol)
+    {
+        if (schema.NextAutoIncrement > 0) return;
+
+        Int64 max = 0;
+        using var tx = _txManager.BeginTransaction();
+        foreach (var existing in table.GetAll(tx))
+        {
+            var v = existing[pkCol.Ordinal];
+            if (v == null) continue;
+            try
+            {
+                var n = Convert.ToInt64(v);
+                if (n > max) max = n;
+            }
+            catch { }
+        }
+        tx.Commit();
+        schema.NextAutoIncrement = max;
     }
 
     #endregion

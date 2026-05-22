@@ -486,6 +486,7 @@ internal class SchemaProvider(NovaConnection connection)
             {
                 if (columnRestriction != null && col.Name != columnRestriction) continue;
 
+                var (dataType, columnType) = MapDataTypeToMySql(col.DataType);
                 var row = schemaCollection.AddRow();
                 row["TABLE_CATALOG"] = DBNull.Value;
                 row["TABLE_SCHEMA"] = schema;
@@ -494,16 +495,16 @@ internal class SchemaProvider(NovaConnection connection)
                 row["ORDINAL_POSITION"] = pos++;
                 row["COLUMN_DEFAULT"] = DBNull.Value;
                 row["IS_NULLABLE"] = col.Nullable ? "YES" : "NO";
-                row["DATA_TYPE"] = col.DataType.ToString();
+                row["DATA_TYPE"] = dataType;
                 row["CHARACTER_MAXIMUM_LENGTH"] = DBNull.Value;
                 row["CHARACTER_OCTET_LENGTH"] = DBNull.Value;
                 row["NUMERIC_PRECISION"] = DBNull.Value;
                 row["NUMERIC_SCALE"] = DBNull.Value;
                 row["CHARACTER_SET_NAME"] = DBNull.Value;
                 row["COLLATION_NAME"] = DBNull.Value;
-                row["COLUMN_TYPE"] = col.DataType.ToString();
+                row["COLUMN_TYPE"] = columnType;
                 row["COLUMN_KEY"] = col.IsPrimaryKey ? "PRI" : String.Empty;
-                row["EXTRA"] = String.Empty;
+                row["EXTRA"] = col.IsAutoIncrement ? "auto_increment" : String.Empty;
                 row["PRIVILEGES"] = String.Empty;
                 row["COLUMN_COMMENT"] = col.Comment ?? String.Empty;
                 row["GENERATION_EXPRESSION"] = String.Empty;
@@ -824,6 +825,25 @@ internal class SchemaProvider(NovaConnection connection)
         }
 
         return collection;
+    }
+
+    /// <summary>将 NovaDb 数据类型映射为 MySQL 兼容的类型名（用于元数据回填，使 XCode 等 ORM 能正确识别）</summary>
+    private static (String DataType, String ColumnType) MapDataTypeToMySql(DataType type)
+    {
+        return type switch
+        {
+            DataType.Boolean => ("tinyint", "tinyint(1)"),
+            DataType.Int32 => ("int", "int(11)"),
+            DataType.Int64 => ("bigint", "bigint(20)"),
+            DataType.Double => ("double", "double"),
+            DataType.Decimal => ("decimal", "decimal(18,4)"),
+            DataType.String => ("varchar", "varchar(255)"),
+            DataType.Binary => ("blob", "blob"),
+            DataType.DateTime => ("datetime", "datetime"),
+            DataType.GeoPoint => ("varchar", "varchar(64)"),
+            DataType.Vector => ("longtext", "longtext"),
+            _ => ("varchar", "varchar(255)")
+        };
     }
 }
 

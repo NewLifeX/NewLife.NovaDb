@@ -605,7 +605,7 @@ partial class SqlEngine
                 return _lastAffectedRows;
 
             case "LAST_INSERT_ID":
-                return 0; // NovaDb 不支持自增主键，返回 0
+                return LastInsertId;
 
             // 哈希函数
             case "MD5":
