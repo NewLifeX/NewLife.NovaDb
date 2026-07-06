@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using NewLife.Caching;
+using NewLife.Collections;
 using NewLife.Data;
 using NewLife.Messaging;
 using NewLife.NovaDb.Client;
@@ -20,6 +21,12 @@ public class NovaCache : Cache
     private readonly KvStore? _kvStore;
     private readonly NovaClient? _client;
     private FluxEngine? _fluxEngine;
+
+    /// <summary>客户端来源连接池。不为空时 Dispose 将归还客户端到池，否则直接关闭</summary>
+    internal IPool<NovaClient>? ClientPool { get; set; }
+
+    /// <summary>是否拥有客户端生命周期。为 true 时 Dispose 会归还/关闭客户端；为 false 时由外部管理。默认 true</summary>
+    internal Boolean OwnsClient { get; set; } = true;
 
     /// <summary>是否为嵌入模式</summary>
     public Boolean IsEmbedded => _kvStore != null;
@@ -367,4 +374,27 @@ public class NovaCache : Cache
     }
     #endregion
 
+    #region 释放
+    /// <summary>释放资源。归还客户端到连接池或直接关闭</summary>
+    /// <param name="disposing">是否由 Dispose 调用</param>
+    protected override void Dispose(Boolean disposing)
+    {
+        base.Dispose(disposing);
+
+        if (!OwnsClient) return;
+        if (_kvStore != null) return;
+
+        if (ClientPool != null && _client != null)
+        {
+            // 归还到连接池，由池管理后续生命周期
+            ClientPool.Return(_client);
+        }
+        else if (_client != null)
+        {
+            // 直接创建的客户端，关闭并释放
+            _client.Close(disposing ? "Dispose" : "GC");
+            _client.TryDispose();
+        }
+    }
+    #endregion
 }

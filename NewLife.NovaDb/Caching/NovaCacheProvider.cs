@@ -1,4 +1,5 @@
 ﻿using NewLife.Caching;
+using NewLife.Collections;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Queues;
 
@@ -15,7 +16,7 @@ namespace NewLife.NovaDb.Caching;
 /// - 多 KV 表通过 GetCache(tableName) 获取
 /// - 多队列通过 GetQueue(topic, group) 获取
 /// </remarks>
-public class NovaCacheProvider : CacheProvider
+public class NovaCacheProvider : CacheProvider, IDisposable
 {
     #region 属性
     private readonly String _connectionString;
@@ -23,6 +24,7 @@ public class NovaCacheProvider : CacheProvider
     private NovaCache? _novaCache;
     private EmbeddedDatabase? _embeddedDb;
     private NovaClient? _client;
+    private IPool<NovaClient>? _pool;
     #endregion
 
     #region 构造
@@ -57,10 +59,11 @@ public class NovaCacheProvider : CacheProvider
         else
         {
             // 网络模式：从连接池获取 NovaClient
-            var pool = _factory.PoolManager.GetPool(csb);
-            _client = pool.Get();
+            _pool = _factory.PoolManager.GetPool(csb);
+            _client = _pool.Get();
 
-            _novaCache = new NovaCache(_client);
+            // 主 NovaCache 不拥有客户端生命周期（由本 Provider 管理）
+            _novaCache = new NovaCache(_client) { OwnsClient = false };
             Cache = _novaCache;
         }
     }
@@ -81,7 +84,8 @@ public class NovaCacheProvider : CacheProvider
         }
 
         if (_client != null)
-            return new NovaCache(_client) { Name = tableName };
+            // 子缓存共享主客户端，不拥有生命周期（由本 Provider 统一管理）
+            return new NovaCache(_client) { Name = tableName, OwnsClient = false };
 
         throw new InvalidOperationException("NovaCacheProvider 未初始化");
     }
@@ -102,6 +106,22 @@ public class NovaCacheProvider : CacheProvider
         }
 
         return base.GetQueue<T>(topic, group);
+    }
+    #endregion
+
+    #region 释放
+    /// <summary>释放资源。归还网络模式客户端到连接池</summary>
+    public void Dispose()
+    {
+        if (_client != null && _pool != null)
+        {
+            _pool.Return(_client);
+            _client = null;
+            _pool = null;
+        }
+
+        _novaCache = null;
+        _embeddedDb = null;
     }
     #endregion
 }

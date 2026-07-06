@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Threading;
 using NewLife.Collections;
 using NewLife.Log;
 
@@ -22,34 +23,50 @@ public class NovaClientPool : ObjectPool<NovaClient>
         return new NovaClient($"tcp://{server}:{port}");
     }
 
-    /// <summary>获取连接。剔除无效连接</summary>
-    /// <returns>可用的 NovaClient 实例</returns>
-    public override NovaClient Get()
+    /// <summary>借出时健康检查。新连接或空闲连接被取出时调用，确保连接可用</summary>
+    /// <param name="value">NovaClient 实例</param>
+    /// <returns>可用返回 true，不可用则基类自动销毁并重试</returns>
+    protected override Boolean OnGet(NovaClient value)
     {
-        var retryCount = 0;
-        while (true)
+        if (value.IsConnected) return true;
+
+        // 未连接（新创建或空闲断开），尝试打开
+        try
         {
-            var client = base.Get();
-
-            // 新创建的连接尚未打开，打开后返回
-            if (!client.IsConnected)
-            {
-                try
-                {
-                    client.Open();
-                    return client;
-                }
-                catch
-                {
-                    // 打开失败，丢弃后重试
-                    client.TryDispose();
-                    if (retryCount++ > 10) throw new InvalidOperationException("无法从连接池获取可用连接");
-                    continue;
-                }
-            }
-
-            return client;
+            value.Open();
+            return true;
         }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>归还时校验。连接归还到池时调用，仅健康的连接才允许入池</summary>
+    /// <param name="value">NovaClient 实例</param>
+    /// <returns>健康返回 true，不健康则基类销毁不入池</returns>
+    protected override Boolean OnReturn(NovaClient value)
+    {
+        if (value == null) return false;
+
+        // 已销毁或被 Dispose 的连接不入池
+        if (value is DisposeBase db && db.Disposed) return false;
+
+        // 已断开的连接不入池（可能网络异常断开）
+        if (!value.IsConnected) return false;
+
+        return true;
+    }
+
+    /// <summary>异步健康检查。默认委托给同步 <see cref="OnGet"/></summary>
+    /// <param name="value">NovaClient 实例</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>可用返回 true，不可用则基类自动销毁并重试</returns>
+    protected override Task<Boolean> OnGetAsync(NovaClient value, CancellationToken cancellationToken = default)
+    {
+        // 当前 Open() 是同步操作，委托给同步 OnGet
+        // 子类可在 OpenAsync 实现后重写此方法
+        return Task.FromResult(OnGet(value));
     }
 }
 
@@ -76,7 +93,7 @@ public class NovaPoolManager
             Min = 2,
             Max = 100000,
             IdleTime = 30,
-            AllIdleTime = 300,
+            MaxLifetime = 300,
         };
 
         return pool;

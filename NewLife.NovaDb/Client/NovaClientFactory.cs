@@ -131,7 +131,7 @@ public sealed class NovaClientFactory : DbProviderFactory
             var client = pool.Get();
             try
             {
-                return new NovaCache(client) { Name = tableName };
+                return new NovaCache(client) { Name = tableName, ClientPool = pool };
             }
             catch
             {
