@@ -625,11 +625,15 @@ public class SqlEngineTests : IDisposable
 
         Assert.True(result.IsQuery);
         Assert.Equal(2, result.Rows.Count);
-        Assert.Equal(4, result.ColumnNames!.Length);
+        Assert.Equal(8, result.ColumnNames!.Length);
         Assert.Equal("name", result.ColumnNames[0]);
         Assert.Equal("column_count", result.ColumnNames[1]);
         Assert.Equal("primary_key", result.ColumnNames[2]);
         Assert.Equal("row_count", result.ColumnNames[3]);
+        Assert.Equal("table_schema", result.ColumnNames[4]);
+        Assert.Equal("table_name", result.ColumnNames[5]);
+        Assert.Equal("table_rows", result.ColumnNames[6]);
+        Assert.Equal("table_comment", result.ColumnNames[7]);
     }
 
     [Fact(DisplayName = "测试 _sys.tables WHERE 过滤")]

@@ -407,7 +407,7 @@ public class SqlFunctionTests : IDisposable
     public void TestLastInsertId()
     {
         var r = _engine.Execute("SELECT LAST_INSERT_ID()");
-        Assert.Equal(0, r.Rows[0][0]);
+        Assert.Equal(0L, r.Rows[0][0]);
     }
 
     #endregion
