@@ -77,6 +77,7 @@ public class SqlLexer
         ["DUPLICATE"] = SqlTokenType.Duplicate,
         ["EXPLAIN"] = SqlTokenType.Explain,
         ["MERGE"] = SqlTokenType.Merge,
+        ["IGNORE"] = SqlTokenType.Ignore,
         ["SHOW"] = SqlTokenType.Show,
         ["COLUMNS"] = SqlTokenType.Columns,
         ["DATABASES"] = SqlTokenType.Databases,

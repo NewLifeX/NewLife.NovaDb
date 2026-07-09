@@ -185,6 +185,7 @@ public partial class SqlEngine : IDisposable
 
             // DML 语句
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters), sql),
+            ReplaceStatement replace => TrackInsert(ExecuteReplace(replace, parameters), sql),
             UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters), sql),
             MergeStatement merge => TrackInsert(ExecuteMerge(merge, parameters), sql),
             UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters), sql),

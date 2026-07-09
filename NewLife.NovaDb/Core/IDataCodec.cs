@@ -107,7 +107,8 @@ public class DefaultDataCodec : IDataCodec
                     {
                         if (buffer.Length < offset + 1)
                             throw new ArgumentException($"Buffer too short to encode Boolean (need {offset + 1} bytes, got {buffer.Length})");
-                        buffer[offset] = (Boolean)value ? ((Byte)1) : ((Byte)0);
+                        // 使用 0x01=true, 0x02=false，避免与 NullFlag(0x00) 冲突
+                        buffer[offset] = (Boolean)value ? ((Byte)1) : ((Byte)2);
                         return 1;
                     }
                 case DataType.Int32:
@@ -176,7 +177,7 @@ public class DefaultDataCodec : IDataCodec
         if (offset >= buffer.Length)
             throw new ArgumentOutOfRangeException(nameof(offset), "Offset exceeds buffer length");
 
-        // 检查 NULL 标记（单字节 0x00 表示 NULL）
+        // 检查 NULL 标记（单字节 0x00 表示 NULL）。仅当缓冲区剩余正好 1 字节时视为 null，避免误判 Int32.MinValue（首字节也是 0x00）
         if (buffer[offset] == NullFlag && buffer.Length - offset == 1)
             return null;
 
@@ -357,7 +358,10 @@ public class DefaultDataCodec : IDataCodec
     {
         if (buffer.Length < offset + 1)
             throw new ArgumentException($"Buffer too short to read Boolean (need {offset + 1} bytes, got {buffer.Length})");
-        return BitConverter.ToBoolean(buffer, offset);
+        var b = buffer[offset];
+        if (b == NullFlag)
+            throw new NovaException(ErrorCode.ParseFailed, "Unexpected null value for Boolean column");
+        return b == 1;
     }
 
     private static Int32 DecodeInt32(Byte[] buffer, Int32 offset)
@@ -399,7 +403,17 @@ public class DefaultDataCodec : IDataCodec
 
     private static String DecodeString(Byte[] buffer, Int32 offset)
     {
+        if (buffer.Length < offset + 4)
+            throw new ArgumentException($"Buffer too short to read String length (need {offset + 4} bytes, got {buffer.Length})");
+
         var length = BitConverter.ToInt32(buffer, offset);
+
+        if (length < 0)
+            throw new ArgumentException($"String length is negative: {length}");
+
+        if (buffer.Length < offset + 4 + length)
+            throw new ArgumentException($"Buffer too short to read String data (need {offset + 4 + length} bytes, got {buffer.Length}). Length={length}");
+
         return _encoding.GetString(buffer, offset + 4, length);
     }
 

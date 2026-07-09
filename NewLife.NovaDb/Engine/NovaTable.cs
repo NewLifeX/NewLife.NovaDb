@@ -785,8 +785,11 @@ public partial class NovaTable : IDisposable
         {
             var length = reader.ReadInt32();
             var colDef = _schema.Columns[i];
-            // 直接传递原始 payload 及当前偏移，避免 ReadBytes 的额外分配
-            row[i] = _codec.Decode(payload, reader.Position, colDef.DataType);
+            // 检查 null 标记：长度为 1 且首字节为 NullFlag
+            if (length == 1 && payload[reader.Position] == 0x00)
+                row[i] = null;
+            else
+                row[i] = _codec.Decode(payload, reader.Position, colDef.DataType);
             reader.Advance(length);
         }
 

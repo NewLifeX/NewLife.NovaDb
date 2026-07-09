@@ -136,6 +136,8 @@ public enum SqlTokenType
     Merge,
     /// <summary>SHOW</summary>
     Show,
+    /// <summary>IGNORE</summary>
+    Ignore,
     /// <summary>COLUMNS</summary>
     Columns,
     /// <summary>DATABASES</summary>

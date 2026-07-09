@@ -37,6 +37,7 @@ public class SqlParser
             SqlTokenType.Truncate => ParseTruncate(),
             SqlTokenType.Explain => ParseExplain(),
             SqlTokenType.Show => ParseShow(),
+            _ when String.Equals(token.Value, "REPLACE", StringComparison.OrdinalIgnoreCase) => ParseReplace(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -584,9 +585,70 @@ public class SqlParser
 
     #region DML
 
+    private ReplaceStatement ParseReplace()
+    {
+        // REPLACE 是关键字但不在 SqlTokenType 中，避免与 REPLACE() 函数冲突
+        var token = Advance();
+        if (!String.Equals(token.Value, "REPLACE", StringComparison.OrdinalIgnoreCase))
+            throw SyntaxError($"Expected 'REPLACE' but got '{token.Value}' at position {token.Position}");
+        Expect(SqlTokenType.Into);
+
+        var tableName = ExpectIdentifier();
+
+        // 可选的列名列表
+        List<String>? columns = null;
+        if (Peek().Type == SqlTokenType.LeftParen)
+        {
+            Advance();
+            columns = [];
+
+            do
+            {
+                columns.Add(ExpectIdentifier());
+            }
+            while (TryConsume(SqlTokenType.Comma));
+
+            Expect(SqlTokenType.RightParen);
+        }
+
+        Expect(SqlTokenType.Values);
+
+        // 解析一组或多组值
+        var valuesList = new List<List<SqlExpression>>();
+        do
+        {
+            Expect(SqlTokenType.LeftParen);
+            var values = new List<SqlExpression>();
+
+            do
+            {
+                values.Add(ParseExpression());
+            }
+            while (TryConsume(SqlTokenType.Comma));
+
+            Expect(SqlTokenType.RightParen);
+            valuesList.Add(values);
+        }
+        while (TryConsume(SqlTokenType.Comma));
+
+        return new ReplaceStatement
+        {
+            TableName = tableName,
+            Columns = columns,
+            ValuesList = valuesList
+        };
+    }
+
     private SqlStatement ParseInsert()
     {
         Expect(SqlTokenType.Insert);
+        // 可选的 IGNORE 关键字（Insert Ignore Into ...）
+        var ignore = false;
+        if (Peek().Type == SqlTokenType.Ignore)
+        {
+            Advance();
+            ignore = true;
+        }
         Expect(SqlTokenType.Into);
 
         var tableName = ExpectIdentifier();
@@ -659,7 +721,8 @@ public class SqlParser
         {
             TableName = tableName,
             Columns = columns,
-            ValuesList = valuesList
+            ValuesList = valuesList,
+            Ignore = ignore
         };
     }
 

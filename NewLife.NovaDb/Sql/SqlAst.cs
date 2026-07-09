@@ -33,6 +33,8 @@ public enum SqlStatementType
     Upsert,
     /// <summary>MERGE INTO（冲突时自动更新）</summary>
     Merge,
+    /// <summary>REPLACE（MySQL 兼容的 Replace Into）</summary>
+    Replace,
     /// <summary>EXPLAIN 查询计划</summary>
     Explain,
     /// <summary>SHOW 命令</summary>
@@ -267,6 +269,25 @@ public class InsertStatement : SqlStatement
 {
     /// <summary>语句类型</summary>
     public override SqlStatementType StatementType => SqlStatementType.Insert;
+
+    /// <summary>表名</summary>
+    public String TableName { get; set; } = String.Empty;
+
+    /// <summary>列名列表（可选）</summary>
+    public List<String>? Columns { get; set; }
+
+    /// <summary>值列表（多行插入）</summary>
+    public List<List<SqlExpression>> ValuesList { get; set; } = [];
+
+    /// <summary>INSERT IGNORE 标记</summary>
+    public Boolean Ignore { get; set; }
+}
+
+/// <summary>REPLACE 语句（MySQL 兼容的 Replace Into，冲突时删除旧行再插入新行）</summary>
+public class ReplaceStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.Replace;
 
     /// <summary>表名</summary>
     public String TableName { get; set; } = String.Empty;

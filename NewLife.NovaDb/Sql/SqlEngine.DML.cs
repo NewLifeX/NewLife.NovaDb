@@ -1,5 +1,6 @@
 ﻿using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Tx;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -67,12 +68,160 @@ partial class SqlEngine
                 catch { }
             }
 
+            // INSERT IGNORE：唯一键冲突时跳过当前行
+            if (stmt.Ignore)
+            {
+                try
+                {
+                    table.Insert(tx, row);
+                    affectedRows++;
+                }
+                catch (NovaException ex) when (ex.Code == ErrorCode.UniqueConstraintViolation)
+                {
+                    // 跳过冲突行，不报错
+                }
+            }
+            else
+            {
+                table.Insert(tx, row);
+                affectedRows++;
+            }
+        }
+
+        tx.Commit();
+        return new SqlResult { AffectedRows = affectedRows };
+    }
+
+    private SqlResult ExecuteReplace(ReplaceStatement stmt, Dictionary<String, Object?>? parameters)
+    {
+        var table = GetTable(stmt.TableName);
+        var schema = GetSchema(stmt.TableName);
+
+        using var tx = _txManager.BeginTransaction();
+        var affectedRows = 0;
+
+        foreach (var values in stmt.ValuesList)
+        {
+            var row = new Object?[schema.Columns.Count];
+
+            if (stmt.Columns != null)
+            {
+                for (var i = 0; i < stmt.Columns.Count; i++)
+                {
+                    var colIdx = schema.GetColumnIndex(stmt.Columns[i]);
+                    row[colIdx] = EvaluateExpression(values[i], null, schema, parameters);
+                }
+            }
+            else
+            {
+                if (values.Count != schema.Columns.Count)
+                    throw new NovaException(ErrorCode.InvalidArgument,
+                        $"REPLACE values count ({values.Count}) does not match column count ({schema.Columns.Count})");
+
+                for (var i = 0; i < values.Count; i++)
+                {
+                    row[i] = EvaluateExpression(values[i], null, schema, parameters);
+                }
+            }
+
+            ConvertRowTypes(row, schema);
+
+            // REPLACE 语义：先删除唯一键冲突的行
+            var deleted = DeleteConflictingRows(table, tx, row, schema);
+
+            // 处理自增主键
+            var pkCol = schema.GetPrimaryKeyColumn();
+            var isAuto = pkCol != null && (pkCol.IsAutoIncrement
+                || pkCol.DataType == DataType.Int32 || pkCol.DataType == DataType.Int64);
+            if (pkCol != null && isAuto && row[pkCol.Ordinal] == null)
+            {
+                EnsureAutoIncrementSeed(table, schema, pkCol);
+                var nextId = ++schema.NextAutoIncrement;
+                row[pkCol.Ordinal] = pkCol.DataType == DataType.Int32 ? (Object)(Int32)nextId : nextId;
+                LastInsertId = nextId;
+            }
+            else if (pkCol != null && isAuto && row[pkCol.Ordinal] != null)
+            {
+                try
+                {
+                    var v = Convert.ToInt64(row[pkCol.Ordinal]);
+                    if (v > schema.NextAutoIncrement) schema.NextAutoIncrement = v;
+                    LastInsertId = v;
+                }
+                catch { }
+            }
+
             table.Insert(tx, row);
             affectedRows++;
         }
 
         tx.Commit();
         return new SqlResult { AffectedRows = affectedRows };
+    }
+
+    /// <summary>根据主键或唯一索引删除冲突行</summary>
+    /// <returns>是否删除了至少一行</returns>
+    private static Boolean DeleteConflictingRows(NovaTable table, Transaction tx, Object?[] row, TableSchema schema)
+    {
+        var pkCol = schema.GetPrimaryKeyColumn();
+
+        // 遍历所有唯一索引，查找并删除冲突行
+        var deleted = false;
+        var allRows = table.GetAll(tx);
+
+        foreach (var existingRow in allRows)
+        {
+            var conflict = false;
+
+            // 检查主键冲突
+            if (pkCol != null)
+            {
+                var existingPk = existingRow[pkCol.Ordinal];
+                var newPk = row[pkCol.Ordinal];
+                if (newPk != null && Equals(newPk, existingPk))
+                    conflict = true;
+            }
+
+            // 检查唯一索引冲突
+            if (!conflict)
+            {
+                foreach (var idx in schema.Indexes)
+                {
+                    if (!idx.IsUnique) continue;
+
+                    var idxMatch = true;
+                    foreach (var colName in idx.Columns)
+                    {
+                        var colIdx = schema.GetColumnIndex(colName);
+                        var existingVal = existingRow[colIdx];
+                        var newVal = row[colIdx];
+                        if (newVal == null || !Equals(newVal, existingVal))
+                        {
+                            idxMatch = false;
+                            break;
+                        }
+                    }
+
+                    if (idxMatch)
+                    {
+                        conflict = true;
+                        break;
+                    }
+                }
+            }
+
+            if (conflict)
+            {
+                var existingPk = pkCol != null ? existingRow[pkCol.Ordinal] : null;
+                if (existingPk != null)
+                {
+                    table.Delete(tx, existingPk);
+                    deleted = true;
+                }
+            }
+        }
+
+        return deleted;
     }
 
     private SqlResult ExecuteUpdate(UpdateStatement stmt, Dictionary<String, Object?>? parameters)
