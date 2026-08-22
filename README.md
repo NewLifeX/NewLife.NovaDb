@@ -41,8 +41,8 @@ A medium-to-large hybrid database implemented in **C#**, running on the **.NET p
 | String | `STRING(n)` / `STRING` | `String` | UTF-8, length can be specified |
 | Binary | `BINARY(n)` / `BLOB` | `Byte[]` | Length can be specified |
 | DateTime | `DATETIME` | `DateTime` | Precision to Ticks (100 nanoseconds) |
-| GeoPoint | `GEOPOINT` | Custom Structure | Latitude/longitude coordinates (planned) |
-| Vector | `VECTOR(n)` | `Single[]` | AI vector search (planned) |
+| GeoPoint | `GEOPOINT` | Custom Structure | Latitude/longitude coordinates, with distance/polygon queries |
+| Vector | `VECTOR(n)` | `Single[]` | AI vector search, with KNN nearest-neighbor queries |
 
 ### SQL Capabilities
 
@@ -450,10 +450,10 @@ NovaDb supports a **one-master, multiple-slave** architecture with asynchronous 
 | Version | Planned Features |
 |---------|------------------|
 | **v1.0** (Completed) | Embedded+Server dual mode, Nova/Flux/KV engines, SQL DDL/DML/SELECT/JOIN, transactions/MVCC, WAL/recovery, hot-cold separation, sharding, MQ consumer groups, ADO.NET Provider, cluster master-slave sync |
-| **v1.1** | P0-level SQL functions (string/numeric/date/conversion/conditional ~30 functions) |
-| **v1.2** | MQ blocking read, KV Add/Inc operations, P1-level SQL functions |
-| **v1.3** | MQ delayed messages, dead letter queue |
-| **v2.0** | GeoPoint geo-encoding + Vector type (AI vector search), observability and management tools |
+| **v1.1** (Completed) | P0-level SQL functions (string/numeric/date/conversion/conditional ~30 functions) |
+| **v1.2** (Completed) | MQ blocking read, KV Add/Inc operations, P1-level SQL functions |
+| **v1.3** (Completed) | MQ delayed messages, dead letter queue |
+| **v2.0** (Completed) | GeoPoint geo-encoding + Vector type (AI vector search), GIS extension, full-text search, observability and management tools |
 
 ## Positioning
 
