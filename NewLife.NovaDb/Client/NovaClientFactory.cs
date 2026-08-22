@@ -1,9 +1,11 @@
 ﻿using System.Collections.Concurrent;
 using System.Data.Common;
 using NewLife.Caching;
+using NewLife.Data;
 using NewLife.Log;
 using NewLife.NovaDb.Caching;
 using NewLife.NovaDb.Queues;
+using NewLife.NovaDb.Vector;
 
 namespace NewLife.NovaDb.Client;
 
@@ -172,6 +174,25 @@ public sealed class NovaClientFactory : DbProviderFactory
             // 网络模式下暂使用本地桥接，后续由服务端 MQ 协议支持
             throw new NotSupportedException("网络模式下队列功能尚在开发中，请使用嵌入模式或 ADO.NET SQL 操作");
         }
+    }
+
+    /// <summary>获取向量存储实例（IVectorStore）</summary>
+    /// <remarks>
+    /// 基于关系型引擎的 VECTOR 能力实现高维向量持久化与 Top-K 检索，
+    /// 供 NewLife.AI 等上层框架作为向量后端使用（接口定义于 NewLife.Data，双方无直接引用）。
+    /// </remarks>
+    /// <param name="connectionString">连接字符串。嵌入模式：Data Source=../data/mydb；网络模式：Server=localhost;Port=3306</param>
+    /// <param name="tableName">向量表名。默认 "vector_store"</param>
+    /// <returns>IVectorStore 向量存储实例</returns>
+    public IVectorStore GetVectorStore(String connectionString, String tableName = "vector_store")
+    {
+        if (String.IsNullOrEmpty(connectionString))
+            throw new ArgumentNullException(nameof(connectionString));
+
+        var conn = (NovaConnection)CreateConnection();
+        conn.ConnectionString = connectionString;
+
+        return new NovaVectorStore(conn, tableName);
     }
 
     /// <summary>创建 NovaCacheProvider 实例（兼容旧接口）</summary>
