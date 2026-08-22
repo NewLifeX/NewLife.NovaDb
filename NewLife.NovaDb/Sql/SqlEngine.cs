@@ -22,6 +22,9 @@ public partial class SqlEngine : IDisposable
     private Boolean _disposed;
     private Int32 _lastAffectedRows;
 
+    /// <summary>SQL 跟踪写文件同步锁（仅诊断用）</summary>
+    private static readonly Object TraceSync = new();
+
     /// <summary>最近一次 INSERT 自增主键值（MySQL LAST_INSERT_ID 行为）</summary>
     internal Int64 LastInsertId;
 
@@ -243,9 +246,85 @@ public partial class SqlEngine : IDisposable
 
         var sw = Stopwatch.StartNew();
 
-        var parser = new SqlParser(sql);
-        var stmt = parser.Parse();
+        // 开启环境变量 NovaDb_TraceSql=1 时，把每条 SQL 追加到临时跟踪文件，便于诊断
+        if (Environment.GetEnvironmentVariable("NovaDb_TraceSql") == "1")
+        {
+            lock (TraceSync)
+            {
+                var tracePath = Path.Combine(Path.GetTempPath(), $"novadb_sql_trace_{System.Diagnostics.Process.GetCurrentProcess().Id}.txt");
+                File.AppendAllText(tracePath, $"[{DateTime.Now:HH:mm:ss.fff}] {sql}{Environment.NewLine}");
+            }
+        }
 
+        SqlParser parser;
+        try
+        {
+            parser = new SqlParser(sql);
+        }
+        catch (Exception ex)
+        {
+            throw ParseError(sql, ex);
+        }
+
+        SqlResult? result = null;
+        var statementIndex = 0;
+        while (true)
+        {
+            SqlStatement stmt;
+            try
+            {
+                stmt = parser.Parse();
+            }
+            catch (Exception ex)
+            {
+                throw ParseError(sql, ex);
+            }
+
+            result = ExecuteOne(stmt, sql, parameters, tx);
+
+            // 多语句支持：分号分隔的后续语句顺序执行，返回最后一条语句结果（MySQL 语义）
+            statementIndex++;
+            var nextPos = parser.GetNextStatementPosition();
+            if (nextPos < 0) break;
+
+            sql = sql.Substring(nextPos);
+            parser = new SqlParser(sql);
+        }
+
+        sw.Stop();
+
+        // 记录慢查询
+        SlowQuery.Record(sql, sw.ElapsedMilliseconds, result.AffectedRows);
+
+        return result;
+    }
+
+    /// <summary>构造解析错误（可选转储 SQL）</summary>
+    /// <param name="sql">SQL 文本</param>
+    /// <param name="ex">原始异常</param>
+    /// <returns>新异常</returns>
+    private static NovaException ParseError(String sql, Exception ex)
+    {
+        // 解析失败时转储 SQL 便于诊断（仅当环境变量开启）
+        if (Environment.GetEnvironmentVariable("NovaDb_DumpSql") == "1")
+        {
+            var dumpPath = Path.Combine(Path.GetTempPath(), $"novadb_sql_dump_{Guid.NewGuid():N}.txt");
+            File.WriteAllText(dumpPath, sql);
+            System.Diagnostics.Debug.WriteLine($"SQL dumped to {dumpPath}");
+            return new NovaException(ErrorCode.SyntaxError, $"{ex.Message} (sql dumped to {dumpPath})", ex);
+        }
+
+        return ex as NovaException ?? new NovaException(ErrorCode.SyntaxError, ex.Message, ex);
+    }
+
+    /// <summary>执行单条 SQL 语句</summary>
+    /// <param name="stmt">解析后的语句</param>
+    /// <param name="sql">原始 SQL 文本</param>
+    /// <param name="parameters">参数字典</param>
+    /// <param name="tx">外部事务</param>
+    /// <returns>执行结果</returns>
+    private SqlResult ExecuteOne(SqlStatement stmt, String sql, Dictionary<String, Object?>? parameters, Transaction? tx)
+    {
         // 事务控制语句
         if (stmt is TransactionStatement transactionStmt)
             return ExecuteTransactionStatement(transactionStmt);
@@ -253,13 +332,12 @@ public partial class SqlEngine : IDisposable
         // Binlog 管理语句
         if (stmt is BinlogStatement binlogStmt)
         {
-            var binlogResult = binlogStmt.StatementType switch
+            return binlogStmt.StatementType switch
             {
                 SqlStatementType.PurgeBinlogs => ExecutePurgeBinlogs(binlogStmt),
                 SqlStatementType.FlushBinlogs => ExecuteFlushBinlogs(),
                 _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported binlog statement: {binlogStmt.StatementType}")
             };
-            return binlogResult;
         }
 
         // 只读模式下拦截所有写操作
@@ -269,7 +347,7 @@ public partial class SqlEngine : IDisposable
         // 未显式传入事务时，使用 SQL 会话事务（BEGIN 开启的）
         tx ??= _sessionTransaction.Value;
 
-        var result = stmt switch
+        return stmt switch
         {
             // DDL 语句
             CreateDatabaseStatement createDb => TrackDdl(ExecuteCreateDatabase(createDb), sql),
@@ -300,13 +378,6 @@ public partial class SqlEngine : IDisposable
 
             _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
         };
-
-        sw.Stop();
-
-        // 记录慢查询
-        SlowQuery.Record(sql, sw.ElapsedMilliseconds, result.AffectedRows);
-
-        return result;
     }
 
     /// <summary>执行事务控制语句（BEGIN/COMMIT/ROLLBACK）</summary>

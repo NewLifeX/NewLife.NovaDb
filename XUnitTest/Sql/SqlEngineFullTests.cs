@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 using Xunit;
@@ -24,6 +25,7 @@ public class SqlEngineFullTests : IDisposable
     public void Dispose()
     {
         _engine.Dispose();
+        _engine2?.Dispose();
 
         if (Directory.Exists(_testDir))
         {
@@ -169,6 +171,76 @@ public class SqlEngineFullTests : IDisposable
         var query = _engine.Execute("SELECT age FROM users WHERE id = 1");
         Assert.Equal(50, query.Rows[0][0]);
     }
+
+    [Fact(DisplayName = "UPSERT 更新子句使用 VALUES(col) 引用插入值")]
+    public void UpsertWithValuesReference()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 25)");
+
+        // MySQL 风格：name=VALUES(name) 把插入值写入已有行（XCode 批量 Upsert 场景）
+        _engine.Execute(
+            "INSERT INTO `users` (`id`, `name`, `age`) VALUES (1, 'NewName', 30) ON DUPLICATE KEY UPDATE `name`=Values(`name`), `age`=Values(`age`)");
+
+        var query = _engine.Execute("SELECT name, age FROM users WHERE id = 1");
+        Assert.Equal("NewName", query.Rows[0][0]);
+        Assert.Equal(30, query.Rows[0][1]);
+    }
+
+    [Fact(DisplayName = "UPSERT 更新子句使用 VALUES(col) 累加")]
+    public void UpsertWithValuesAdd()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 25)");
+
+        // XCode addColumns 场景：age=age+Values(age)
+        _engine.Execute(
+            "INSERT INTO `users` (`id`, `name`, `age`) VALUES (1, 'Alice', 10) ON DUPLICATE KEY UPDATE `age`=`age`+Values(`age`)");
+
+        var query = _engine.Execute("SELECT age FROM users WHERE id = 1");
+        Assert.Equal(35, query.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "UPSERT 多行 VALUES(col) 引用（反引号+混合）")]
+    public void UpsertMultiRowWithValuesReference()
+    {
+        CreateUsersTable();
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice', 25)");
+
+        _engine.Execute(
+            "INSERT INTO `users` (`id`, `name`, `age`) VALUES (1, 'New1', 11), (2, 'New2', 22) ON DUPLICATE KEY UPDATE `name`=Values(`name`), `age`=Values(`age`)");
+
+        var q1 = _engine.Execute("SELECT name, age FROM users WHERE id = 1");
+        Assert.Equal("New1", q1.Rows[0][0]);
+        Assert.Equal(11, q1.Rows[0][1]);
+
+        var q2 = _engine.Execute("SELECT name, age FROM users WHERE id = 2");
+        Assert.Equal("New2", q2.Rows[0][0]);
+        Assert.Equal(22, q2.Rows[0][1]);
+    }
+
+    [Fact(DisplayName = "INSERT IGNORE 唯一索引冲突仅统计实际插入行")]
+    public void InsertIgnoreUniqueIndexCount()
+    {
+        _engine.Execute("Create Table If Not Exists Role2_InsertIgnore(ID INT NOT NULL AUTO_INCREMENT, Name VARCHAR(50) NOT NULL DEFAULT '', Primary Key (ID)) DEFAULT CHARSET=utf8mb4;");
+        _engine.Execute("Create Unique Index IU_Role2_Name On Role2_InsertIgnore (Name)");
+        _engine.Execute("Truncate Table Role2_InsertIgnore");
+        var r1 = _engine.Execute("Insert Into Role2_InsertIgnore(Name) Values('管理员'),('高级用户'),('普通用户')");
+        Assert.Equal(3, r1.AffectedRows);
+        var r2 = _engine.Execute("Insert Ignore Into Role2_InsertIgnore(Name) Values('管理员'),('游客')");
+        Assert.Equal(1, r2.AffectedRows);
+
+        // 重启引擎后唯一索引应恢复，冲突语义保持
+        _engine.Dispose();
+        _engine2 ??= new SqlEngine(_testDir, new DbOptions { Path = _testDir, WalMode = WalMode.None });
+        var r3 = _engine2.Execute("Insert Ignore Into Role2_InsertIgnore(Name) Values('管理员')");
+        Assert.Equal(0, r3.AffectedRows);
+        var q = _engine2.Execute("Select * From Role2_InsertIgnore");
+        var detail = String.Join(" | ", q.Rows.Select(r => $"{r[0]}:{r[1]}"));
+        Assert.True(q.Rows.Count == 4, $"rows={q.Rows.Count}: {detail}");
+    }
+
+    private SqlEngine? _engine2;
 
     #endregion
 

@@ -140,7 +140,8 @@ public class BinlogWriter : IDisposable
         var path = GetFilePath(_fileIndex);
         var isNew = !File.Exists(path) || new FileInfo(path).Length < HeaderSize;
 
-        _stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
+        _stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
 
         if (isNew)
         {

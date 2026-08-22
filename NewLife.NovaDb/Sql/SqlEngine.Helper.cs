@@ -504,7 +504,12 @@ partial class SqlEngine
 
             foreach (var clause in orderBy)
             {
-                var idx = schema.GetColumnIndex(clause.ColumnName);
+                // 兼容别名限定列名（如 e.name），取点后部分作为列名
+                var columnName = clause.ColumnName;
+                var dot = columnName.LastIndexOf('.');
+                if (dot >= 0) columnName = columnName.Substring(dot + 1);
+
+                var idx = schema.GetColumnIndex(columnName);
                 var cmp = CompareValues(x[idx], y[idx]);
 
                 if (cmp != 0)
@@ -527,10 +532,15 @@ partial class SqlEngine
 
             foreach (var clause in orderBy)
             {
+                // 兼容别名限定列名（如 e.name），取点后部分作为列名
+                var columnName = clause.ColumnName;
+                var dot = columnName.LastIndexOf('.');
+                if (dot >= 0) columnName = columnName.Substring(dot + 1);
+
                 var idx = -1;
                 for (var i = 0; i < columns.Count; i++)
                 {
-                    if (String.Equals(columns[i].Column, clause.ColumnName, StringComparison.OrdinalIgnoreCase))
+                    if (String.Equals(columns[i].Column, columnName, StringComparison.OrdinalIgnoreCase))
                     {
                         idx = i;
                         break;

@@ -20,6 +20,7 @@ public class NovaServer : DisposeBase
     private ReplicationManager? _replicationManager;
     private KvStore? _kvStore;
     private readonly ConcurrentDictionary<String, KvStore> _kvStores = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<String, SqlEngine> _engines = new(StringComparer.OrdinalIgnoreCase);
     private FluxEngine? _fluxEngine;
 
     /// <summary>端口</summary>
@@ -98,7 +99,11 @@ public class NovaServer : DisposeBase
         _dbManager = new DatabaseManager(dbPath, dbOptions);
         _dbManager.Initialize();
 
-        _sqlEngine = new SqlEngine(dbPath, dbOptions);
+        _sqlEngine = GetOrCreateEngine(DatabaseManager.SystemDatabaseName);
+
+        // 注册多库路由：客户端连接串 Database 参数决定目标引擎
+        NovaController.EngineResolver = GetOrCreateEngine;
+        NovaController.DatabaseListProvider = () => _dbManager.ListAllDatabases().Select(e => e.Name).ToList();
 
         // 初始化 KV 存储引擎
         var kvPath = Path.Combine(dbPath, "default.kvd");
@@ -157,6 +162,8 @@ public class NovaServer : DisposeBase
 
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
+        NovaController.EngineResolver = null;
+        NovaController.DatabaseListProvider = null;
         KvController.SharedKvStore = null;
         KvController.SharedServer = null;
         FluxController.Reset();
@@ -173,12 +180,36 @@ public class NovaServer : DisposeBase
         }
         _kvStores.Clear();
 
-        _sqlEngine?.Dispose();
+        // 释放所有库引擎
+        foreach (var engine in _engines.Values)
+        {
+            engine.Dispose();
+        }
+        _engines.Clear();
+
         _sqlEngine = null;
         _dbManager = null;
     }
 
-    /// <summary>释放资源</summary>
+    /// <summary>按库名获取或创建 SQL 引擎（多库路由）</summary>
+    /// <param name="dbName">数据库名，为空时使用系统库</param>
+    /// <returns>对应库的引擎实例</returns>
+    public SqlEngine? GetOrCreateEngine(String? dbName)
+    {
+        var name = dbName;
+        if (name.IsNullOrEmpty()) name = DatabaseManager.SystemDatabaseName;
+
+        return _engines.GetOrAdd(name, db =>
+        {
+            var basePath = DbPath;
+            if (basePath.IsNullOrEmpty()) basePath = "NovaData".GetFullPath();
+
+            // 每个库一个子目录：基目录/{库名}。SqlEngine 构造直接使用路径参数
+            var enginePath = Path.Combine(basePath, db);
+
+            return new SqlEngine(enginePath, Options);
+        });
+    }
     /// <param name="disposing">是否由 Dispose 调用</param>
     protected override void Dispose(Boolean disposing)
     {
@@ -194,6 +225,8 @@ public class NovaServer : DisposeBase
 
         NovaController.SharedEngine = null;
         NovaController.SharedReplication = null;
+        NovaController.EngineResolver = null;
+        NovaController.DatabaseListProvider = null;
         KvController.SharedKvStore = null;
         KvController.SharedServer = null;
         FluxController.Reset();
@@ -210,7 +243,13 @@ public class NovaServer : DisposeBase
         }
         _kvStores.Clear();
 
-        _sqlEngine?.Dispose();
+        // 释放所有库引擎
+        foreach (var engine in _engines.Values)
+        {
+            engine.Dispose();
+        }
+        _engines.Clear();
+
         _sqlEngine = null;
         _dbManager = null;
     }

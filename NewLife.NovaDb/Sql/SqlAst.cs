@@ -530,7 +530,9 @@ public enum SqlExpressionType
     /// <summary>CAST 类型转换</summary>
     CastExpr,
     /// <summary>IN 表达式</summary>
-    In
+    In,
+    /// <summary>UPSERT 插入值引用（ON DUPLICATE KEY UPDATE 中的 VALUES(col)）</summary>
+    Values
 }
 
 /// <summary>SQL 表达式基类</summary>
@@ -538,6 +540,16 @@ public abstract class SqlExpression
 {
     /// <summary>表达式类型</summary>
     public abstract SqlExpressionType ExprType { get; }
+}
+
+/// <summary>UPSERT 插入值引用表达式（ON DUPLICATE KEY UPDATE 中的 VALUES(col)）</summary>
+public class ValuesExpression : SqlExpression
+{
+    /// <summary>表达式类型</summary>
+    public override SqlExpressionType ExprType => SqlExpressionType.Values;
+
+    /// <summary>列名</summary>
+    public String ColumnName { get; set; } = String.Empty;
 }
 
 /// <summary>字面量表达式</summary>

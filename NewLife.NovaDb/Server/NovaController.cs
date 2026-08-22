@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Cluster;
+﻿using NewLife.Log;
+using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Tx;
@@ -20,11 +21,17 @@ internal class NovaController : IApi
     /// <summary>共享 SQL 执行引擎，由 NovaServer 启动时设置</summary>
     internal static SqlEngine? SharedEngine { get; set; }
 
+    /// <summary>引擎解析器。根据数据库名获取对应引擎，由 NovaServer 启动时设置（多库路由）</summary>
+    internal static Func<String?, SqlEngine?>? EngineResolver { get; set; }
+
+    /// <summary>数据库列表提供器。SHOW DATABASES 由服务器返回库列表</summary>
+    internal static Func<List<String>>? DatabaseListProvider { get; set; }
+
     /// <summary>共享复制管理器，由 NovaServer 启动时设置</summary>
     internal static ReplicationManager? SharedReplication { get; set; }
 
     /// <summary>共享事务字典，跨请求维护事务状态</summary>
-    private static readonly Dictionary<String, Transaction> _transactions = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<String, (SqlEngine Engine, Transaction Tx)> _transactions = new(StringComparer.OrdinalIgnoreCase);
 #if NET9_0_OR_GREATER
     private static readonly System.Threading.Lock _txLock = new();
 #else
@@ -35,68 +42,106 @@ internal class NovaController : IApi
     /// <returns>服务器时间</returns>
     public String Ping() => DateTime.UtcNow.ToString("o");
 
-    /// <summary>执行 SQL（非查询）</summary>
-    /// <param name="sql">SQL 语句</param>
-    /// <returns>受影响行数</returns>
+    /// <summary>解析数据库名对应的引擎</summary>
+    /// <param name="db">数据库名，为空时回退到默认引擎</param>
+    /// <returns>引擎实例，不存在返回 null</returns>
+    private static SqlEngine? ResolveEngine(String? db) => EngineResolver?.Invoke(db) ?? SharedEngine;
+
     /// <summary>执行 SQL（非查询）</summary>
     /// <param name="sql">SQL 语句</param>
     /// <param name="txId">事务 ID（可选，绑定到已开启事务）</param>
+    /// <param name="db">数据库名（可选，多库路由）</param>
     /// <returns>受影响行数</returns>
-    public Int32 Execute(String sql, String? txId = null)
+    public Int32 Execute(String sql, String? txId = null, String? db = null)
     {
-        if (SharedEngine == null) return 0;
+        XTrace.WriteLine($"Nova.Execute[{db}]: {sql}");
 
-        var result = ExecuteWithTransaction(sql, txId);
-        return result.AffectedRows;
+        try
+        {
+            var engine = ResolveEngine(db);
+            if (engine == null) return 0;
+
+            var result = ExecuteWithTransaction(engine, sql, txId);
+            return result.AffectedRows;
+        }
+        catch (Exception ex)
+        {
+            XTrace.WriteLine($"Nova.Execute[{db}] error: {ex.Message}");
+            throw;
+        }
     }
 
     /// <summary>查询</summary>
     /// <param name="sql">SQL 语句</param>
     /// <param name="txId">事务 ID（可选，绑定到已开启事务）</param>
+    /// <param name="db">数据库名（可选，多库路由）</param>
     /// <returns>查询结果</returns>
-    public Object? Query(String sql, String? txId = null)
+    public Object? Query(String sql, String? txId = null, String? db = null)
     {
-        if (SharedEngine == null) return null;
+        XTrace.WriteLine($"Nova.Query[{db}]: {sql}");
 
-        var result = ExecuteWithTransaction(sql, txId);
-        if (!result.IsQuery) return result.AffectedRows;
-
-        return new
+        try
         {
-            result.ColumnNames,
-            Rows = result.Rows.Select(r => r.ToArray()).ToArray()
-        };
+            // SHOW DATABASES 由服务器数据库管理器生成库列表（多库支持）
+            if (sql.TrimStart().StartsWithIgnoreCase("SHOW DATABASES"))
+            {
+                var dbs = DatabaseListProvider?.Invoke();
+                var rows = dbs?.Select(e => new[] { (Object)e }).ToList();
+                return new
+                {
+                    ColumnNames = new[] { "Database" },
+                    Rows = rows
+                };
+            }
+
+            var engine = ResolveEngine(db);
+            if (engine == null) return null;
+
+            var result = ExecuteWithTransaction(engine, sql, txId);
+            if (!result.IsQuery) return result.AffectedRows;
+
+            return new
+            {
+                result.ColumnNames,
+                Rows = result.Rows.Select(r => r.ToArray()).ToArray()
+            };
+        }
+        catch (Exception ex)
+        {
+            XTrace.WriteLine($"Nova.Query[{db}] error: {ex.Message}");
+            throw;
+        }
     }
 
     /// <summary>在指定事务（若有）中执行 SQL</summary>
+    /// <param name="engine">目标引擎</param>
     /// <param name="sql">SQL 语句</param>
     /// <param name="txId">事务 ID（可选）</param>
     /// <returns>执行结果</returns>
-    private SqlResult ExecuteWithTransaction(String sql, String? txId)
+    private static SqlResult ExecuteWithTransaction(SqlEngine engine, String sql, String? txId)
     {
-        if (SharedEngine == null) return new SqlResult();
-
         // 有事务 ID 时，绑定到已开启的事务
         if (!txId.IsNullOrEmpty())
         {
             lock (_txLock)
             {
-                if (_transactions.TryGetValue(txId, out var tx))
-                    return SharedEngine.Execute(sql, null, tx);
+                if (_transactions.TryGetValue(txId, out var txState))
+                    return txState.Engine.Execute(sql, null, txState.Tx);
             }
 
             // 事务不存在，返回明确错误
             throw new NovaException(ErrorCode.TransactionError, $"Transaction '{txId}' not found");
         }
 
-        return SharedEngine.Execute(sql);
+        return engine.Execute(sql);
     }
 
     /// <summary>开始事务</summary>
+    /// <param name="db">数据库名（可选，多库路由）</param>
     /// <returns>事务 ID</returns>
-    public String BeginTransaction()
+    public String BeginTransaction(String? db = null)
     {
-        var engine = SharedEngine;
+        var engine = ResolveEngine(db);
         if (engine == null) return Guid.NewGuid().ToString("N");
 
         var tx = engine.TxManager.BeginTransaction();
@@ -104,7 +149,7 @@ internal class NovaController : IApi
 
         lock (_txLock)
         {
-            _transactions[txId] = tx;
+            _transactions[txId] = (engine, tx);
         }
 
         return txId;
@@ -117,9 +162,9 @@ internal class NovaController : IApi
     {
         lock (_txLock)
         {
-            if (!_transactions.TryGetValue(txId, out var tx)) return true;
+            if (!_transactions.TryGetValue(txId, out var txState)) return true;
 
-            tx.Commit();
+            txState.Tx.Commit();
             _transactions.Remove(txId);
             return true;
         }
@@ -132,9 +177,9 @@ internal class NovaController : IApi
     {
         lock (_txLock)
         {
-            if (!_transactions.TryGetValue(txId, out var tx)) return true;
+            if (!_transactions.TryGetValue(txId, out var txState)) return true;
 
-            tx.Rollback();
+            txState.Tx.Rollback();
             _transactions.Remove(txId);
             return true;
         }

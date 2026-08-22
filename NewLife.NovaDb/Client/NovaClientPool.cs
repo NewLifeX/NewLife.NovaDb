@@ -20,7 +20,8 @@ public class NovaClientPool : ObjectPool<NovaClient>
         var port = set.Port;
         if (String.IsNullOrEmpty(server)) throw new InvalidOperationException("连接字符串中未指定 Server");
 
-        return new NovaClient($"tcp://{server}:{port}");
+        // 传递默认数据库名，服务器据此进行多库路由
+        return new NovaClient($"tcp://{server}:{port}") { Database = set.Database };
     }
 
     /// <summary>借出时健康检查。新连接或空闲连接被取出时调用，确保连接可用</summary>

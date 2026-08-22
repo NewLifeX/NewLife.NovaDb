@@ -77,7 +77,8 @@ public class MmfPager : IDisposable
 
             var isNewFile = !File.Exists(_filePath);
 
-            _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+            // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义），支持运维热清理
+            _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
 
             if (isNewFile && header != null)
             {

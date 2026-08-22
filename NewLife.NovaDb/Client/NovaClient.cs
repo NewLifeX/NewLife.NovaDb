@@ -13,6 +13,9 @@ public class NovaClient : DisposeBase
     /// <summary>服务器地址，格式如 tcp://127.0.0.1:3306</summary>
     public String ServerUri { get; set; } = String.Empty;
 
+    /// <summary>默认数据库名。随每个 RPC 请求传递给服务器，实现多库路由</summary>
+    public String? Database { get; set; }
+
     /// <summary>是否已连接</summary>
     public Boolean IsConnected => _client?.Active ?? false;
 
@@ -63,7 +66,7 @@ public class NovaClient : DisposeBase
     public async Task<Int32> ExecuteAsync(String sql)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql, db = Database }).ConfigureAwait(false);
     }
 
     /// <summary>执行 SQL（非查询，绑定事务）</summary>
@@ -73,7 +76,7 @@ public class NovaClient : DisposeBase
     public async Task<Int32> ExecuteAsync(String sql, String? txId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql, txId }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql, txId, db = Database }).ConfigureAwait(false);
     }
 
     /// <summary>查询</summary>
@@ -82,7 +85,7 @@ public class NovaClient : DisposeBase
     public async Task<TResult?> QueryAsync<TResult>(String sql)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql, db = Database }).ConfigureAwait(false);
     }
 
     /// <summary>查询（绑定事务）</summary>
@@ -92,7 +95,7 @@ public class NovaClient : DisposeBase
     public async Task<TResult?> QueryAsync<TResult>(String sql, String? txId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql, txId }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql, txId, db = Database }).ConfigureAwait(false);
     }
 
     /// <summary>开始事务</summary>
@@ -100,7 +103,7 @@ public class NovaClient : DisposeBase
     public async Task<String?> BeginTransactionAsync()
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<String>("Nova/BeginTransaction").ConfigureAwait(false);
+        return await _client!.InvokeAsync<String>("Nova/BeginTransaction", new { db = Database }).ConfigureAwait(false);
     }
 
     /// <summary>提交事务</summary>

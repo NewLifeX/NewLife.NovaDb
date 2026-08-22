@@ -127,6 +127,9 @@ public partial class NovaTable : IDisposable
 
         // 打开行日志并恢复数据
         OpenRowLog();
+
+        // 恢复二级索引（优先 .idx 文件，缺失或损坏时全表重建）
+        RestoreSecondaryIndexes();
     }
 
     /// <summary>插入行</summary>
@@ -174,6 +177,10 @@ public partial class NovaTable : IDisposable
                         throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Primary key '{pkValue}' already exists");
                 }
             }
+
+            // 唯一性预检查：在任何修改之前检测二级唯一索引冲突，保证异常路径零副作用（INSERT IGNORE 依赖此语义）
+            if (_secondaryIndexes.Count > 0)
+                CheckUniqueIndexConflicts(row, comparableKey);
 
             // 添加新版本
             versions.Add(rowVersion);
@@ -318,6 +325,10 @@ public partial class NovaTable : IDisposable
 
             if (visibleVersion == null)
                 return false;
+
+            // 唯一性预检查：在任何修改之前检测二级唯一索引冲突，保证异常路径零副作用
+            if (_secondaryIndexes.Count > 0)
+                CheckUniqueIndexConflicts(newRow, comparableKey);
 
             // 更新二级索引：先移除旧值，后面再插入新值
             Object?[]? oldRow = null;
@@ -598,6 +609,10 @@ public partial class NovaTable : IDisposable
                     if (ver.IsVisible(_txManager, tx.TxId))
                     {
                         var row = DeserializeRow(ver.Payload!);
+
+                        // 索引键列含 NULL 时跳过该行（MySQL 语义）
+                        if (HasNullColumn(row, colOrdinals)) break;
+
                         var indexKey = BuildIndexKey(row, colOrdinals);
                         var pk = new ComparableObject(row[pkCol.Ordinal]!);
 
@@ -810,7 +825,37 @@ public partial class NovaTable : IDisposable
         return new ComparableObject(keyValues);
     }
 
+    /// <summary>唯一性预检查：检测行在唯一二级索引中的冲突（只读，无副作用）</summary>
+    /// <param name="row">待插入的行数据</param>
+    /// <param name="pk">行主键。同主键的既有条目不视为冲突（Update 唯一值未变场景）</param>
+    /// <exception cref="NovaException">唯一键冲突时抛出 UniqueConstraintViolation</exception>
+    private void CheckUniqueIndexConflicts(Object?[] row, ComparableObject pk)
+    {
+        foreach (var kvp in _secondaryIndexes)
+        {
+            var indexDef = _schema.GetIndex(kvp.Key);
+            if (indexDef == null || !indexDef.IsUnique) continue;
+
+            var colOrdinals = GetColumnOrdinals(indexDef);
+
+            // 索引键列含 NULL 时不参与唯一性检查（MySQL 语义）
+            if (HasNullColumn(row, colOrdinals)) continue;
+
+            var indexKey = BuildIndexKey(row, colOrdinals);
+            if (kvp.Value.TryGetValue(indexKey, out var pkList) && pkList!.Count > 0)
+            {
+                // 若既有条目均属于当前主键（Update 场景唯一值未变），不视为冲突
+                foreach (var existingPk in pkList)
+                {
+                    if (CompareKeys(existingPk, pk) != 0)
+                        throw new NovaException(ErrorCode.UniqueConstraintViolation, $"Duplicate key in unique index '{indexDef.IndexName}'");
+                }
+            }
+        }
+    }
+
     /// <summary>向所有二级索引插入条目</summary>
+    /// <remarks>唯一性冲突必须在此前通过 <see cref="CheckUniqueIndexConflicts"/> 预检查，本方法不再抛出唯一性异常</remarks>
     private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk)
     {
         foreach (var kvp in _secondaryIndexes)
@@ -819,6 +864,10 @@ public partial class NovaTable : IDisposable
             if (indexDef == null) continue;
 
             var colOrdinals = GetColumnOrdinals(indexDef);
+
+            // 索引键列含 NULL 时跳过该行（MySQL 语义：NULL 值不进二级索引）
+            if (HasNullColumn(row, colOrdinals)) continue;
+
             var indexKey = BuildIndexKey(row, colOrdinals);
             var idx = kvp.Value;
 
@@ -826,10 +875,6 @@ public partial class NovaTable : IDisposable
             {
                 pkList = [];
                 idx.Insert(indexKey, pkList);
-            }
-            else if (indexDef.IsUnique && pkList!.Count > 0)
-            {
-                throw new NovaException(ErrorCode.UniqueConstraintViolation, $"Duplicate key in unique index '{indexDef.IndexName}'");
             }
 
             pkList!.Add(pk);
@@ -845,6 +890,10 @@ public partial class NovaTable : IDisposable
             if (indexDef == null) continue;
 
             var colOrdinals = GetColumnOrdinals(indexDef);
+
+            // 索引键列含 NULL 时该行未入索引，直接跳过
+            if (HasNullColumn(row, colOrdinals)) continue;
+
             var indexKey = BuildIndexKey(row, colOrdinals);
             var idx = kvp.Value;
 
@@ -865,8 +914,124 @@ public partial class NovaTable : IDisposable
         }
     }
 
+    /// <summary>判断行在指定列序号上是否含 NULL 值</summary>
+    private static Boolean HasNullColumn(Object?[] row, Int32[] colOrdinals)
+    {
+        foreach (var ord in colOrdinals)
+        {
+            if (row[ord] == null) return true;
+        }
+        return false;
+    }
+
     /// <summary>比较两个索引键</summary>
     private static Int32 CompareKeys(ComparableObject a, ComparableObject b) => a.CompareTo(b);
+
+    /// <summary>恢复二级索引（优先 .idx 文件，缺失或损坏时全表重建）</summary>
+    /// <remarks>引擎启动加载已有表时调用，保证二级索引跨连接/重启可用</remarks>
+    private void RestoreSecondaryIndexes()
+    {
+        foreach (var indexDef in _schema.Indexes)
+        {
+            var idx = TryLoadSecondaryIndexFile(indexDef) ?? RebuildSecondaryIndex(indexDef);
+            if (idx != null)
+                _secondaryIndexes[indexDef.IndexName] = idx;
+        }
+    }
+
+    /// <summary>尝试从 .idx 文件加载二级索引</summary>
+    /// <param name="indexDef">索引定义</param>
+    /// <returns>加载成功的索引，文件缺失或损坏时返回 null</returns>
+    private SkipList<ComparableObject, List<ComparableObject>>? TryLoadSecondaryIndexFile(IndexDefinition indexDef)
+    {
+        var filePath = _fileManager.GetSecondaryIndexFilePath(indexDef.IndexName);
+        if (!File.Exists(filePath)) return null;
+
+        var pkCol = _schema.GetPrimaryKeyColumn()!;
+        var colOrdinals = GetColumnOrdinals(indexDef);
+        var indexKeyType = colOrdinals.Length == 1
+            ? _schema.Columns[colOrdinals[0]].DataType
+            : DataType.String;
+
+        try
+        {
+            var bytes = File.ReadAllBytes(filePath);
+            if (bytes.Length < FileHeader.HeaderSize + 4) return null;
+
+            var reader = new SpanReader(bytes, FileHeader.HeaderSize);
+            var count = reader.ReadInt32();
+            var idx = new SkipList<ComparableObject, List<ComparableObject>>();
+
+            for (var i = 0; i < count; i++)
+            {
+                var keyLen = reader.ReadInt32();
+                var key = _codec.Decode(bytes, reader.Position, indexKeyType);
+                reader.Advance(keyLen);
+
+                var pkCount = reader.ReadInt32();
+                var pkList = new List<ComparableObject>();
+                for (var j = 0; j < pkCount; j++)
+                {
+                    var pkLen = reader.ReadInt32();
+                    var pk = _codec.Decode(bytes, reader.Position, pkCol.DataType);
+                    reader.Advance(pkLen);
+                    pkList.Add(new ComparableObject(pk!));
+                }
+
+                idx.Insert(new ComparableObject(key!), pkList);
+            }
+
+            return idx;
+        }
+        catch
+        {
+            // 索引文件损坏时回退到全表重建，保证表可加载
+            return null;
+        }
+    }
+
+    /// <summary>从主键索引全表扫描重建二级索引</summary>
+    /// <param name="indexDef">索引定义</param>
+    /// <returns>重建后的索引</returns>
+    private SkipList<ComparableObject, List<ComparableObject>> RebuildSecondaryIndex(IndexDefinition indexDef)
+    {
+        var pkCol = _schema.GetPrimaryKeyColumn()!;
+        var colOrdinals = GetColumnOrdinals(indexDef);
+        var idx = new SkipList<ComparableObject, List<ComparableObject>>();
+
+        // 启动恢复后，主键索引中每个主键仅有一个已提交版本
+        foreach (var entry in _primaryIndex.GetAll())
+        {
+            foreach (var ver in entry.Value)
+            {
+                if (ver.Payload == null) continue;
+
+                var row = DeserializeRow(ver.Payload);
+
+                // 索引键列含 NULL 时跳过该行（MySQL 语义）
+                if (HasNullColumn(row, colOrdinals)) break;
+
+                var indexKey = BuildIndexKey(row, colOrdinals);
+                var pk = new ComparableObject(row[pkCol.Ordinal]!);
+
+                if (!idx.TryGetValue(indexKey, out var pkList))
+                {
+                    pkList = [];
+                    idx.Insert(indexKey, pkList);
+                }
+                else if (indexDef.IsUnique)
+                {
+                    // 重建时重复键静默跳过（历史数据可能违反唯一约束），保证表可加载
+                    break;
+                }
+
+                pkList!.Add(pk);
+                break;
+            }
+        }
+
+        return idx;
+    }
 
     /// <summary>将二级索引持久化到 .idx 文件（全量重写）</summary>
     /// <param name="indexName">索引名称</param>

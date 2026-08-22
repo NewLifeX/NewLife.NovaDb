@@ -58,7 +58,8 @@ public partial class KvStore
 
         var isNew = !File.Exists(_filePath) || new FileInfo(_filePath).Length < FileHeaderSize;
 
-        _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+        // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
+        _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
 
         if (isNew)
         {
@@ -368,7 +369,8 @@ public partial class KvStore
         finally
         {
             // 恢复完成后重新打开文件流，供后续写入使用
-            _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+            // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
+            _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
             _fileStream.Position = _fileStream.Length;
         }
     }
@@ -576,7 +578,8 @@ public partial class KvStore
             File.Move(tempPath, _filePath);
 
             // 重新打开文件流，定位到末尾供后续追加写入
-            _fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+            // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
+            _fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete, 4096, FileOptions.SequentialScan);
             _fileStream.Position = _fileStream.Length;
 
             // 更新内存索引

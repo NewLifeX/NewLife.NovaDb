@@ -53,6 +53,25 @@ public class SqlParser
         return stmt;
     }
 
+    /// <summary>获取下一条语句的起始字符位置（分号分隔的多语句支持）</summary>
+    /// <returns>下一条语句首 token 的字符位置，无后续语句返回 -1</returns>
+    public Int32 GetNextStatementPosition()
+    {
+        while (_pos < _tokens.Count)
+        {
+            var token = _tokens[_pos];
+            if (token.Type == SqlTokenType.Eof || token.Type == SqlTokenType.Semicolon)
+            {
+                _pos++;
+                continue;
+            }
+
+            return token.Position;
+        }
+
+        return -1;
+    }
+
     /// <summary>解析 BEGIN / START TRANSACTION</summary>
     private TransactionStatement ParseBegin()
     {
@@ -594,6 +613,20 @@ public class SqlParser
         }
 
         stmt.DatabaseName = ExpectIdentifier();
+
+        // 消费可选尾部选项：DEFAULT CHARACTER SET utf8mb4 / DEFAULT COLLATE xxx（MySQL 兼容，忽略内容）
+        while (Peek().Type != SqlTokenType.Semicolon && Peek().Type != SqlTokenType.Eof)
+        {
+            if (Peek().Type == SqlTokenType.StringLiteral || Peek().Type == SqlTokenType.Identifier
+                || Peek().Type == SqlTokenType.IntegerLiteral)
+            {
+                Advance();
+                // CHARACTER SET 名称可能带 = 或直接跟值
+                continue;
+            }
+            Advance();
+        }
+
         return stmt;
     }
 
@@ -1065,7 +1098,15 @@ public class SqlParser
 
             do
             {
-                var clause = new OrderByClause { ColumnName = ExpectIdentifier() };
+                // 支持别名限定列名（如 e.name），MySQL 兼容
+                var name = ExpectIdentifier();
+                while (Peek().Type == SqlTokenType.Dot)
+                {
+                    Advance();
+                    name += "." + ExpectIdentifier();
+                }
+
+                var clause = new OrderByClause { ColumnName = name };
                 if (Peek().Type == SqlTokenType.Desc)
                 {
                     Advance();
@@ -1414,6 +1455,14 @@ public class SqlParser
             case SqlTokenType.Parameter:
                 Advance();
                 return new ParameterExpression { ParameterName = token.Value };
+
+            // UPSERT 插入值引用：VALUES(col)
+            case SqlTokenType.Values:
+                Advance();
+                Expect(SqlTokenType.LeftParen);
+                var valuesColumn = ExpectIdentifier();
+                Expect(SqlTokenType.RightParen);
+                return new ValuesExpression { ColumnName = valuesColumn };
 
             case SqlTokenType.LeftParen:
                 Advance();

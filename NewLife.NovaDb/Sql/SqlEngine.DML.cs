@@ -128,8 +128,8 @@ partial class SqlEngine
 
             ConvertRowTypes(row, schema);
 
-            // REPLACE 语义：先删除唯一键冲突的行
-            var deleted = DeleteConflictingRows(table, effectiveTx, row, schema);
+            // REPLACE 语义：先删除唯一键冲突的行，受影响行数 = 删除行数 + 插入行数（MySQL 语义）
+            var deletedCount = DeleteConflictingRows(table, effectiveTx, row, schema);
 
             // 处理自增主键
             var pkCol = schema.GetPrimaryKeyColumn();
@@ -154,7 +154,7 @@ partial class SqlEngine
             }
 
             table.Insert(effectiveTx, row);
-            affectedRows++;
+            affectedRows += 1 + deletedCount;
         }
 
         if (tx == null) localTx!.Commit();
@@ -162,13 +162,13 @@ partial class SqlEngine
     }
 
     /// <summary>根据主键或唯一索引删除冲突行</summary>
-    /// <returns>是否删除了至少一行</returns>
-    private static Boolean DeleteConflictingRows(NovaTable table, Transaction tx, Object?[] row, TableSchema schema)
+    /// <returns>删除的行数</returns>
+    private static Int32 DeleteConflictingRows(NovaTable table, Transaction tx, Object?[] row, TableSchema schema)
     {
         var pkCol = schema.GetPrimaryKeyColumn();
 
         // 遍历所有唯一索引，查找并删除冲突行
-        var deleted = false;
+        var deleted = 0;
         var allRows = table.GetAll(tx);
 
         foreach (var existingRow in allRows)
@@ -218,7 +218,7 @@ partial class SqlEngine
                 if (existingPk != null)
                 {
                     table.Delete(tx, existingPk);
-                    deleted = true;
+                    deleted++;
                 }
             }
         }
@@ -345,7 +345,9 @@ partial class SqlEngine
                 foreach (var (column, value) in stmt.UpdateClauses)
                 {
                     var colIdx = schema.GetColumnIndex(column);
-                    newRow[colIdx] = EvaluateExpression(value, existingRow, schema, parameters);
+                    // 把 VALUES(col) 引用替换为插入行对应列的字面量（兼容 XCode 生成的 MySQL 风格）
+                    var resolved = ResolveValuesReferences(value, row, schema);
+                    newRow[colIdx] = EvaluateExpression(resolved, existingRow, schema, parameters);
                 }
 
                 ConvertRowTypes(newRow, schema);
@@ -498,6 +500,70 @@ partial class SqlEngine
         }
         tx.Commit();
         schema.NextAutoIncrement = max;
+    }
+
+    /// <summary>递归替换 UPSERT 表达式中的 VALUES(col) 引用为插入行字面量</summary>
+    /// <param name="expr">表达式</param>
+    /// <param name="row">插入行数据（按列序号）</param>
+    /// <param name="schema">表架构</param>
+    /// <returns>替换后的表达式</returns>
+    private static SqlExpression ResolveValuesReferences(SqlExpression expr, Object?[] row, TableSchema schema)
+    {
+        switch (expr)
+        {
+            case ValuesExpression ve:
+                // 定位列序号：有列名列表则按其序，否则按全列序
+                var colIdx = schema.GetColumnIndex(ve.ColumnName);
+                var value = row[colIdx];
+                var dataType = schema.Columns[colIdx].DataType;
+                return new LiteralExpression { Value = value, DataType = dataType };
+
+            case BinaryExpression bin:
+                bin.Left = ResolveValuesReferences(bin.Left, row, schema);
+                bin.Right = ResolveValuesReferences(bin.Right, row, schema);
+                return bin;
+
+            case UnaryExpression un:
+                un.Operand = ResolveValuesReferences(un.Operand, row, schema);
+                return un;
+
+            case FunctionExpression func:
+                for (var i = 0; i < func.Arguments.Count; i++)
+                {
+                    func.Arguments[i] = ResolveValuesReferences(func.Arguments[i], row, schema);
+                }
+                return func;
+
+            case IsNullExpression isn:
+                isn.Operand = ResolveValuesReferences(isn.Operand, row, schema);
+                return isn;
+
+            case CaseExpression caseExpr:
+                for (var i = 0; i < caseExpr.WhenClauses.Count; i++)
+                {
+                    var (when, then) = caseExpr.WhenClauses[i];
+                    caseExpr.WhenClauses[i] = (ResolveValuesReferences(when, row, schema),
+                        ResolveValuesReferences(then, row, schema));
+                }
+                if (caseExpr.ElseExpression != null)
+                    caseExpr.ElseExpression = ResolveValuesReferences(caseExpr.ElseExpression, row, schema);
+                return caseExpr;
+
+            case CastExpression cast:
+                cast.Operand = ResolveValuesReferences(cast.Operand, row, schema);
+                return cast;
+
+            case InExpression inExpr:
+                inExpr.Operand = ResolveValuesReferences(inExpr.Operand, row, schema);
+                for (var i = 0; i < inExpr.Values.Count; i++)
+                {
+                    inExpr.Values[i] = ResolveValuesReferences(inExpr.Values[i], row, schema);
+                }
+                return inExpr;
+
+            default:
+                return expr;
+        }
     }
 
     #endregion
