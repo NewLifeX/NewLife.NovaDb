@@ -1,4 +1,7 @@
-﻿namespace NewLife.NovaDb.Sql;
+﻿using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Engine;
+
+namespace NewLife.NovaDb.Sql;
 
 /// <summary>SHOW 命令执行器</summary>
 public partial class SqlEngine
@@ -17,8 +20,82 @@ public partial class SqlEngine
             ShowType.Index => ExecuteShowIndex(show),
             ShowType.Users => ExecuteShowUsers(show),
             ShowType.Variables => ExecuteShowVariables(show),
+            ShowType.Binlogs => ExecuteShowBinlogs(show),
+            ShowType.BinlogStatus => ExecuteShowBinlogStatus(show),
             _ => throw new NotSupportedException($"Unsupported SHOW type: {show.ShowType}")
         };
+    }
+
+    /// <summary>SHOW BINLOGS —— Binlog 文件列表</summary>
+    /// <param name="show">SHOW 语句</param>
+    /// <returns>Binlog 文件列表</returns>
+    private SqlResult ExecuteShowBinlogs(ShowStatement show)
+    {
+        var schema = new TableSchema("binlogs");
+        schema.AddColumn(new ColumnDefinition("Log_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("File_size", DataType.Int64, false));
+
+        var rows = new List<Object?[]>();
+        if (Binlog != null)
+        {
+            foreach (var (fileName, size) in Binlog.ListFiles())
+            {
+                if (show.LikePattern.IsNullOrEmpty() || MatchLike(fileName, show.LikePattern))
+                    rows.Add([fileName, size]);
+            }
+        }
+
+        return new SqlResult { ColumnNames = schema.Columns.Select(c => c.Name).ToArray(), Rows = rows };
+    }
+
+    /// <summary>SHOW BINLOG STATUS —— 当前 Binlog 状态</summary>
+    /// <param name="show">SHOW 语句</param>
+    /// <returns>当前 Binlog 文件与位置</returns>
+    private SqlResult ExecuteShowBinlogStatus(ShowStatement show)
+    {
+        var schema = new TableSchema("binlog_status");
+        schema.AddColumn(new ColumnDefinition("File", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("Position", DataType.Int64, false));
+        schema.AddColumn(new ColumnDefinition("File_index", DataType.Int32, false));
+
+        var rows = new List<Object?[]>();
+        if (Binlog != null)
+        {
+            var files = Binlog.ListFiles();
+            var currentIndex = Binlog.FileIndex;
+            var currentFile = files.FirstOrDefault(f => f.FileName.EndsWith($".{currentIndex:D6}"));
+            rows.Add([currentFile.FileName, Binlog.Position, currentIndex]);
+        }
+
+        return new SqlResult { ColumnNames = schema.Columns.Select(c => c.Name).ToArray(), Rows = rows };
+    }
+
+    /// <summary>PURGE BINLOGS —— 清理 Binlog 文件</summary>
+    /// <param name="stmt">Binlog 管理语句</param>
+    /// <returns>清理的文件数量</returns>
+    private SqlResult ExecutePurgeBinlogs(BinlogStatement stmt)
+    {
+        if (Binlog == null)
+            throw new NovaException(ErrorCode.NotSupported, "Binlog is not enabled");
+
+        // 清理到指定文件索引（TO 'binlog.000123'），不删除目标文件本身
+        var targetIndex = stmt.ToIndex ?? 0;
+        if (targetIndex <= 0)
+            throw new NovaException(ErrorCode.InvalidArgument, "PURGE BINLOGS TO requires a valid file index");
+
+        var deleted = Binlog.Purge(targetIndex);
+        return new SqlResult { AffectedRows = deleted };
+    }
+
+    /// <summary>FLUSH BINLOGS —— 轮转到新 Binlog 文件</summary>
+    /// <returns>执行结果</returns>
+    private SqlResult ExecuteFlushBinlogs()
+    {
+        if (Binlog == null)
+            throw new NovaException(ErrorCode.NotSupported, "Binlog is not enabled");
+
+        Binlog.Rotate();
+        return new SqlResult { AffectedRows = 1 };
     }
 
     private SqlResult ExecuteShowDatabases(ShowStatement show)

@@ -38,7 +38,17 @@ public enum SqlStatementType
     /// <summary>EXPLAIN 查询计划</summary>
     Explain,
     /// <summary>SHOW 命令</summary>
-    Show
+    Show,
+    /// <summary>BEGIN/START TRANSACTION</summary>
+    BeginTransaction,
+    /// <summary>COMMIT</summary>
+    CommitTransaction,
+    /// <summary>ROLLBACK</summary>
+    RollbackTransaction,
+    /// <summary>PURGE BINLOGS</summary>
+    PurgeBinlogs,
+    /// <summary>FLUSH BINLOGS</summary>
+    FlushBinlogs,
 }
 
 /// <summary>SHOW 命令子类型</summary>
@@ -58,6 +68,10 @@ public enum ShowType
     Users,
     /// <summary>SHOW VARIABLES [LIKE x]</summary>
     Variables,
+    /// <summary>SHOW BINLOGS，Binlog 文件列表</summary>
+    Binlogs,
+    /// <summary>SHOW BINLOG STATUS，当前 Binlog 状态</summary>
+    BinlogStatus,
 }
 
 /// <summary>SHOW 语句</summary>
@@ -80,6 +94,42 @@ public class ShowStatement : SqlStatement
 
     /// <summary>WHERE 条件字符串（USERS 使用）</summary>
     public String? Where { get; set; }
+}
+
+/// <summary>事务控制语句（BEGIN/COMMIT/ROLLBACK）</summary>
+public class TransactionStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => _statementType;
+    private readonly SqlStatementType _statementType;
+
+    /// <summary>创建事务控制语句</summary>
+    /// <param name="statementType">事务语句类型</param>
+    public TransactionStatement(SqlStatementType statementType)
+    {
+        _statementType = statementType;
+    }
+}
+
+/// <summary>Binlog 管理语句（PURGE BINLOGS / FLUSH BINLOGS）</summary>
+public class BinlogStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => _statementType;
+    private readonly SqlStatementType _statementType;
+
+    /// <summary>清理方式。TO：清理指定文件索引之前（含该索引）的所有文件；BEFORE：按时间清理</summary>
+    public Boolean IsTo { get; set; }
+
+    /// <summary>PURGE BINLOGS TO 'binlog.000123' 的文件索引</summary>
+    public Int32? ToIndex { get; set; }
+
+    /// <summary>创建 Binlog 管理语句</summary>
+    /// <param name="statementType">Binlog 语句类型</param>
+    public BinlogStatement(SqlStatementType statementType)
+    {
+        _statementType = statementType;
+    }
 }
 
 /// <summary>SQL 语句基类</summary>

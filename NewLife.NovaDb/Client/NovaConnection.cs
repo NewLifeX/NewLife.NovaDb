@@ -56,6 +56,10 @@ public class NovaConnection : DbConnection
     /// <summary>SQL 执行引擎（嵌入模式）</summary>
     public SqlEngine? SqlEngine => _sqlEngine;
 
+    /// <summary>SQL 会话事务。由 BEGIN/COMMIT/ROLLBACK 语句管理（嵌入模式）</summary>
+    /// <remarks>连接级事务上下文，SQL 语句 BEGIN 开启后存入，COMMIT/ROLLBACK 结束清空</remarks>
+    public Tx.Transaction? SessionTransaction { get; set; }
+
     /// <summary>客户端工厂</summary>
     public NovaClientFactory Factory { get; set; } = NovaClientFactory.Instance;
 

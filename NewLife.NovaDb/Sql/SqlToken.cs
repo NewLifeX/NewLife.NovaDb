@@ -147,6 +147,18 @@ public enum SqlTokenType
     /// <summary>VARIABLES</summary>
     Variables,
 
+    // 事务控制
+    /// <summary>BEGIN</summary>
+    Begin,
+    /// <summary>START</summary>
+    Start,
+    /// <summary>TRANSACTION</summary>
+    Transaction,
+    /// <summary>COMMIT</summary>
+    Commit,
+    /// <summary>ROLLBACK</summary>
+    Rollback,
+
     // 标识符与字面量
     /// <summary>标识符</summary>
     Identifier,

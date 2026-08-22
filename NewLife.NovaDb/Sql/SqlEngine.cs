@@ -27,6 +27,15 @@ public partial class SqlEngine : IDisposable
     /// <summary>事务管理器</summary>
     public TransactionManager TxManager => _txManager;
 
+    /// <summary>SQL 层会话事务上下文。BEGIN 开启后存入，COMMIT/ROLLBACK 结束后清空</summary>
+    /// <remarks>
+    /// 使用 AsyncLocal 按异步流隔离，支持同一引擎多连接并发（连接池场景）。
+    /// </remarks>
+    private readonly AsyncLocal<Transaction?> _sessionTransaction = new();
+
+    /// <summary>当前 SQL 会话事务（BEGIN 开启后有效）</summary>
+    public Transaction? SessionTransaction => _sessionTransaction.Value;
+
     /// <summary>数据库路径</summary>
     public String DbPath => _dbPath;
 
@@ -157,8 +166,9 @@ public partial class SqlEngine : IDisposable
     /// <summary>执行 SQL 语句并返回结果</summary>
     /// <param name="sql">SQL 文本</param>
     /// <param name="parameters">参数字典</param>
+    /// <param name="tx">外部事务。为空时使用 SQL 会话事务或自动提交</param>
     /// <returns>执行结果</returns>
-    public SqlResult Execute(String sql, Dictionary<String, Object?>? parameters = null)
+    public SqlResult Execute(String sql, Dictionary<String, Object?>? parameters = null, Transaction? tx = null)
     {
         if (sql == null) throw new ArgumentNullException(nameof(sql));
 
@@ -167,9 +177,28 @@ public partial class SqlEngine : IDisposable
         var parser = new SqlParser(sql);
         var stmt = parser.Parse();
 
+        // 事务控制语句
+        if (stmt is TransactionStatement transactionStmt)
+            return ExecuteTransactionStatement(transactionStmt);
+
+        // Binlog 管理语句
+        if (stmt is BinlogStatement binlogStmt)
+        {
+            var binlogResult = binlogStmt.StatementType switch
+            {
+                SqlStatementType.PurgeBinlogs => ExecutePurgeBinlogs(binlogStmt),
+                SqlStatementType.FlushBinlogs => ExecuteFlushBinlogs(),
+                _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported binlog statement: {binlogStmt.StatementType}")
+            };
+            return binlogResult;
+        }
+
         // 只读模式下拦截所有写操作
         if (_options.ReadOnly && stmt is not SelectStatement)
             throw new NovaException(ErrorCode.ReadOnlyViolation, "Database is opened in read-only mode, write operations are not allowed");
+
+        // 未显式传入事务时，使用 SQL 会话事务（BEGIN 开启的）
+        tx ??= _sessionTransaction.Value;
 
         var result = stmt switch
         {
@@ -184,12 +213,12 @@ public partial class SqlEngine : IDisposable
             DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx), sql),
 
             // DML 语句
-            InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters), sql),
-            ReplaceStatement replace => TrackInsert(ExecuteReplace(replace, parameters), sql),
-            UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters), sql),
-            MergeStatement merge => TrackInsert(ExecuteMerge(merge, parameters), sql),
-            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters), sql),
-            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters), sql),
+            InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters, tx), sql),
+            ReplaceStatement replace => TrackInsert(ExecuteReplace(replace, parameters, tx), sql),
+            UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters, tx), sql),
+            MergeStatement merge => TrackInsert(ExecuteMerge(merge, parameters, tx), sql),
+            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters, tx), sql),
+            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters, tx), sql),
 
             // 查询语句
             SelectStatement select => TrackQuery(ExecuteSelect(select, parameters)),
@@ -209,6 +238,42 @@ public partial class SqlEngine : IDisposable
         SlowQuery.Record(sql, sw.ElapsedMilliseconds, result.AffectedRows);
 
         return result;
+    }
+
+    /// <summary>执行事务控制语句（BEGIN/COMMIT/ROLLBACK）</summary>
+    /// <param name="stmt">事务语句</param>
+    /// <returns>执行结果</returns>
+    private SqlResult ExecuteTransactionStatement(TransactionStatement stmt)
+    {
+        switch (stmt.StatementType)
+        {
+            case SqlStatementType.BeginTransaction:
+                if (_sessionTransaction.Value != null)
+                    throw new NovaException(ErrorCode.TransactionError, "Transaction already in progress");
+                _sessionTransaction.Value = _txManager.BeginTransaction();
+                break;
+
+            case SqlStatementType.CommitTransaction:
+                var commitTx = _sessionTransaction.Value;
+                if (commitTx == null)
+                    throw new NovaException(ErrorCode.TransactionError, "No active transaction to commit");
+                commitTx.Commit();
+                _sessionTransaction.Value = null;
+                break;
+
+            case SqlStatementType.RollbackTransaction:
+                var rollbackTx = _sessionTransaction.Value;
+                if (rollbackTx == null)
+                    throw new NovaException(ErrorCode.TransactionError, "No active transaction to rollback");
+                rollbackTx.Rollback();
+                _sessionTransaction.Value = null;
+                break;
+
+            default:
+                throw new NovaException(ErrorCode.NotSupported, $"Unsupported transaction statement: {stmt.StatementType}");
+        }
+
+        return new SqlResult { AffectedRows = 0 };
     }
 
     private SqlResult TrackDdl(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.DdlCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Ddl, sql, result.AffectedRows); return result; }

@@ -8,12 +8,13 @@ partial class SqlEngine
 {
     #region DML 执行
 
-    private SqlResult ExecuteInsert(InsertStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteInsert(InsertStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
 
-        using var tx = _txManager.BeginTransaction();
+        using var localTx = tx == null ? _txManager.BeginTransaction() : null;
+        var effectiveTx = tx ?? localTx!;
         var affectedRows = 0;
 
         foreach (var values in stmt.ValuesList)
@@ -73,7 +74,7 @@ partial class SqlEngine
             {
                 try
                 {
-                    table.Insert(tx, row);
+                    table.Insert(effectiveTx, row);
                     affectedRows++;
                 }
                 catch (NovaException ex) when (ex.Code == ErrorCode.UniqueConstraintViolation)
@@ -83,21 +84,22 @@ partial class SqlEngine
             }
             else
             {
-                table.Insert(tx, row);
+                table.Insert(effectiveTx, row);
                 affectedRows++;
             }
         }
 
-        tx.Commit();
+        if (tx == null) localTx!.Commit();
         return new SqlResult { AffectedRows = affectedRows };
     }
 
-    private SqlResult ExecuteReplace(ReplaceStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteReplace(ReplaceStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
 
-        using var tx = _txManager.BeginTransaction();
+        using var localTx = tx == null ? _txManager.BeginTransaction() : null;
+        var effectiveTx = tx ?? localTx!;
         var affectedRows = 0;
 
         foreach (var values in stmt.ValuesList)
@@ -127,7 +129,7 @@ partial class SqlEngine
             ConvertRowTypes(row, schema);
 
             // REPLACE 语义：先删除唯一键冲突的行
-            var deleted = DeleteConflictingRows(table, tx, row, schema);
+            var deleted = DeleteConflictingRows(table, effectiveTx, row, schema);
 
             // 处理自增主键
             var pkCol = schema.GetPrimaryKeyColumn();
@@ -151,11 +153,11 @@ partial class SqlEngine
                 catch { }
             }
 
-            table.Insert(tx, row);
+            table.Insert(effectiveTx, row);
             affectedRows++;
         }
 
-        tx.Commit();
+        if (tx == null) localTx!.Commit();
         return new SqlResult { AffectedRows = affectedRows };
     }
 
@@ -224,15 +226,16 @@ partial class SqlEngine
         return deleted;
     }
 
-    private SqlResult ExecuteUpdate(UpdateStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteUpdate(UpdateStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
         var pkCol = schema.GetPrimaryKeyColumn()
             ?? throw new NovaException(ErrorCode.InvalidArgument, "UPDATE requires a table with a primary key");
 
-        using var tx = _txManager.BeginTransaction();
-        var allRows = table.GetAll(tx);
+        using var localTx = tx == null ? _txManager.BeginTransaction() : null;
+        var effectiveTx = tx ?? localTx!;
+        var allRows = table.GetAll(effectiveTx);
         var affectedRows = 0;
 
         foreach (var row in allRows)
@@ -255,23 +258,24 @@ partial class SqlEngine
 
             // 获取主键值
             var pkValue = row[pkCol.Ordinal]!;
-            table.Update(tx, pkValue, newRow);
+            table.Update(effectiveTx, pkValue, newRow);
             affectedRows++;
         }
 
-        tx.Commit();
+        if (tx == null) localTx!.Commit();
         return new SqlResult { AffectedRows = affectedRows };
     }
 
-    private SqlResult ExecuteDelete(DeleteStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteDelete(DeleteStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
         var pkCol = schema.GetPrimaryKeyColumn()
             ?? throw new NovaException(ErrorCode.InvalidArgument, "DELETE requires a table with a primary key");
 
-        using var tx = _txManager.BeginTransaction();
-        var allRows = table.GetAll(tx);
+        using var localTx = tx == null ? _txManager.BeginTransaction() : null;
+        var effectiveTx = tx ?? localTx!;
+        var allRows = table.GetAll(effectiveTx);
         var affectedRows = 0;
 
         foreach (var row in allRows)
@@ -280,22 +284,23 @@ partial class SqlEngine
                 continue;
 
             var pkValue = row[pkCol.Ordinal]!;
-            if (table.Delete(tx, pkValue))
+            if (table.Delete(effectiveTx, pkValue))
                 affectedRows++;
         }
 
-        tx.Commit();
+        if (tx == null) localTx!.Commit();
         return new SqlResult { AffectedRows = affectedRows };
     }
 
-    private SqlResult ExecuteUpsert(UpsertStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteUpsert(UpsertStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
         var pkCol = schema.GetPrimaryKeyColumn()
             ?? throw new NovaException(ErrorCode.InvalidArgument, "UPSERT requires a table with a primary key");
 
-        using var tx = _txManager.BeginTransaction();
+        using var localTx = tx == null ? _txManager.BeginTransaction() : null;
+        var effectiveTx = tx ?? localTx!;
         var affectedRows = 0;
 
         foreach (var values in stmt.ValuesList)
@@ -329,7 +334,7 @@ partial class SqlEngine
                 throw new NovaException(ErrorCode.InvalidArgument, "Primary key value cannot be null for UPSERT");
 
             // 尝试查找已有行
-            var existingRow = table.Get(tx, pkValue);
+            var existingRow = table.Get(effectiveTx, pkValue);
             if (existingRow != null)
             {
                 // 已存在：执行 UPDATE 逻辑
@@ -344,29 +349,30 @@ partial class SqlEngine
                 }
 
                 ConvertRowTypes(newRow, schema);
-                table.Update(tx, pkValue, newRow);
+                table.Update(effectiveTx, pkValue, newRow);
             }
             else
             {
                 // 不存在：执行 INSERT 逻辑
-                table.Insert(tx, row);
+                table.Insert(effectiveTx, row);
             }
 
             affectedRows++;
         }
 
-        tx.Commit();
+        if (tx == null) localTx!.Commit();
         return new SqlResult { AffectedRows = affectedRows };
     }
 
-    private SqlResult ExecuteMerge(MergeStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteMerge(MergeStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
     {
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
         var pkCol = schema.GetPrimaryKeyColumn()
             ?? throw new NovaException(ErrorCode.InvalidArgument, "MERGE requires a table with a primary key");
 
-        using var tx = _txManager.BeginTransaction();
+        using var localTx = tx == null ? _txManager.BeginTransaction() : null;
+        var effectiveTx = tx ?? localTx!;
         var affectedRows = 0;
 
         foreach (var values in stmt.ValuesList)
@@ -403,7 +409,7 @@ partial class SqlEngine
             var pkValue = row[pkCol.Ordinal];
             if (pkValue != null)
             {
-                existingRow = table.Get(tx, pkValue);
+                existingRow = table.Get(effectiveTx, pkValue);
                 if (existingRow != null)
                     existingPkValue = pkValue;
             }
@@ -426,7 +432,7 @@ partial class SqlEngine
                     if (matchedPks != null && matchedPks.Count > 0)
                     {
                         existingPkValue = matchedPks[0];
-                        existingRow = table.Get(tx, existingPkValue);
+                        existingRow = table.Get(effectiveTx, existingPkValue);
                         break;
                     }
                 }
@@ -457,18 +463,18 @@ partial class SqlEngine
                 }
 
                 ConvertRowTypes(newRow, schema);
-                table.Update(tx, existingPkValue!, newRow);
+                table.Update(effectiveTx, existingPkValue!, newRow);
             }
             else
             {
                 // 无冲突：执行 INSERT
-                table.Insert(tx, row);
+                table.Insert(effectiveTx, row);
             }
 
             affectedRows++;
         }
 
-        tx.Commit();
+        if (tx == null) localTx!.Commit();
         return new SqlResult { AffectedRows = affectedRows };
     }
 

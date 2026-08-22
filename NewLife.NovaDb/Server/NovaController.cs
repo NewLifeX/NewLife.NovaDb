@@ -1,4 +1,5 @@
 ﻿using NewLife.NovaDb.Cluster;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Tx;
 using NewLife.Remoting;
@@ -37,22 +38,27 @@ internal class NovaController : IApi
     /// <summary>执行 SQL（非查询）</summary>
     /// <param name="sql">SQL 语句</param>
     /// <returns>受影响行数</returns>
-    public Int32 Execute(String sql)
+    /// <summary>执行 SQL（非查询）</summary>
+    /// <param name="sql">SQL 语句</param>
+    /// <param name="txId">事务 ID（可选，绑定到已开启事务）</param>
+    /// <returns>受影响行数</returns>
+    public Int32 Execute(String sql, String? txId = null)
     {
         if (SharedEngine == null) return 0;
 
-        var result = SharedEngine.Execute(sql);
+        var result = ExecuteWithTransaction(sql, txId);
         return result.AffectedRows;
     }
 
     /// <summary>查询</summary>
     /// <param name="sql">SQL 语句</param>
+    /// <param name="txId">事务 ID（可选，绑定到已开启事务）</param>
     /// <returns>查询结果</returns>
-    public Object? Query(String sql)
+    public Object? Query(String sql, String? txId = null)
     {
         if (SharedEngine == null) return null;
 
-        var result = SharedEngine.Execute(sql);
+        var result = ExecuteWithTransaction(sql, txId);
         if (!result.IsQuery) return result.AffectedRows;
 
         return new
@@ -60,6 +66,30 @@ internal class NovaController : IApi
             result.ColumnNames,
             Rows = result.Rows.Select(r => r.ToArray()).ToArray()
         };
+    }
+
+    /// <summary>在指定事务（若有）中执行 SQL</summary>
+    /// <param name="sql">SQL 语句</param>
+    /// <param name="txId">事务 ID（可选）</param>
+    /// <returns>执行结果</returns>
+    private SqlResult ExecuteWithTransaction(String sql, String? txId)
+    {
+        if (SharedEngine == null) return new SqlResult();
+
+        // 有事务 ID 时，绑定到已开启的事务
+        if (!txId.IsNullOrEmpty())
+        {
+            lock (_txLock)
+            {
+                if (_transactions.TryGetValue(txId, out var tx))
+                    return SharedEngine.Execute(sql, null, tx);
+            }
+
+            // 事务不存在，返回明确错误
+            throw new NovaException(ErrorCode.TransactionError, $"Transaction '{txId}' not found");
+        }
+
+        return SharedEngine.Execute(sql);
     }
 
     /// <summary>开始事务</summary>

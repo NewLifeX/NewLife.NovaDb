@@ -83,6 +83,11 @@ public class SqlLexer
         ["DATABASES"] = SqlTokenType.Databases,
         ["TABLES"] = SqlTokenType.Tables,
         ["VARIABLES"] = SqlTokenType.Variables,
+        ["BEGIN"] = SqlTokenType.Begin,
+        ["START"] = SqlTokenType.Start,
+        ["TRANSACTION"] = SqlTokenType.Transaction,
+        ["COMMIT"] = SqlTokenType.Commit,
+        ["ROLLBACK"] = SqlTokenType.Rollback,
     };
 
     /// <summary>创建词法分析器</summary>

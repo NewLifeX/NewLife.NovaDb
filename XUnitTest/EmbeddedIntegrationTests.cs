@@ -1144,12 +1144,11 @@ public class EmbeddedIntegrationTests : IDisposable
             tx.Rollback();
         }
 
-        // 回滚后只应有基准数据
+        // 回滚后只应有基准数据（1 条），新增的 Bob 不可见
         cmd.Transaction = null;
         cmd.CommandText = "SELECT COUNT(*) FROM emb_tx_rollback";
         var count = Convert.ToInt32(cmd.ExecuteScalar());
-        // 嵌入模式事务为简单封装，验证事务对象可用即可
-        Assert.True(count >= 1);
+        Assert.Equal(1, count);
     }
 
     #endregion

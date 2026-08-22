@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.IO;
 using NewLife.NovaDb.Client;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
+using NewLife.NovaDb.WAL;
 using Xunit;
 
 #nullable enable
@@ -320,7 +322,7 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         Assert.Equal("committed", Convert.ToString(cmd2.ExecuteScalar()));
     }
 
-    [Fact(Skip = "嵌入模式 NovaTransaction.Rollback 尚未实现写撤销，嵌入事务暂不支持", DisplayName = "关系型集成-事务回滚后数据不可见")]
+    [Fact(DisplayName = "关系型集成-事务回滚后数据不可见")]
     public void Transaction_Rollback_DataNotVisible()
     {
         using var conn = OpenConnection();
@@ -339,6 +341,71 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         using var cmd2 = conn.CreateCommand();
         cmd2.CommandText = "SELECT COUNT(*) FROM rel_tx_rollback";
         Assert.Equal(0, Convert.ToInt32(cmd2.ExecuteScalar()));
+    }
+
+    [Fact(DisplayName = "关系型集成-事务回滚后数据不可见（多行，UPDATE/DELETE 回滚）")]
+    public void Transaction_Rollback_MultiOps()
+    {
+        using var conn = OpenConnection();
+        conn.ExecuteNonQuery("CREATE TABLE rel_tx_rollback2 (id INT PRIMARY KEY, val STRING(50))");
+        conn.ExecuteNonQuery("INSERT INTO rel_tx_rollback2 VALUES (1, 'base')");
+
+        using (var tx = conn.BeginTransaction())
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = "INSERT INTO rel_tx_rollback2 VALUES (2, 'new')";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "UPDATE rel_tx_rollback2 SET val='changed' WHERE id=1";
+            cmd.ExecuteNonQuery();
+            cmd.CommandText = "DELETE FROM rel_tx_rollback2 WHERE id=1";
+            cmd.ExecuteNonQuery();
+            tx.Rollback();
+        }
+
+        // 回滚后：新增不存在、更新未生效、删除未发生
+        using var cmd2 = conn.CreateCommand();
+        cmd2.CommandText = "SELECT COUNT(*) FROM rel_tx_rollback2";
+        Assert.Equal(1, Convert.ToInt32(cmd2.ExecuteScalar()));
+        cmd2.CommandText = "SELECT val FROM rel_tx_rollback2 WHERE id=1";
+        Assert.Equal("base", Convert.ToString(cmd2.ExecuteScalar()));
+    }
+
+    [Fact(DisplayName = "关系型集成-SQL 语句 BEGIN/COMMIT/ROLLBACK")]
+    public void Transaction_SqlStatements()
+    {
+        using var conn = OpenConnection();
+        conn.ExecuteNonQuery("CREATE TABLE rel_tx_sql (id INT PRIMARY KEY, val STRING(50))");
+
+        // BEGIN + INSERT + COMMIT → 提交可见
+        conn.ExecuteNonQuery("BEGIN");
+        conn.ExecuteNonQuery("INSERT INTO rel_tx_sql VALUES (1, 'committed')");
+        conn.ExecuteNonQuery("COMMIT");
+
+        // BEGIN + INSERT + ROLLBACK → 回滚不可见
+        conn.ExecuteNonQuery("BEGIN TRANSACTION");
+        conn.ExecuteNonQuery("INSERT INTO rel_tx_sql VALUES (2, 'rolled')");
+        conn.ExecuteNonQuery("ROLLBACK");
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM rel_tx_sql";
+        Assert.Equal(1, Convert.ToInt32(cmd.ExecuteScalar()));
+        cmd.CommandText = "SELECT val FROM rel_tx_sql WHERE id=1";
+        Assert.Equal("committed", Convert.ToString(cmd.ExecuteScalar()));
+    }
+
+    [Fact(DisplayName = "关系型集成-无事务时自动提交")]
+    public void Transaction_AutoCommit()
+    {
+        using var conn = OpenConnection();
+        conn.ExecuteNonQuery("CREATE TABLE rel_tx_auto (id INT PRIMARY KEY, val STRING(50))");
+
+        // 未显式开启事务，单条 INSERT 自动提交
+        conn.ExecuteNonQuery("INSERT INTO rel_tx_auto VALUES (1, 'auto')");
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM rel_tx_auto";
+        Assert.Equal(1, Convert.ToInt32(cmd.ExecuteScalar()));
     }
 
     [Fact(DisplayName = "关系型集成-事务内多行操作全部提交")]
@@ -363,6 +430,129 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         using var cmd2 = conn.CreateCommand();
         cmd2.CommandText = "SELECT COUNT(*) FROM rel_tx_multi";
         Assert.Equal(3, Convert.ToInt32(cmd2.ExecuteScalar()));
+    }
+
+    #endregion
+
+    #region Binlog 管理测试
+
+    [Fact(DisplayName = "关系型集成-SHOW BINLOGS 文件列表")]
+    public void ShowBinlogs_ListsFiles()
+    {
+        using var conn = OpenConnection();
+        // 启用 Binlog
+        var binlogPath = Path.Combine(RelationalDbFixture.DbPath, "binlog");
+        var engine = conn.SqlEngine!;
+        engine.Binlog = new BinlogWriter(binlogPath, "testdb");
+
+        // 产生几条变更产生 Binlog 文件
+        conn.ExecuteNonQuery("CREATE TABLE rel_bin_show (id INT PRIMARY KEY, val STRING(50))");
+        conn.ExecuteNonQuery("INSERT INTO rel_bin_show VALUES (1, 'a')");
+
+        // SHOW BINLOGS
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SHOW BINLOGS";
+        using var reader = cmd.ExecuteReader();
+
+        var hasRows = false;
+        while (reader.Read())
+        {
+            var name = Convert.ToString(reader.GetValue(0));
+            Assert.False(String.IsNullOrEmpty(name));
+            Assert.Contains("binlog.", name);
+            hasRows = true;
+        }
+        Assert.True(hasRows, "SHOW BINLOGS 应返回至少一个 Binlog 文件");
+    }
+
+    [Fact(DisplayName = "关系型集成-SHOW BINLOG STATUS 当前状态")]
+    public void ShowBinlogStatus_ReturnsCurrent()
+    {
+        using var conn = OpenConnection();
+        var binlogPath = Path.Combine(RelationalDbFixture.DbPath, "binlog_status");
+        var engine = conn.SqlEngine!;
+        engine.Binlog = new BinlogWriter(binlogPath, "testdb");
+
+        conn.ExecuteNonQuery("CREATE TABLE rel_bin_status (id INT PRIMARY KEY, val STRING(50))");
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SHOW BINLOG STATUS";
+        using var reader = cmd.ExecuteReader();
+
+        Assert.True(reader.Read());
+        var file = Convert.ToString(reader.GetValue(0));
+        Assert.False(String.IsNullOrEmpty(file));
+        Assert.Contains("binlog.", file);
+        var position = Convert.ToInt64(reader.GetValue(1));
+        Assert.True(position >= 0);
+    }
+
+    [Fact(DisplayName = "关系型集成-FLUSH BINLOGS 轮转新文件")]
+    public void FlushBinlogs_RotatesFile()
+    {
+        using var conn = OpenConnection();
+        var binlogPath = Path.Combine(RelationalDbFixture.DbPath, "binlog_flush");
+        var engine = conn.SqlEngine!;
+        engine.Binlog = new BinlogWriter(binlogPath, "testdb");
+
+        conn.ExecuteNonQuery("CREATE TABLE rel_bin_flush (id INT PRIMARY KEY, val STRING(50))");
+
+        // 触发写入，再 FLUSH 轮转
+        conn.ExecuteNonQuery("INSERT INTO rel_bin_flush VALUES (1, 'a')");
+        conn.ExecuteNonQuery("FLUSH BINLOGS");
+
+        // 轮转后应有 2 个文件
+        var files = engine.Binlog.ListFiles();
+        Assert.True(files.Count >= 2, $"FLUSH 后应有至少 2 个文件，实际 {files.Count}");
+    }
+
+    [Fact(DisplayName = "关系型集成-PURGE BINLOGS TO 清理旧文件")]
+    public void PurgeBinlogs_RemovesOldFiles()
+    {
+        using var conn = OpenConnection();
+        var binlogPath = Path.Combine(RelationalDbFixture.DbPath, "binlog_purge");
+        var engine = conn.SqlEngine!;
+        engine.Binlog = new BinlogWriter(binlogPath, "testdb");
+
+        conn.ExecuteNonQuery("CREATE TABLE rel_bin_purge (id INT PRIMARY KEY, val STRING(50))");
+
+        // 写数据 + 多次 FLUSH 产生多个文件
+        conn.ExecuteNonQuery("INSERT INTO rel_bin_purge VALUES (1, 'a')");
+        conn.ExecuteNonQuery("FLUSH BINLOGS");
+        conn.ExecuteNonQuery("INSERT INTO rel_bin_purge VALUES (2, 'b')");
+        conn.ExecuteNonQuery("FLUSH BINLOGS");
+
+        var before = engine.Binlog.ListFiles().Count;
+        Assert.True(before >= 3, $"应有至少 3 个文件，实际 {before}");
+
+        // PURGE BINLOGS TO 清理到当前最新文件之前（保留最新）
+        var currentIndex = engine.Binlog.FileIndex;
+        conn.ExecuteNonQuery($"PURGE BINLOGS TO 'binlog.{currentIndex:D6}'");
+
+        var after = engine.Binlog.ListFiles().Count;
+        Assert.True(after < before, $"PURGE 后文件数应减少，before={before}, after={after}");
+        Assert.True(after >= 1, "PURGE 后应保留至少 1 个文件");
+    }
+
+    [Fact(DisplayName = "关系型集成-未启用 Binlog 时命令行为")]
+    public void BinlogCommand_WithoutBinlog_Behavior()
+    {
+        using var conn = OpenConnection();
+        // 不启用 Binlog；清除共享引擎可能被其他测试设置的 Binlog
+        var engine = conn.SqlEngine!;
+        engine.Binlog = null;
+
+        // SHOW BINLOGS：未启用时返回空结果集
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SHOW BINLOGS";
+            using var reader = cmd.ExecuteReader();
+            Assert.False(reader.Read());
+        }
+
+        // PURGE / FLUSH：未启用时明确报错（引擎层直接抛出 NovaException）
+        Assert.Throws<NovaException>(() => engine.Execute("PURGE BINLOGS TO 'binlog.000010'"));
+        Assert.Throws<NovaException>(() => engine.Execute("FLUSH BINLOGS"));
     }
 
     #endregion

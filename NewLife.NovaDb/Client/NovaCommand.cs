@@ -1,6 +1,7 @@
 ﻿using System.Data;
 using System.Data.Common;
 using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Sql;
 
 namespace NewLife.NovaDb.Client;
 
@@ -68,13 +69,21 @@ public class NovaCommand : DbCommand
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
         {
-            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters()));
+            // 事务控制语句在连接层处理（BEGIN/COMMIT/ROLLBACK）
+            if (TryHandleTransactionStatement(conn, out var handled))
+                return handled;
+
+            var engineTx = (DbTransaction as NovaTransaction)?.EngineTx ?? conn.SessionTransaction;
+            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx));
             return result.AffectedRows;
         }
 
         // 网络模式：通过 RPC 客户端执行
         if (conn.Client != null)
-            return conn.Client.ExecuteAsync(_commandText).ConfigureAwait(false).GetAwaiter().GetResult();
+        {
+            var txId = (DbTransaction as NovaTransaction)?.TxId;
+            return conn.Client.ExecuteAsync(_commandText, txId).ConfigureAwait(false).GetAwaiter().GetResult();
+        }
 
         return 0;
     }
@@ -88,7 +97,11 @@ public class NovaCommand : DbCommand
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
         {
-            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters()));
+            if (TryHandleTransactionStatement(conn, out _))
+                return null;
+
+            var engineTx = (DbTransaction as NovaTransaction)?.EngineTx ?? conn.SessionTransaction;
+            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx));
             return result.GetScalar();
         }
 
@@ -121,7 +134,11 @@ public class NovaCommand : DbCommand
         // 嵌入模式：直接使用 SQL 引擎
         if (conn.SqlEngine != null)
         {
-            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters()));
+            if (TryHandleTransactionStatement(conn, out _))
+                return reader;
+
+            var engineTx = (DbTransaction as NovaTransaction)?.EngineTx ?? conn.SessionTransaction;
+            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx));
             if (result.IsQuery && result.ColumnNames != null)
             {
                 reader.SetColumns(result.ColumnNames);
@@ -136,7 +153,8 @@ public class NovaCommand : DbCommand
         // 网络模式：通过 RPC 客户端查询
         if (conn.Client != null)
         {
-            var queryResult = conn.Client.QueryAsync<IDictionary<String, Object?>>(_commandText)
+            var txId = (DbTransaction as NovaTransaction)?.TxId;
+            var queryResult = conn.Client.QueryAsync<IDictionary<String, Object?>>(_commandText, txId)
                 .ConfigureAwait(false).GetAwaiter().GetResult();
             if (queryResult != null)
             {
@@ -198,6 +216,61 @@ public class NovaCommand : DbCommand
         }
 
         return dict;
+    }
+
+    /// <summary>在嵌入模式下处理事务控制语句（BEGIN/COMMIT/ROLLBACK）</summary>
+    /// <param name="conn">连接</param>
+    /// <param name="affectedRows">受影响行数（仅当返回 true 时有效）</param>
+    /// <returns>是否已处理（是事务语句）</returns>
+    private Boolean TryHandleTransactionStatement(NovaConnection conn, out Int32 affectedRows)
+    {
+        affectedRows = 0;
+
+        // 快速判断：非事务关键字开头直接跳过
+        var trimmed = _commandText.TrimStart();
+        if (trimmed.Length < 3) return false;
+
+        var head = trimmed.Substring(0, Math.Min(8, trimmed.Length)).ToUpperInvariant();
+        if (!head.StartsWith("BEGIN") && !head.StartsWith("START") &&
+            !head.StartsWith("COMMIT") && !head.StartsWith("ROLLBACK"))
+        {
+            return false;
+        }
+
+        // 解析确认是事务语句
+        var parser = new SqlParser(_commandText);
+        var stmt = parser.Parse();
+        if (stmt is not TransactionStatement transactionStmt)
+            return false;
+
+        var engine = conn.SqlEngine!;
+        switch (transactionStmt.StatementType)
+        {
+            case SqlStatementType.BeginTransaction:
+                if (conn.SessionTransaction != null)
+                    throw new NovaException(ErrorCode.TransactionError, "Transaction already in progress");
+                conn.SessionTransaction = engine.TxManager.BeginTransaction();
+                break;
+
+            case SqlStatementType.CommitTransaction:
+                var commitTx = conn.SessionTransaction
+                    ?? throw new NovaException(ErrorCode.TransactionError, "No active transaction to commit");
+                commitTx.Commit();
+                conn.SessionTransaction = null;
+                break;
+
+            case SqlStatementType.RollbackTransaction:
+                var rollbackTx = conn.SessionTransaction
+                    ?? throw new NovaException(ErrorCode.TransactionError, "No active transaction to rollback");
+                rollbackTx.Rollback();
+                conn.SessionTransaction = null;
+                break;
+
+            default:
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>从 RPC 查询结果填充数据读取器</summary>

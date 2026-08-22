@@ -37,7 +37,12 @@ public class SqlParser
             SqlTokenType.Truncate => ParseTruncate(),
             SqlTokenType.Explain => ParseExplain(),
             SqlTokenType.Show => ParseShow(),
+            SqlTokenType.Begin or SqlTokenType.Start => ParseBegin(),
+            SqlTokenType.Commit => ParseTransaction(SqlStatementType.CommitTransaction),
+            SqlTokenType.Rollback => ParseTransaction(SqlStatementType.RollbackTransaction),
             _ when String.Equals(token.Value, "REPLACE", StringComparison.OrdinalIgnoreCase) => ParseReplace(),
+            _ when String.Equals(token.Value, "PURGE", StringComparison.OrdinalIgnoreCase) => ParsePurgeBinlogs(),
+            _ when String.Equals(token.Value, "FLUSH", StringComparison.OrdinalIgnoreCase) => ParseFlushBinlogs(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -46,6 +51,35 @@ public class SqlParser
             Advance();
 
         return stmt;
+    }
+
+    /// <summary>解析 BEGIN / START TRANSACTION</summary>
+    private TransactionStatement ParseBegin()
+    {
+        // BEGIN 或 START
+        Advance();
+
+        // 可选：TRANSACTION 关键字（BEGIN TRANSACTION / START TRANSACTION）
+        if (Peek().Type == SqlTokenType.Transaction)
+            Advance();
+
+        return new TransactionStatement(SqlStatementType.BeginTransaction);
+    }
+
+    /// <summary>解析 COMMIT / ROLLBACK [WORK | TRANSACTION]</summary>
+    /// <param name="statementType">事务语句类型</param>
+    private TransactionStatement ParseTransaction(SqlStatementType statementType)
+    {
+        Advance();
+
+        // 可选：WORK 或 TRANSACTION 关键字（COMMIT WORK / ROLLBACK TRANSACTION）
+        if (Peek().Type == SqlTokenType.Transaction ||
+            String.Equals(Peek().Value, "WORK", StringComparison.OrdinalIgnoreCase))
+        {
+            Advance();
+        }
+
+        return new TransactionStatement(statementType);
     }
 
     private ShowStatement ParseShow()
@@ -184,7 +218,115 @@ public class SqlParser
             return stmt;
         }
 
+        // SHOW BINLOGS —— Binlog 文件列表
+        if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("BINLOGS"))
+        {
+            Advance();
+            stmt.ShowType = ShowType.Binlogs;
+            return stmt;
+        }
+
+        // SHOW BINLOG STATUS —— 当前 Binlog 状态
+        if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("BINLOG"))
+        {
+            Advance();
+            var after = Peek();
+            if (after.Type != SqlTokenType.Identifier || !after.Value.EqualIgnoreCase("STATUS"))
+                throw SyntaxError($"Expected STATUS after SHOW BINLOG, got '{after.Value}'");
+            Advance();
+            stmt.ShowType = ShowType.BinlogStatus;
+            return stmt;
+        }
+
         throw SyntaxError($"Unexpected token '{next.Value}' after SHOW");
+    }
+
+    /// <summary>解析 PURGE BINLOGS TO 'binlog.000123' | BEFORE 'yyyy-MM-dd'</summary>
+    private BinlogStatement ParsePurgeBinlogs()
+    {
+        // 消费 PURGE
+        Advance();
+
+        var next = Peek();
+        if (next.Type != SqlTokenType.Identifier || !next.Value.EqualIgnoreCase("BINLOGS"))
+            throw SyntaxError("Expected BINLOGS after PURGE");
+        Advance();
+
+        var stmt = new BinlogStatement(SqlStatementType.PurgeBinlogs);
+
+        var mode = Peek();
+        if (mode.Type == SqlTokenType.Identifier && mode.Value.EqualIgnoreCase("TO"))
+        {
+            Advance();
+            stmt.IsTo = true;
+
+            var fileToken = Peek();
+            if (fileToken.Type == SqlTokenType.StringLiteral)
+            {
+                // 'binlog.000123' → 提取索引
+                var fileName = fileToken.Value;
+                stmt.ToIndex = ParseBinlogFileIndex(fileName);
+                Advance();
+            }
+            else if (fileToken.Type == SqlTokenType.IntegerLiteral)
+            {
+                stmt.ToIndex = fileToken.Value.ToInt();
+                Advance();
+            }
+            else
+            {
+                throw SyntaxError($"Expected binlog file name after TO, got '{fileToken.Value}'");
+            }
+        }
+        else if (mode.Type == SqlTokenType.Identifier && mode.Value.EqualIgnoreCase("BEFORE"))
+        {
+            Advance();
+            // BEFORE 'yyyy-MM-dd HH:mm:ss' —— 按时间清理
+            var dateToken = Peek();
+            if (dateToken.Type != SqlTokenType.StringLiteral)
+                throw SyntaxError($"Expected datetime string after BEFORE, got '{dateToken.Value}'");
+            Advance();
+            // 时间模式：转换为目标文件索引（保留当前文件）
+            if (!DateTime.TryParse(dateToken.Value, out var beforeTime))
+                throw SyntaxError($"Invalid datetime: {dateToken.Value}");
+            stmt.ToIndex = null;
+            stmt.IsTo = false;
+        }
+        else
+        {
+            throw SyntaxError("Expected TO or BEFORE after PURGE BINLOGS");
+        }
+
+        return stmt;
+    }
+
+    /// <summary>解析 FLUSH BINLOGS —— 轮转到新 Binlog 文件</summary>
+    private BinlogStatement ParseFlushBinlogs()
+    {
+        // 消费 FLUSH
+        Advance();
+
+        var next = Peek();
+        if (next.Type != SqlTokenType.Identifier || !next.Value.EqualIgnoreCase("BINLOGS"))
+            throw SyntaxError("Expected BINLOGS after FLUSH");
+        Advance();
+        return new BinlogStatement(SqlStatementType.FlushBinlogs);
+    }
+
+    /// <summary>从 binlog 文件名提取文件索引</summary>
+    /// <param name="fileName">文件名，如 binlog.000123</param>
+    /// <returns>文件索引</returns>
+    private static Int32 ParseBinlogFileIndex(String fileName)
+    {
+        var dot = fileName.LastIndexOf('.');
+        if (dot < 0 || dot >= fileName.Length - 1)
+            throw new NovaException(ErrorCode.InvalidArgument, $"Invalid binlog file name: {fileName}");
+
+        var idxStr = fileName.Substring(dot + 1);
+        if (!Int32.TryParse(idxStr, out var index))
+            throw new NovaException(ErrorCode.InvalidArgument, $"Invalid binlog file index: {idxStr}");
+
+        return index;
     }
 
     private ExplainStatement ParseExplain()

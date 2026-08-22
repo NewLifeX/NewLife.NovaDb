@@ -95,6 +95,7 @@ public class NovaTransactionTests : IDisposable
 
         using (var tx = conn.BeginTransaction())
         {
+            cmd.Transaction = tx;
             cmd.CommandText = "INSERT INTO tx_commit VALUES (1, 'Alice')";
             cmd.ExecuteNonQuery();
             tx.Commit();
@@ -120,6 +121,7 @@ public class NovaTransactionTests : IDisposable
 
         using (var tx = conn.BeginTransaction())
         {
+            cmd.Transaction = tx;
             cmd.CommandText = "INSERT INTO tx_rollback VALUES (2, 'Bob')";
             cmd.ExecuteNonQuery();
             tx.Rollback();
@@ -127,8 +129,8 @@ public class NovaTransactionTests : IDisposable
 
         cmd.CommandText = "SELECT COUNT(*) FROM tx_rollback";
         var count = Convert.ToInt32(cmd.ExecuteScalar());
-        // 事务回滚后应仅剩基础数据
-        Assert.True(count >= 1);
+        // 事务回滚后应仅剩基础数据（1 条），新增的 Bob 不可见
+        Assert.Equal(1, count);
     }
 
     #endregion

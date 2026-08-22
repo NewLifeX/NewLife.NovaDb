@@ -214,6 +214,23 @@ public class BinlogWriter : IDisposable
         OpenBinlogFile();
     }
 
+    /// <summary>主动轮转到新 Binlog 文件（对应 FLUSH BINLOGS）</summary>
+    public void Rotate()
+    {
+        if (_disposed) return;
+
+        lock (_lock)
+        {
+            if (_stream == null) return;
+
+            // 写入轮转标记，关闭旧文件，打开新文件
+            WriteEvent(BinlogEventType.Rotate, "", 0);
+            _stream.Dispose();
+            _fileIndex++;
+            OpenBinlogFile();
+        }
+    }
+
     #endregion
 
     #region 写入

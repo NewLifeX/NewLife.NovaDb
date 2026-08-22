@@ -66,6 +66,16 @@ public class NovaClient : DisposeBase
         return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql }).ConfigureAwait(false);
     }
 
+    /// <summary>执行 SQL（非查询，绑定事务）</summary>
+    /// <param name="sql">SQL 语句</param>
+    /// <param name="txId">事务 ID（可选）</param>
+    /// <returns>受影响行数</returns>
+    public async Task<Int32> ExecuteAsync(String sql, String? txId)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql, txId }).ConfigureAwait(false);
+    }
+
     /// <summary>查询</summary>
     /// <param name="sql">SQL 语句</param>
     /// <returns>查询结果</returns>
@@ -73,6 +83,16 @@ public class NovaClient : DisposeBase
     {
         EnsureOpen();
         return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql }).ConfigureAwait(false);
+    }
+
+    /// <summary>查询（绑定事务）</summary>
+    /// <param name="sql">SQL 语句</param>
+    /// <param name="txId">事务 ID（可选）</param>
+    /// <returns>查询结果</returns>
+    public async Task<TResult?> QueryAsync<TResult>(String sql, String? txId)
+    {
+        EnsureOpen();
+        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql, txId }).ConfigureAwait(false);
     }
 
     /// <summary>开始事务</summary>
