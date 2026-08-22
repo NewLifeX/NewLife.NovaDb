@@ -47,8 +47,7 @@ public partial class NovaTable
         var path = GetRowLogPath();
         var isNew = !File.Exists(path) || new FileInfo(path).Length < RowLogHeaderSize;
 
-        // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
-        _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
+        _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
 
         if (isNew)
         {

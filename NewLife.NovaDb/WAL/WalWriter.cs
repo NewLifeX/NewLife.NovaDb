@@ -57,8 +57,7 @@ public class WalWriter : IDisposable
 
             var isNewFile = !File.Exists(_walPath);
 
-            // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
-            _fileStream = new FileStream(_walPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
+            _fileStream = new FileStream(_walPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
 
             if (!isNewFile)
             {
@@ -158,8 +157,7 @@ public class WalWriter : IDisposable
             File.Move(_walPath, backupPath);
 
             // 重新创建 WAL 文件
-            // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
-            _fileStream = new FileStream(_walPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
+            _fileStream = new FileStream(_walPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read);
             _nextLsn = checkpointLsn + 1;
 
             // 删除备份

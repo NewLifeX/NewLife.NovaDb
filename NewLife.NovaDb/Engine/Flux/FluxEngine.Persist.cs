@@ -52,8 +52,7 @@ public partial class FluxEngine
         var path = GetFluxLogPath();
         var isNew = !File.Exists(path) || new FileInfo(path).Length < FluxLogHeaderSize;
 
-        // FileShare.Delete 允许删除已打开的数据库目录（Windows 延迟删除语义）
-        _fluxLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
+        _fluxLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
 
         if (isNew)
         {
