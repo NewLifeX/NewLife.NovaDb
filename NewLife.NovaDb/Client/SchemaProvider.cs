@@ -379,7 +379,7 @@ internal class SchemaProvider(NovaConnection connection)
         return collection;
     }
 
-    public virtual SchemaCollection GetTables(String[]? restrictions)
+    public virtual SchemaCollection GetTables(String?[]? restrictions)
     {
         var collection = new SchemaCollection("Tables");
         collection.AddColumn("TABLE_CATALOG", typeof(String));
@@ -429,7 +429,7 @@ internal class SchemaProvider(NovaConnection connection)
         return collection;
     }
 
-    public virtual SchemaCollection GetColumns(String[]? restrictions)
+    public virtual SchemaCollection GetColumns(String?[]? restrictions)
     {
         var collection = new SchemaCollection("Columns");
         collection.AddColumn("TABLE_CATALOG", typeof(String));
@@ -624,7 +624,7 @@ internal class SchemaProvider(NovaConnection connection)
         }
     }
 
-    public virtual SchemaCollection GetIndexes(String[]? restrictions)
+    public virtual SchemaCollection GetIndexes(String?[]? restrictions)
     {
         var collection = new SchemaCollection("Indexes");
         collection.AddColumn("INDEX_CATALOG", typeof(String));
@@ -674,7 +674,7 @@ internal class SchemaProvider(NovaConnection connection)
         return collection;
     }
 
-    public virtual SchemaCollection GetIndexColumns(String[]? restrictions)
+    public virtual SchemaCollection GetIndexColumns(String?[]? restrictions)
     {
         var dt = new SchemaCollection("IndexColumns");
         dt.AddColumn("INDEX_CATALOG", typeof(String));
