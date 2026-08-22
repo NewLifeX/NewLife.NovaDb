@@ -662,6 +662,40 @@ partial class SqlEngine
                     ArrayPool<GeoPoint>.Shared.Return(polygonPoints);
                 }
 
+            // GIS 坐标系转换（WGS84 / GCJ-02 / BD-09）
+            case "GEO_TRANSFORM":
+                if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, Convert.ToString(args[1])!, Convert.ToString(args[2])!);
+
+            case "GEO_WGS84_TO_GCJ02":
+                if (args.Count < 1 || args[0] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, "wgs84", "gcj02");
+
+            case "GEO_GCJ02_TO_WGS84":
+                if (args.Count < 1 || args[0] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, "gcj02", "wgs84");
+
+            case "GEO_WGS84_TO_BD09":
+                if (args.Count < 1 || args[0] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, "wgs84", "bd09");
+
+            case "GEO_BD09_TO_WGS84":
+                if (args.Count < 1 || args[0] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, "bd09", "wgs84");
+
+            case "GEO_GCJ02_TO_BD09":
+                if (args.Count < 1 || args[0] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, "gcj02", "bd09");
+
+            case "GEO_BD09_TO_GCJ02":
+                if (args.Count < 1 || args[0] == null) return null;
+                return TransformGeoPoint((GeoPoint)args[0]!, "bd09", "gcj02");
+
+            // GIS geohash 编码
+            case "GEOHASH":
+                if (args.Count < 1 || args[0] == null) return null;
+                return EncodeGeoHashPoint((GeoPoint)args[0]!, args.Count > 1 ? Convert.ToInt32(args[1]) : 8);
+
             // Vector 函数
             case "VECTOR":
                 var vec = new Single[args.Count];
@@ -690,6 +724,49 @@ partial class SqlEngine
                 throw new NovaException(ErrorCode.NotSupported, $"Unsupported function: {func.FunctionName}");
         }
     }
+
+    /// <summary>坐标点坐标系转换</summary>
+    /// <param name="point">坐标点</param>
+    /// <param name="from">源坐标系（wgs84/gcj02/bd09，支持 gps/amap/tencent/baidu 别名）</param>
+    /// <param name="to">目标坐标系</param>
+    /// <returns>转换后的坐标点</returns>
+    private static GeoPoint TransformGeoPoint(GeoPoint point, String from, String to)
+    {
+        var fromCrs = ParseCrs(from);
+        var toCrs = ParseCrs(to);
+
+        var (lat, lon) = GeoHelper.Transform(point.Latitude, point.Longitude, fromCrs, toCrs);
+        return new GeoPoint(lat, lon);
+    }
+
+    /// <summary>解析坐标系名称（含别名）</summary>
+    /// <param name="name">坐标系名称</param>
+    /// <returns>坐标系枚举</returns>
+    private static GeoHelper.GeoCrs ParseCrs(String name)
+    {
+        switch (name.Trim().ToLowerInvariant())
+        {
+            case "wgs84":
+            case "gps":
+                return GeoHelper.GeoCrs.WGS84;
+            case "gcj02":
+            case "amap":
+            case "tencent":
+                return GeoHelper.GeoCrs.GCJ02;
+            case "bd09":
+            case "baidu":
+                return GeoHelper.GeoCrs.BD09;
+            default:
+                throw new NovaException(ErrorCode.InvalidArgument, $"Unknown coordinate system: {name}");
+        }
+    }
+
+    /// <summary>编码坐标点为 geohash 字符串</summary>
+    /// <param name="point">坐标点</param>
+    /// <param name="precision">精度（字符数，默认 8）</param>
+    /// <returns>geohash 字符串</returns>
+    private static String EncodeGeoHashPoint(GeoPoint point, Int32 precision)
+        => GeoHelper.EncodeGeohash(point.Latitude, point.Longitude, precision);
 
     /// <summary>求值 CASE WHEN 表达式</summary>
     private Object? EvaluateCaseExpression(CaseExpression caseExpr, Object?[]? row, TableSchema? schema, Dictionary<String, Object?>? parameters)

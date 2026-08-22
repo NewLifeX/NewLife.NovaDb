@@ -667,6 +667,69 @@ public class SqlFunctionTests : IDisposable
 
     #endregion
 
+    #region GIS 坐标转换与 geohash
+
+    [Fact(DisplayName = "GEO_WGS84_TO_GCJ02 坐标转换")]
+    public void TestWgs84ToGcj02()
+    {
+        var r = _engine.Execute("SELECT GEO_WGS84_TO_GCJ02(GEOPOINT(39.908823, 116.397470))");
+        var point = (GeoPoint)r.Rows[0][0]!;
+        Assert.True(point.Latitude > 39.908823);
+        Assert.True(point.Longitude > 116.397470);
+    }
+
+    [Fact(DisplayName = "GEO_GCJ02_TO_WGS84 往返还原")]
+    public void TestGcj02ToWgs84RoundTrip()
+    {
+        var r = _engine.Execute("SELECT GEO_GCJ02_TO_WGS84(GEO_WGS84_TO_GCJ02(GEOPOINT(31.2304, 121.4737)))");
+        var point = (GeoPoint)r.Rows[0][0]!;
+        Assert.True(Math.Abs(point.Latitude - 31.2304) < 1e-4);
+        Assert.True(Math.Abs(point.Longitude - 121.4737) < 1e-4);
+    }
+
+    [Fact(DisplayName = "GEO_TRANSFORM 别名转换")]
+    public void TestGeoTransformAlias()
+    {
+        // GPS 别名 = wgs84，AMap 别名 = gcj02
+        var r = _engine.Execute("SELECT GEO_TRANSFORM(GEOPOINT(39.908823, 116.397470), 'gps', 'amap')");
+        var point = (GeoPoint)r.Rows[0][0]!;
+        Assert.True(point.Latitude > 39.908823);
+    }
+
+    [Fact(DisplayName = "GEO_WGS84_TO_BD09 链式转换")]
+    public void TestWgs84ToBd09()
+    {
+        var r = _engine.Execute("SELECT GEO_BD09_TO_WGS84(GEO_WGS84_TO_BD09(GEOPOINT(39.908823, 116.397470)))");
+        var point = (GeoPoint)r.Rows[0][0]!;
+        Assert.True(Math.Abs(point.Latitude - 39.908823) < 1e-4);
+        Assert.True(Math.Abs(point.Longitude - 116.397470) < 1e-4);
+    }
+
+    [Fact(DisplayName = "GEO_TRANSFORM 未知坐标系报错")]
+    public void TestGeoTransformUnknown()
+    {
+        Assert.Throws<NovaException>(() => _engine.Execute("SELECT GEO_TRANSFORM(GEOPOINT(39.9, 116.4), 'mars', 'wgs84')"));
+    }
+
+    [Fact(DisplayName = "GEOHASH 编码坐标")]
+    public void TestGeoHashFunction()
+    {
+        var r = _engine.Execute("SELECT GEOHASH(GEOPOINT(39.908823, 116.397470))");
+        var hash = Convert.ToString(r.Rows[0][0]);
+        Assert.Equal(8, hash!.Length);
+        Assert.True("0123456789bcdefghjkmnpqrstuvwxyz".Contains(hash[0]));
+    }
+
+    [Fact(DisplayName = "GEOHASH 指定精度")]
+    public void TestGeoHashPrecision()
+    {
+        var r = _engine.Execute("SELECT GEOHASH(GEOPOINT(39.908823, 116.397470), 6)");
+        var hash = Convert.ToString(r.Rows[0][0]);
+        Assert.Equal(6, hash!.Length);
+    }
+
+    #endregion
+
     #region Vector 函数
 
     [Fact(DisplayName = "VECTOR 创建向量")]
