@@ -61,6 +61,12 @@ public partial class NovaTable : IDisposable
     /// <summary>全文索引集合</summary>
     public IReadOnlyDictionary<String, FullTextIndex> FullTextIndexes => _fullTextIndexes;
 
+    /// <summary>数据版本号。每次写操作（Insert/Update/Delete）提交时递增，供物化视图增量捕获</summary>
+    public Int64 DataVersion { get; private set; }
+
+    /// <summary>数据变更事件。写操作提交后触发，参数为本次变更的主键</summary>
+    public event Action<Object>? OnDataChanged;
+
     /// <summary>创建 NovaTable 实例</summary>
     /// <param name="schema">表架构</param>
     /// <param name="dbPath">数据库目录路径</param>
@@ -198,6 +204,14 @@ public partial class NovaTable : IDisposable
             // 注册提交动作：事务提交时才持久化到行日志
             var persistPayload = payload;
             tx.RegisterCommitAction(() => PersistPut(persistPayload));
+
+            // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
+            var changedPk = pkValue;
+            tx.RegisterCommitAction(() =>
+            {
+                DataVersion++;
+                OnDataChanged?.Invoke(changedPk);
+            });
 
             // 记录 WAL（如果启用）
             if (_walWriter != null)
@@ -356,6 +370,14 @@ public partial class NovaTable : IDisposable
             var persistPayload = payload;
             tx.RegisterCommitAction(() => PersistPut(persistPayload));
 
+            // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
+            var changedPk = key;
+            tx.RegisterCommitAction(() =>
+            {
+                DataVersion++;
+                OnDataChanged?.Invoke(changedPk);
+            });
+
             // 记录 WAL
             if (_walWriter != null)
             {
@@ -460,6 +482,14 @@ public partial class NovaTable : IDisposable
             // 注册提交动作：事务提交时才持久化删除记录
             var persistKey = key;
             tx.RegisterCommitAction(() => PersistDelete(persistKey));
+
+            // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
+            var changedPk = key;
+            tx.RegisterCommitAction(() =>
+            {
+                DataVersion++;
+                OnDataChanged?.Invoke(changedPk);
+            });
 
             // 记录 WAL
             if (_walWriter != null)

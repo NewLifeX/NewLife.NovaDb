@@ -76,6 +76,9 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
 
     /// <summary>队列是否为空</summary>
     public Boolean IsEmpty => Count == 0;
+
+    /// <summary>消息消费事件。消息被成功处理并确认后触发，供实时聚合引擎挂接</summary>
+    public event Action<String>? OnConsumed;
     #endregion
 
     #region 构造
@@ -248,6 +251,9 @@ public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
                         // 自动确认
                         var mid = MessageId.Parse(msgId);
                         if (mid != null) Acknowledge(Group!, mid);
+
+                        // 触发消费事件（实时聚合引擎）
+                        OnConsumed?.Invoke(msgId);
                     }
                 }
                 else

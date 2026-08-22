@@ -187,8 +187,8 @@ public class MaterializedViewManager : IDisposable
             {
                 if (view.NeedsRefresh())
                 {
-                    RefreshInternal(view);
-                    refreshed++;
+                    if (RefreshInternal(view))
+                        refreshed++;
                 }
             }
 
@@ -196,8 +196,19 @@ public class MaterializedViewManager : IDisposable
         }
     }
 
-    private void RefreshInternal(MaterializedView view)
+    /// <summary>刷新视图（增量捕获：源表数据版本无变化则跳过）</summary>
+    /// <param name="view">视图</param>
+    /// <returns>是否实际执行了刷新</returns>
+    private Boolean RefreshInternal(MaterializedView view)
     {
+        // 增量捕获：源表数据版本无变化则跳过刷新
+        var snapshot = _engine.GetDataVersionSnapshot();
+        if (!view.HasSourceChanged(snapshot))
+        {
+            view.SkippedCount++;
+            return false;
+        }
+
         var sw = Stopwatch.StartNew();
 
         var result = _engine.Execute(view.Query);
@@ -206,9 +217,12 @@ public class MaterializedViewManager : IDisposable
         view.Rows = result.Rows?.Select(r => (Object?[])r.Clone()).ToList() ?? [];
         view.LastRefreshTime = DateTime.UtcNow;
         view.RefreshCount++;
+        view.SourceVersions = snapshot;
 
         sw.Stop();
         view.LastRefreshMs = sw.ElapsedMilliseconds;
+
+        return true;
     }
 
     private void SchedulerCallback(Object? state)

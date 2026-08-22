@@ -155,8 +155,49 @@ public class MaterializedViewManagerTests : IDisposable
         Assert.True(view.LastRefreshMs >= 0);
         Assert.True(view.LastRefreshTime > DateTime.MinValue);
 
+        // 源表有变更时刷新执行
+        _engine.Execute("INSERT INTO orders (id, product, amount) VALUES (100, 'New', 1.0)");
         _manager.Refresh("stats_view");
         Assert.Equal(2L, view.RefreshCount);
+    }
+
+    [Fact(DisplayName = "增量捕获：源表无变更时跳过刷新")]
+    public void IncrementalCapture_SkipWhenNoSourceChange()
+    {
+        var view = _manager.Create("inc_view", "SELECT COUNT(*) AS cnt FROM orders");
+        Assert.Equal(1L, view.RefreshCount);
+
+        // 源表无变更，刷新被跳过
+        _manager.Refresh("inc_view");
+        Assert.Equal(1L, view.RefreshCount);
+        Assert.Equal(1L, view.SkippedCount);
+
+        // 源表有变更，刷新执行并反映最新数据
+        _engine.Execute("INSERT INTO orders (id, product, amount) VALUES (200, 'More', 2.0)");
+        _manager.Refresh("inc_view");
+        Assert.Equal(2L, view.RefreshCount);
+
+        var result = _manager.Query("inc_view");
+        Assert.Equal(5, Convert.ToInt32(result.Rows[0][0]));
+    }
+
+    [Fact(DisplayName = "增量捕获：源表版本快照记录")]
+    public void IncrementalCapture_SourceVersionSnapshot()
+    {
+        var view = _manager.Create("ver_view", "SELECT COUNT(*) AS cnt FROM orders");
+
+        // 刷新后记录源表版本快照
+        Assert.NotEmpty(view.SourceVersions);
+        Assert.True(view.SourceVersions.ContainsKey("orders"));
+        var v1 = view.SourceVersions["orders"];
+
+        // 写入数据后版本递增
+        _engine.Execute("INSERT INTO orders (id, product, amount) VALUES (300, 'Ver', 3.0)");
+        var snapshot = _engine.GetDataVersionSnapshot();
+        var v2 = snapshot["orders"];
+
+        Assert.True(v2 > v1);
+        Assert.True(view.HasSourceChanged(snapshot));
     }
 
     [Fact(DisplayName = "获取视图详情")]

@@ -64,6 +64,28 @@ public partial class SqlEngine : IDisposable
         }
     }
 
+    /// <summary>获取指定表的数据版本号（物化视图增量捕获用）</summary>
+    /// <param name="tableName">表名</param>
+    /// <returns>数据版本号，表不存在时返回 0</returns>
+    public Int64 GetTableDataVersion(String tableName)
+    {
+        using var _ = _metaLock.AcquireRead();
+        return _tables.TryGetValue(tableName, out var table) ? table.DataVersion : 0;
+    }
+
+    /// <summary>获取所有表的数据版本快照（物化视图增量捕获用）</summary>
+    /// <returns>表名 → 数据版本号</returns>
+    public Dictionary<String, Int64> GetDataVersionSnapshot()
+    {
+        using var _ = _metaLock.AcquireRead();
+        var snapshot = new Dictionary<String, Int64>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in _tables)
+        {
+            snapshot[kvp.Key] = kvp.Value.DataVersion;
+        }
+        return snapshot;
+    }
+
     /// <summary>创建全文索引并为已有数据构建索引</summary>
     /// <param name="tableName">表名</param>
     /// <param name="indexName">索引名</param>

@@ -34,6 +34,28 @@ public class MaterializedView
     /// <summary>最后刷新耗时（毫秒）</summary>
     public Int64 LastRefreshMs { get; set; }
 
+    /// <summary>源表数据版本快照（表名 → 数据版本号），用于增量捕获。刷新时源表版本无变化则跳过</summary>
+    public Dictionary<String, Int64> SourceVersions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>跳过刷新次数（增量捕获：源表无变更时跳过）</summary>
+    public Int64 SkippedCount { get; set; }
+
+    /// <summary>检查源表数据版本是否发生变化</summary>
+    /// <param name="snapshot">当前数据版本快照</param>
+    /// <returns>有变化返回 true</returns>
+    public Boolean HasSourceChanged(Dictionary<String, Int64> snapshot)
+    {
+        if (SourceVersions.Count == 0) return true;
+
+        foreach (var kvp in snapshot)
+        {
+            if (!SourceVersions.TryGetValue(kvp.Key, out var oldVersion) || oldVersion != kvp.Value)
+                return true;
+        }
+
+        return false;
+    }
+
     /// <summary>是否需要刷新（基于定时策略）</summary>
     /// <returns>需要刷新返回 true</returns>
     public Boolean NeedsRefresh()

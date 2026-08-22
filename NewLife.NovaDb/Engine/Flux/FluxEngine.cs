@@ -264,6 +264,66 @@ public partial class FluxEngine : IDisposable
         return results;
     }
 
+    /// <summary>滑动窗口聚合。窗口按步长滑动，相邻窗口可重叠</summary>
+    /// <remarks>
+    /// 与滚动窗口（Downsample）的区别：窗口大小可大于步长，产生重叠窗口，
+    /// 用于滑动平均、移动统计等场景。对标 TDengine 的 INTERVAL + SLIDING。
+    /// </remarks>
+    /// <param name="startTicks">起始时间 Ticks</param>
+    /// <param name="endTicks">结束时间 Ticks</param>
+    /// <param name="windowTicks">窗口大小 Ticks</param>
+    /// <param name="stepTicks">滑动步长 Ticks（须小于等于窗口）</param>
+    /// <param name="fieldName">聚合字段名</param>
+    /// <param name="aggregation">聚合方式：avg/sum/min/max/count</param>
+    /// <returns>滑动窗口结果列表，每个结果包含窗口起始时间和聚合值</returns>
+    public List<DownsampleResult> SlidingWindow(Int64 startTicks, Int64 endTicks, Int64 windowTicks, Int64 stepTicks, String fieldName, String aggregation)
+    {
+        if (windowTicks <= 0) throw new ArgumentException("Window size must be positive", nameof(windowTicks));
+        if (stepTicks <= 0) throw new ArgumentException("Step size must be positive", nameof(stepTicks));
+        if (stepTicks > windowTicks) throw new ArgumentException("Step size cannot exceed window size", nameof(stepTicks));
+        if (endTicks <= startTicks) return [];
+        if (fieldName == null) throw new ArgumentNullException(nameof(fieldName));
+
+        var entries = QueryRange(startTicks, endTicks);
+        if (entries.Count == 0) return [];
+
+        var agg = aggregation.ToLower();
+        var results = new List<DownsampleResult>();
+
+        // 每个窗口起点按步长推进，窗口范围 [ws, ws+window)
+        for (var ws = startTicks; ws + windowTicks <= endTicks; ws += stepTicks)
+        {
+            var we = ws + windowTicks;
+            var values = new List<Double>();
+
+            // 收集窗口内数据
+            foreach (var entry in entries)
+            {
+                if (entry.Timestamp < ws || entry.Timestamp >= we) continue;
+
+                if (entry.Fields.TryGetValue(fieldName, out var val) && val != null)
+                    values.Add(Convert.ToDouble(val));
+            }
+
+            // 空窗口：默认不输出，保持与滚动窗口一致
+            if (values.Count == 0) continue;
+
+            Double aggValue = agg switch
+            {
+                "avg" or "average" => values.Sum() / values.Count,
+                "sum" => values.Sum(),
+                "min" => values.Min(),
+                "max" => values.Max(),
+                "count" => values.Count,
+                _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown aggregation: {aggregation}")
+            };
+
+            results.Add(new DownsampleResult(ws, aggValue));
+        }
+
+        return results;
+    }
+
     /// <summary>释放资源</summary>
     public void Dispose()
     {
