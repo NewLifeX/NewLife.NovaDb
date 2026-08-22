@@ -31,6 +31,9 @@ public partial class NovaTable : IDisposable
     // 二级索引：索引名 → SkipList<索引键, 主键列表>
     private readonly Dictionary<String, SkipList<ComparableObject, List<ComparableObject>>> _secondaryIndexes = new(StringComparer.OrdinalIgnoreCase);
 
+    // 全文索引：索引名 → FullTextIndex（P2，内存驻留）
+    private readonly Dictionary<String, FullTextIndex> _fullTextIndexes = new(StringComparer.OrdinalIgnoreCase);
+
     // 冷热分离索引管理器
     private readonly HotIndexManager _hotIndexManager;
 
@@ -54,6 +57,9 @@ public partial class NovaTable : IDisposable
 
     /// <summary>分片管理器</summary>
     public ShardManager Shards => _shardManager;
+
+    /// <summary>全文索引集合</summary>
+    public IReadOnlyDictionary<String, FullTextIndex> FullTextIndexes => _fullTextIndexes;
 
     /// <summary>创建 NovaTable 实例</summary>
     /// <param name="schema">表架构</param>
@@ -179,6 +185,13 @@ public partial class NovaTable : IDisposable
                 }
             }
 
+            // 维护全文索引（内存驻留，P2）：提交时才更新，回滚时保持一致
+            if (_fullTextIndexes.Count > 0)
+            {
+                var ftDocId = pkValue;
+                tx.RegisterCommitAction(() => MaintainFullTextIndexes(ftDocId, row));
+            }
+
             // 更新分片统计
             _shardManager.RecordWrite(DefaultShardId, payload.Length);
 
@@ -294,10 +307,11 @@ public partial class NovaTable : IDisposable
 
             // 更新二级索引：先移除旧值，后面再插入新值
             Object?[]? oldRow = null;
-            if (_secondaryIndexes.Count > 0)
+            if (_secondaryIndexes.Count > 0 || _fullTextIndexes.Count > 0)
             {
                 oldRow = DeserializeRow(visibleVersion.Payload!);
-                RemoveFromSecondaryIndexes(oldRow, comparableKey);
+                if (_secondaryIndexes.Count > 0)
+                    RemoveFromSecondaryIndexes(oldRow, comparableKey);
             }
 
             // 标记旧版本为已删除
@@ -320,6 +334,19 @@ public partial class NovaTable : IDisposable
                     var name = idxName;
                     tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
                 }
+            }
+
+            // 维护全文索引（内存驻留，P2）：提交时先移除旧文档再插入新文档
+            if (_fullTextIndexes.Count > 0)
+            {
+                var ftKey = key;
+                var ftOldRow = oldRow;
+                var ftNewRow = newRow;
+                tx.RegisterCommitAction(() =>
+                {
+                    if (ftOldRow != null) MaintainFullTextIndexes(ftKey, ftOldRow, true);
+                    MaintainFullTextIndexes(ftKey, ftNewRow);
+                });
             }
 
             // 更新分片统计
@@ -416,6 +443,19 @@ public partial class NovaTable : IDisposable
             // 标记为已删除
             var oldDeletedByTx = visibleVersion.DeletedByTx;
             visibleVersion.MarkDeleted(tx.TxId);
+
+            // 维护全文索引（内存驻留，P2）：提交时移除文档
+            if (_fullTextIndexes.Count > 0)
+            {
+                var ftKey = key;
+                tx.RegisterCommitAction(() =>
+                {
+                    foreach (var idx in _fullTextIndexes.Values)
+                    {
+                        idx.Remove(ftKey);
+                    }
+                });
+            }
 
             // 注册提交动作：事务提交时才持久化删除记录
             var persistKey = key;
@@ -588,6 +628,134 @@ public partial class NovaTable : IDisposable
             return result;
         }
     }
+
+    #region 全文索引（P2）
+
+    /// <summary>创建全文索引并为已有数据构建索引</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="columns">被索引的列名</param>
+    public void CreateFullTextIndex(String indexName, String[] columns)
+    {
+        if (String.IsNullOrEmpty(indexName)) throw new ArgumentNullException(nameof(indexName));
+        if (columns == null || columns.Length == 0) throw new ArgumentNullException(nameof(columns));
+
+        // 校验列存在
+        foreach (var col in columns)
+        {
+            _schema.GetColumnIndex(col);
+        }
+
+        lock (_lock)
+        {
+            if (_fullTextIndexes.ContainsKey(indexName))
+                throw new NovaException(ErrorCode.InvalidArgument, $"Full-text index '{indexName}' already exists");
+
+            var idx = new FullTextIndex(indexName, columns);
+            _fullTextIndexes[indexName] = idx;
+
+            var colOrdinals = columns.Select(c => _schema.GetColumnIndex(c)).ToArray();
+            var pkCol = _schema.GetPrimaryKeyColumn()!;
+
+            // 为已有数据构建索引
+            using var tx = _txManager.BeginTransaction();
+            foreach (var entry in _primaryIndex.GetAll())
+            {
+                foreach (var ver in entry.Value)
+                {
+                    if (ver.IsVisible(_txManager, tx.TxId))
+                    {
+                        var row = DeserializeRow(ver.Payload!);
+                        var docId = row[pkCol.Ordinal]!;
+                        var text = BuildFullText(row, colOrdinals);
+                        idx.Add(docId, text);
+                        break;
+                    }
+                }
+            }
+            tx.Commit();
+        }
+    }
+
+    /// <summary>删除全文索引</summary>
+    /// <param name="indexName">索引名</param>
+    public void DropFullTextIndex(String indexName)
+    {
+        lock (_lock)
+        {
+            _fullTextIndexes.Remove(indexName);
+        }
+    }
+
+    /// <summary>全文检索，返回按 BM25 分数降序的 (主键, 分数) 列表</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="query">查询文本</param>
+    /// <param name="topK">返回数量上限</param>
+    /// <returns>匹配的 (主键值, 分数) 列表</returns>
+    public List<(Object PrimaryKey, Double Score)> SearchFullText(String indexName, String query, Int32 topK = 10)
+    {
+        lock (_lock)
+        {
+            if (!_fullTextIndexes.TryGetValue(indexName, out var idx))
+                throw new NovaException(ErrorCode.InvalidArgument, $"Full-text index '{indexName}' not found");
+
+            var pkCol = _schema.GetPrimaryKeyColumn()!;
+            var result = new List<(Object, Double)>();
+
+            using var tx = _txManager.BeginTransaction();
+            foreach (var (docId, score) in idx.Search(query, topK))
+            {
+                var row = Get(tx, docId);
+                if (row != null)
+                    result.Add((row[pkCol.Ordinal]!, score));
+            }
+            tx.Commit();
+
+            return result;
+        }
+    }
+
+    /// <summary>索引维护：插入/更新行时更新全文索引</summary>
+    /// <param name="docId">文档 ID（主键值）</param>
+    /// <param name="row">行数据</param>
+    /// <param name="remove">是否仅移除旧文档（更新时先移除再插入）</param>
+    private void MaintainFullTextIndexes(Object docId, Object?[]? row, Boolean remove = false)
+    {
+        if (_fullTextIndexes.Count == 0) return;
+
+        foreach (var idx in _fullTextIndexes.Values)
+        {
+            if (remove)
+            {
+                // 仅移除旧文档，不写入内容
+                idx.Remove(docId);
+                continue;
+            }
+
+            var colOrdinals = idx.Columns.Select(c => _schema.GetColumnIndex(c)).ToArray();
+            var text = BuildFullText(row!, colOrdinals);
+            idx.Add(docId, text);
+        }
+    }
+
+    /// <summary>构建全文索引文本（多列拼接）</summary>
+    /// <param name="row">行数据</param>
+    /// <param name="colOrdinals">列序号</param>
+    /// <returns>拼接文本</returns>
+    private static String BuildFullText(Object?[] row, Int32[] colOrdinals)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var ord in colOrdinals)
+        {
+            if (row[ord] != null)
+            {
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append(Convert.ToString(row[ord]));
+            }
+        }
+        return sb.ToString();
+    }
+
+    #endregion
 
     /// <summary>获取索引定义的列序号数组</summary>
     private Int32[] GetColumnOrdinals(IndexDefinition indexDef)

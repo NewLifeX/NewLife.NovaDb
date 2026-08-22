@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Threading;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
@@ -30,8 +31,13 @@ public partial class SqlEngine : IDisposable
     /// <summary>SQL 层会话事务上下文。BEGIN 开启后存入，COMMIT/ROLLBACK 结束后清空</summary>
     /// <remarks>
     /// 使用 AsyncLocal 按异步流隔离，支持同一引擎多连接并发（连接池场景）。
+    /// net45 目标框架的 reference assemblies 缺失 AsyncLocal 类型，降级为 ThreadLocal（不跨异步流）。
     /// </remarks>
+#if NET45
+    private readonly ThreadLocal<Transaction?> _sessionTransaction = new();
+#else
     private readonly AsyncLocal<Transaction?> _sessionTransaction = new();
+#endif
 
     /// <summary>当前 SQL 会话事务（BEGIN 开启后有效）</summary>
     public Transaction? SessionTransaction => _sessionTransaction.Value;
@@ -56,6 +62,47 @@ public partial class SqlEngine : IDisposable
             using var _ = _metaLock.AcquireRead();
             return _schemas.Keys.ToList().AsReadOnly();
         }
+    }
+
+    /// <summary>创建全文索引并为已有数据构建索引</summary>
+    /// <param name="tableName">表名</param>
+    /// <param name="indexName">索引名</param>
+    /// <param name="columns">被索引的列名</param>
+    public void CreateFullTextIndex(String tableName, String indexName, String[] columns)
+    {
+        using var _ = _metaLock.AcquireRead();
+        if (!_tables.TryGetValue(tableName, out var table))
+            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+
+        table.CreateFullTextIndex(indexName, columns);
+    }
+
+    /// <summary>删除全文索引</summary>
+    /// <param name="tableName">表名</param>
+    /// <param name="indexName">索引名</param>
+    public void DropFullTextIndex(String tableName, String indexName)
+    {
+        using var _ = _metaLock.AcquireRead();
+        if (!_tables.TryGetValue(tableName, out var table))
+            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+
+        table.DropFullTextIndex(indexName);
+    }
+
+    /// <summary>全文检索，返回按 BM25 分数降序的 (主键, 分数) 列表</summary>
+    /// <remarks>用于 RAG 混合检索：与向量检索结果融合排序。</remarks>
+    /// <param name="tableName">表名</param>
+    /// <param name="indexName">全文索引名</param>
+    /// <param name="query">查询文本</param>
+    /// <param name="topK">返回数量上限，默认 10</param>
+    /// <returns>匹配的 (主键值, 分数) 列表</returns>
+    public List<(Object PrimaryKey, Double Score)> SearchFullText(String tableName, String indexName, String query, Int32 topK = 10)
+    {
+        using var _ = _metaLock.AcquireRead();
+        if (!_tables.TryGetValue(tableName, out var table))
+            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+
+        return table.SearchFullText(indexName, query, topK);
     }
 
     /// <summary>获取单张表的统计信息</summary>

@@ -806,4 +806,44 @@ public class SqlEngineTests : IDisposable
     }
 
     #endregion
+
+    #region 全文检索（P2）
+
+    [Fact(DisplayName = "SqlEngine 全文检索：创建索引并检索")]
+    public void TestSearchFullText()
+    {
+        _engine.Execute("CREATE TABLE docs (id INT PRIMARY KEY, title VARCHAR NOT NULL, body VARCHAR NOT NULL)");
+        _engine.Execute("INSERT INTO docs (id, title, body) VALUES (1, 'NewLife 数据库', '数据库引擎介绍')");
+        _engine.Execute("INSERT INTO docs (id, title, body) VALUES (2, 'XCode ORM', '对象关系映射框架')");
+
+        // 通过 SQL 引擎创建全文索引
+        _engine.CreateFullTextIndex("docs", "ft_idx", ["title", "body"]);
+
+        var result = _engine.SearchFullText("docs", "ft_idx", "数据库");
+        Assert.Single(result);
+        Assert.Equal(1, result[0].PrimaryKey);
+
+        var result2 = _engine.SearchFullText("docs", "ft_idx", "orm");
+        Assert.Single(result2);
+        Assert.Equal(2, result2[0].PrimaryKey);
+    }
+
+    [Fact(DisplayName = "SqlEngine 全文检索：表不存在抛异常")]
+    public void TestSearchFullText_TableNotFound()
+    {
+        var ex = Assert.Throws<NovaException>(() => _engine.SearchFullText("nonexistent", "ft_idx", "hello"));
+        Assert.Equal(ErrorCode.TableNotFound, ex.Code);
+    }
+
+    [Fact(DisplayName = "SqlEngine 全文检索：索引不存在抛异常")]
+    public void TestSearchFullText_IndexNotFound()
+    {
+        _engine.Execute("CREATE TABLE docs (id INT PRIMARY KEY, title VARCHAR NOT NULL)");
+        _engine.Execute("INSERT INTO docs (id, title) VALUES (1, 'hello world')");
+
+        var ex = Assert.Throws<NovaException>(() => _engine.SearchFullText("docs", "ft_idx", "hello"));
+        Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
+    }
+
+    #endregion
 }

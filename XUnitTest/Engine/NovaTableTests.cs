@@ -318,4 +318,183 @@ public class NovaTableTests : IDisposable
         Assert.Equal(2, writeShard!.RowCount);
         Assert.True(writeShard.SizeBytes > 0);
     }
+
+    #region 全文索引（P2）
+
+    [Fact(DisplayName = "测试创建全文索引并检索")]
+    public void TestCreateFullTextIndexAndSearch()
+    {
+        var schema = new TableSchema("articles");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("title", DataType.String, nullable: false));
+        schema.AddColumn(new ColumnDefinition("body", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+
+        // 先插入数据
+        using (var tx = txManager.BeginTransaction())
+        {
+            table.Insert(tx, [1, "NewLife 数据库", "数据库引擎介绍"]);
+            table.Insert(tx, [2, "XCode ORM", "对象关系映射框架"]);
+            tx.Commit();
+        }
+
+        // 创建全文索引（为已有数据构建）
+        table.CreateFullTextIndex("ft_idx", ["title", "body"]);
+        Assert.Single(table.FullTextIndexes);
+
+        // 检索
+        var result = table.SearchFullText("ft_idx", "数据库");
+        Assert.Single(result);
+        Assert.Equal(1, result[0].PrimaryKey);
+
+        var result2 = table.SearchFullText("ft_idx", "orm");
+        Assert.Single(result2);
+        Assert.Equal(2, result2[0].PrimaryKey);
+    }
+
+    [Fact(DisplayName = "测试全文索引维护：插入后立即可检索")]
+    public void TestFullTextMaintenance_Insert()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+        table.CreateFullTextIndex("ft_idx", ["content"]);
+
+        using (var tx = txManager.BeginTransaction())
+        {
+            table.Insert(tx, [1, "hello newlife"]);
+            tx.Commit();
+        }
+
+        var result = table.SearchFullText("ft_idx", "newlife");
+        Assert.Single(result);
+        Assert.Equal(1, result[0].PrimaryKey);
+    }
+
+    [Fact(DisplayName = "测试全文索引维护：更新后索引更新")]
+    public void TestFullTextMaintenance_Update()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+        table.CreateFullTextIndex("ft_idx", ["content"]);
+
+        using (var tx = txManager.BeginTransaction())
+        {
+            table.Insert(tx, [1, "hello newlife"]);
+            tx.Commit();
+        }
+
+        // 更新为不包含 newlife 的内容
+        using (var tx = txManager.BeginTransaction())
+        {
+            table.Update(tx, 1, [1, "goodbye world"]);
+            tx.Commit();
+        }
+
+        Assert.Empty(table.SearchFullText("ft_idx", "newlife"));
+        Assert.Single(table.SearchFullText("ft_idx", "goodbye"));
+    }
+
+    [Fact(DisplayName = "测试全文索引维护：删除后不再命中")]
+    public void TestFullTextMaintenance_Delete()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+        table.CreateFullTextIndex("ft_idx", ["content"]);
+
+        using (var tx = txManager.BeginTransaction())
+        {
+            table.Insert(tx, [1, "hello newlife"]);
+            table.Insert(tx, [2, "hello world"]);
+            tx.Commit();
+        }
+
+        using (var tx = txManager.BeginTransaction())
+        {
+            table.Delete(tx, 1);
+            tx.Commit();
+        }
+
+        var result = table.SearchFullText("ft_idx", "hello");
+        Assert.Single(result);
+        Assert.Equal(2, result[0].PrimaryKey);
+    }
+
+    [Fact(DisplayName = "测试删除全文索引")]
+    public void TestDropFullTextIndex()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+        table.CreateFullTextIndex("ft_idx", ["content"]);
+
+        table.DropFullTextIndex("ft_idx");
+        Assert.Empty(table.FullTextIndexes);
+    }
+
+    [Fact(DisplayName = "测试全文索引异常：重复创建报错")]
+    public void TestCreateFullTextIndex_Duplicate()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+        table.CreateFullTextIndex("ft_idx", ["content"]);
+
+        Assert.Throws<NovaException>(() => table.CreateFullTextIndex("ft_idx", ["content"]));
+    }
+
+    [Fact(DisplayName = "测试全文索引异常：列不存在报错")]
+    public void TestCreateFullTextIndex_InvalidColumn()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+
+        Assert.Throws<NovaException>(() => table.CreateFullTextIndex("ft_idx", ["nonexistent"]));
+    }
+
+    [Fact(DisplayName = "测试全文检索空索引不报错")]
+    public void TestSearchFullText_NotFound()
+    {
+        var schema = new TableSchema("docs");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("content", DataType.String, nullable: false));
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var txManager = new TransactionManager();
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+
+        Assert.Throws<NovaException>(() => table.SearchFullText("nonexistent", "hello"));
+    }
+
+    #endregion
 }
