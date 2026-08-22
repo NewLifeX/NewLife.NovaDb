@@ -130,7 +130,7 @@ while (reader.Read())
 
 #### 1.2 Network Mode
 
-Network mode provides remote access via TCP, supporting multiple concurrent client connections.
+Network mode provides remote access via TCP, supporting multiple concurrent client connections. Each database in the connection string (`Database=mydb`) maps to an independent engine directory under the server's data folder, enabling multi-database routing on a single server.
 
 **Start the server:**
 
