@@ -7,7 +7,7 @@ namespace XUnitTest.Core;
 /// <summary>DbOptions 配置选项测试</summary>
 public class DbOptionsTests
 {
-    [Fact]
+    [Fact(DisplayName = "测试默认值")]
     public void TestDefaultValues()
     {
         var options = new DbOptions();
@@ -25,7 +25,7 @@ public class DbOptionsTests
         Assert.Equal(0, options.FluxDefaultTtlSeconds);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置Path")]
     public void TestSetPath()
     {
         var options = new DbOptions
@@ -36,7 +36,7 @@ public class DbOptionsTests
         Assert.Equal("/data/nova", options.Path);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置WalMode")]
     public void TestSetWalMode()
     {
         var options = new DbOptions
@@ -47,7 +47,7 @@ public class DbOptionsTests
         Assert.Equal(WalMode.Full, options.WalMode);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置PageSize")]
     public void TestSetPageSize()
     {
         var options = new DbOptions
@@ -58,7 +58,7 @@ public class DbOptionsTests
         Assert.Equal(8192, options.PageSize);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置热窗口秒数")]
     public void TestSetHotWindowSeconds()
     {
         var options = new DbOptions
@@ -69,7 +69,7 @@ public class DbOptionsTests
         Assert.Equal(1200, options.HotWindowSeconds);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置冷淘汰秒数")]
     public void TestSetColdEvictionSeconds()
     {
         var options = new DbOptions
@@ -80,7 +80,7 @@ public class DbOptionsTests
         Assert.Equal(3600, options.ColdEvictionSeconds);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置分片阈值")]
     public void TestSetShardThresholds()
     {
         var options = new DbOptions
@@ -93,7 +93,7 @@ public class DbOptionsTests
         Assert.Equal(20_000_000, options.ShardRowThreshold);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置校验和开关")]
     public void TestSetEnableChecksum()
     {
         var options = new DbOptions
@@ -104,7 +104,7 @@ public class DbOptionsTests
         Assert.False(options.EnableChecksum);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置页缓存大小")]
     public void TestSetPageCacheSize()
     {
         var options = new DbOptions
@@ -115,7 +115,7 @@ public class DbOptionsTests
         Assert.Equal(2048, options.PageCacheSize);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试设置Flux分区选项")]
     public void TestSetFluxOptions()
     {
         var options = new DbOptions
@@ -132,7 +132,7 @@ public class DbOptionsTests
 /// <summary>WalMode 枚举测试</summary>
 public class WalModeTests
 {
-    [Fact]
+    [Fact(DisplayName = "测试WalMode枚举值")]
     public void TestWalModeValues()
     {
         Assert.Equal(0, (Int32)WalMode.None);
@@ -140,7 +140,7 @@ public class WalModeTests
         Assert.Equal(2, (Int32)WalMode.Full);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试WalMode枚举名称")]
     public void TestWalModeName()
     {
         Assert.Equal("None", WalMode.None.ToString());

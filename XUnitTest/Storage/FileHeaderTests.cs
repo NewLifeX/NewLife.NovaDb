@@ -16,7 +16,7 @@ public class FileHeaderTests
         BitConverter.GetBytes(crc).CopyTo(bytes, 28);
     }
 
-    [Fact]
+    [Fact(DisplayName = "文件头序列化与反序列化往返")]
     public void TestSerializeDeserialize()
     {
         var header = new FileHeader
@@ -44,7 +44,7 @@ public class FileHeaderTests
         Assert.True(Math.Abs((header.CreateTime - deserialized.CreateTime).TotalSeconds) < 1);
     }
 
-    [Fact]
+    [Fact(DisplayName = "文件头标志位持久化")]
     public void TestFlagsPersistence()
     {
         var header = new FileHeader
@@ -64,7 +64,7 @@ public class FileHeaderTests
         Assert.Equal(FileFlags.Encrypted | FileFlags.Compressed, deserialized.Flags);
     }
 
-    [Fact]
+    [Fact(DisplayName = "校验和验证失败时抛异常")]
     public void TestChecksumVerification()
     {
         var header = new FileHeader
@@ -83,7 +83,7 @@ public class FileHeaderTests
         Assert.Contains("checksum mismatch", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "校验和检测数据损坏")]
     public void TestChecksumDetectsDataCorruption()
     {
         var header = new FileHeader
@@ -102,7 +102,7 @@ public class FileHeaderTests
         Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
     }
 
-    [Fact]
+    [Fact(DisplayName = "文件头魔数为 NOVA")]
     public void TestMagicNumber()
     {
         var header = new FileHeader
@@ -126,7 +126,7 @@ public class FileHeaderTests
         Assert.Equal(FileType.Data, deserialized.FileType);
     }
 
-    [Fact]
+    [Fact(DisplayName = "非法魔数抛异常")]
     public void TestInvalidMagicNumber()
     {
         var header = new FileHeader { FileType = FileType.Data, PageSize = 4096 };
@@ -142,13 +142,13 @@ public class FileHeaderTests
         Assert.Contains("Invalid magic number", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "空缓冲区读取抛异常")]
     public void TestNullBuffer()
     {
         Assert.Throws<ArgumentNullException>(() => FileHeader.Read((IPacket)null!));
     }
 
-    [Fact]
+    [Fact(DisplayName = "缓冲区过短抛异常")]
     public void TestBufferTooShort()
     {
         var bytes = new Byte[31]; // 少于 32 字节
@@ -156,7 +156,7 @@ public class FileHeaderTests
         Assert.Contains("too short", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "非法文件类型抛异常")]
     public void TestInvalidFileType()
     {
         var header = new FileHeader { FileType = FileType.Data, PageSize = 4096 };
@@ -172,7 +172,7 @@ public class FileHeaderTests
         Assert.Contains("Invalid file type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "页大小位移过大抛异常")]
     public void TestInvalidPageSizeShiftTooLarge()
     {
         var header = new FileHeader { FileType = FileType.Data, PageSize = 4096 };
@@ -188,7 +188,7 @@ public class FileHeaderTests
         Assert.Contains("Invalid page size shift", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "非 2 的幂页大小序列化抛异常")]
     public void TestNonPowerOf2PageSizeThrows()
     {
         var header = new FileHeader
@@ -200,7 +200,7 @@ public class FileHeaderTests
         Assert.Throws<ArgumentException>(() => header.ToPacket());
     }
 
-    [Fact]
+    [Fact(DisplayName = "不同文件类型往返解析")]
     public void TestDifferentFileTypes()
     {
         foreach (FileType type in Enum.GetValues(typeof(FileType)))
@@ -219,7 +219,7 @@ public class FileHeaderTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "边界页大小往返解析")]
     public void TestBoundaryPageSizes()
     {
         // 最小有效 PageSize (2^0 = 1)
@@ -235,7 +235,7 @@ public class FileHeaderTests
         Assert.Equal(16u * 1024 * 1024, deserialized2.PageSize);
     }
 
-    [Fact]
+    [Fact(DisplayName = "常见页大小往返解析")]
     public void TestCommonPageSizes()
     {
         // 验证常见页大小的往返
@@ -249,7 +249,7 @@ public class FileHeaderTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "版本号持久化")]
     public void TestVersionPersistence()
     {
         var header = new FileHeader
@@ -266,7 +266,7 @@ public class FileHeaderTests
         Assert.Equal(42, deserialized.Version);
     }
 
-    [Fact]
+    [Fact(DisplayName = "创建时间持久化")]
     public void TestCreateTimePersistence()
     {
         var now = DateTime.Now;
@@ -285,7 +285,7 @@ public class FileHeaderTests
         Assert.True(Math.Abs((now - deserialized.CreateTime).TotalSeconds) < 1);
     }
 
-    [Fact]
+    [Fact(DisplayName = "保留字节为零")]
     public void TestReservedBytesAreZero()
     {
         var header = new FileHeader
@@ -304,7 +304,7 @@ public class FileHeaderTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "页大小位移编码正确")]
     public void TestPageSizeShiftEncoding()
     {
         // 4096 = 2^12，offset 6 应为 12
@@ -315,7 +315,7 @@ public class FileHeaderTests
         Assert.Equal(12, bytes[6]);
     }
 
-    [Fact]
+    [Fact(DisplayName = "Binlog 文件类型往返解析")]
     public void TestBinlogFileType()
     {
         var header = new FileHeader

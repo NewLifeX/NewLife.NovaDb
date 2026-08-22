@@ -23,7 +23,7 @@ public class WalWriterTests : IDisposable
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试写入 WAL 记录")]
     public void TestWriteAndReadWalRecord()
     {
         using (var writer = new WalWriter(_walFile, WalMode.Full))
@@ -53,7 +53,7 @@ public class WalWriterTests : IDisposable
         Assert.True(new FileInfo(_walFile).Length > 0);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试 WAL 模式写入")]
     public void TestWalModes()
     {
         using (var writer = new WalWriter(_walFile, WalMode.Full))
@@ -66,7 +66,7 @@ public class WalWriterTests : IDisposable
         Assert.True(File.Exists(_walFile));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试页面更新记录写入")]
     public void TestPageUpdateRecord()
     {
         using var writer = new WalWriter(_walFile, WalMode.Full);

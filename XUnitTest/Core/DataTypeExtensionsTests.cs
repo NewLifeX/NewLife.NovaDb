@@ -41,7 +41,7 @@ public class DataTypeExtensionsTests
         Assert.Equal(expectedDataType, dataType);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试所有类型往返转换")]
     public void TestRoundTripConversion()
     {
         // 测试所有支持的类型往返转换
@@ -60,21 +60,21 @@ public class DataTypeExtensionsTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试不支持数据类型获取CLR类型抛异常")]
     public void TestGetClrTypeUnsupported()
     {
         var ex = Assert.Throws<NotSupportedException>(() => ((DataType)255).GetClrType());
         Assert.Contains("Unsupported data type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试不支持CLR类型映射抛异常")]
     public void TestFromClrTypeUnsupported()
     {
         var ex = Assert.Throws<NotSupportedException>(() => DataTypeExtensions.FromClrType(typeof(Object)));
         Assert.Contains("Unsupported CLR type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试DataType枚举值")]
     public void TestDataTypeEnumValues()
     {
         // 验证基础类型的枚举值与 TypeCode 保持一致
@@ -96,7 +96,7 @@ public class DataTypeExtensionsTests
 /// <summary>GeoPoint 结构体测试</summary>
 public class GeoPointTests
 {
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint构造函数")]
     public void TestConstructor()
     {
         var point = new GeoPoint(39.9042, 116.4074);
@@ -105,7 +105,7 @@ public class GeoPointTests
         Assert.Equal(116.4074, point.Longitude);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint字符串表示")]
     public void TestToString()
     {
         var point = new GeoPoint(39.9042, 116.4074);
@@ -115,7 +115,7 @@ public class GeoPointTests
         Assert.Contains("116.4074", str);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint属性设置")]
     public void TestPropertySetter()
     {
         var point = new GeoPoint(31.2304, 121.4737);
@@ -124,7 +124,7 @@ public class GeoPointTests
         Assert.Equal(121.4737, point.Longitude);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint边界值")]
     public void TestBoundaryValues()
     {
         // 测试边界值

@@ -26,7 +26,7 @@ public class WalRecoveryTests : IDisposable
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试已提交事务的恢复")]
     public void TestRecoveryWithCommittedTransaction()
     {
         using (var writer = new WalWriter(_walFile, WalMode.Full))
@@ -54,7 +54,7 @@ public class WalRecoveryTests : IDisposable
         Assert.Equal(new byte[] { 1, 2, 3, 4, 5 }, _pages[10]);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试未提交事务不恢复")]
     public void TestRecoveryWithUncommittedTransaction()
     {
         using (var writer = new WalWriter(_walFile, WalMode.Full))
@@ -80,7 +80,7 @@ public class WalRecoveryTests : IDisposable
         Assert.False(_pages.ContainsKey(10));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试多事务恢复只恢复已提交")]
     public void TestRecoveryWithMultipleTransactions()
     {
         using (var writer = new WalWriter(_walFile, WalMode.Full))

@@ -8,7 +8,7 @@ public class DataCodecTests
 {
     private readonly IDataCodec _codec = new DefaultDataCodec();
 
-    [Fact]
+    [Fact(DisplayName = "测试布尔编解码")]
     public void TestEncodeDecodeBoolean()
     {
         var value = true;
@@ -18,7 +18,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Int32编解码")]
     public void TestEncodeDecodeInt32()
     {
         var value = 12345;
@@ -28,7 +28,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Int64编解码")]
     public void TestEncodeDecodeInt64()
     {
         var value = 9876543210L;
@@ -38,7 +38,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Double编解码")]
     public void TestEncodeDecodeDouble()
     {
         var value = 3.14159;
@@ -48,7 +48,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Decimal编解码")]
     public void TestEncodeDecodeDecimal()
     {
         var value = 123.456789M;
@@ -58,7 +58,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试字符串编解码")]
     public void TestEncodeDecodeString()
     {
         var value = "Hello, NovaDb!";
@@ -68,7 +68,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试字节数组编解码")]
     public void TestEncodeDecodeByteArray()
     {
         var value = new byte[] { 1, 2, 3, 4, 5 };
@@ -78,7 +78,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试DateTime编解码")]
     public void TestEncodeDecodeDateTime()
     {
         var value = new DateTime(2026, 2, 18, 12, 30, 45, DateTimeKind.Utc);
@@ -88,7 +88,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空值编解码")]
     public void TestEncodeDecodeNull()
     {
         var encoded = _codec.Encode(null, DataType.String);
@@ -97,7 +97,7 @@ public class DataCodecTests
         Assert.Null(decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试各类型编码长度计算")]
     public void TestGetEncodedLength()
     {
         Assert.Equal(1, _codec.GetEncodedLength(true, DataType.Boolean));
@@ -111,7 +111,7 @@ public class DataCodecTests
         Assert.Equal(1, _codec.GetEncodedLength(null, DataType.String));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空字符串编解码")]
     public void TestEncodeDecodeEmptyString()
     {
         var value = "";
@@ -122,7 +122,7 @@ public class DataCodecTests
         Assert.Equal(4, encoded.Length); // 长度前缀 4 字节 + 0 字节数据
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空字节数组编解码")]
     public void TestEncodeDecodeEmptyByteArray()
     {
         var value = Array.Empty<Byte>();
@@ -133,7 +133,7 @@ public class DataCodecTests
         Assert.Equal(4, encoded.Length); // 长度前缀 4 字节 + 0 字节数据
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Unicode字符串编解码")]
     public void TestEncodeDecodeUnicodeString()
     {
         var value = "你好，NovaDb！🚀";
@@ -143,7 +143,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Int32极值编解码")]
     public void TestEncodeDecodeMinMaxInt32()
     {
         var minEncoded = _codec.Encode(Int32.MinValue, DataType.Int32);
@@ -155,7 +155,7 @@ public class DataCodecTests
         Assert.Equal(Int32.MaxValue, maxDecoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Int64极值编解码")]
     public void TestEncodeDecodeMinMaxInt64()
     {
         var minEncoded = _codec.Encode(Int64.MinValue, DataType.Int64);
@@ -167,7 +167,7 @@ public class DataCodecTests
         Assert.Equal(Int64.MaxValue, maxDecoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Double极值编解码")]
     public void TestEncodeDecodeMinMaxDouble()
     {
         var minEncoded = _codec.Encode(Double.MinValue, DataType.Double);
@@ -179,7 +179,7 @@ public class DataCodecTests
         Assert.Equal(Double.MaxValue, maxDecoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试Decimal极值编解码")]
     public void TestEncodeDecodeMinMaxDecimal()
     {
         var minEncoded = _codec.Encode(Decimal.MinValue, DataType.Decimal);
@@ -191,7 +191,7 @@ public class DataCodecTests
         Assert.Equal(Decimal.MaxValue, maxDecoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试DateTime极值编解码")]
     public void TestEncodeDecodeMinMaxDateTime()
     {
         var minEncoded = _codec.Encode(DateTime.MinValue, DataType.DateTime);
@@ -203,7 +203,7 @@ public class DataCodecTests
         Assert.Equal(DateTime.MaxValue, maxDecoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试带偏移解码")]
     public void TestDecodeWithOffset()
     {
         // 构造一个包含多个值的缓冲区
@@ -224,7 +224,7 @@ public class DataCodecTests
         Assert.Equal(value2, decoded2);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试所有支持类型空值编解码")]
     public void TestEncodeDecodeNullForAllTypes()
     {
         // 测试所有支持 NULL 的类型
@@ -237,7 +237,7 @@ public class DataCodecTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试不支持类型编码抛异常")]
     public void TestEncodeUnsupportedType()
     {
         // 测试不支持的类型
@@ -245,7 +245,7 @@ public class DataCodecTests
         Assert.Contains("Unsupported data type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试不支持类型解码抛异常")]
     public void TestDecodeUnsupportedType()
     {
         var buffer = new Byte[4];
@@ -253,14 +253,14 @@ public class DataCodecTests
         Assert.Contains("Unsupported data type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试不支持类型长度计算抛异常")]
     public void TestGetEncodedLengthUnsupportedType()
     {
         var ex = Assert.Throws<NotSupportedException>(() => _codec.GetEncodedLength(123, (DataType)255));
         Assert.Contains("Unsupported data type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint编解码")]
     public void TestEncodeDecodeGeoPoint()
     {
         var value = new GeoPoint(39.9042, 116.4074);
@@ -271,7 +271,7 @@ public class DataCodecTests
         Assert.Equal(value.Longitude, decoded.Longitude);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint空值编解码")]
     public void TestEncodeDecodeGeoPointNull()
     {
         var encoded = _codec.Encode(null, DataType.GeoPoint);
@@ -280,7 +280,7 @@ public class DataCodecTests
         Assert.Null(decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试向量编解码")]
     public void TestEncodeDecodeVector()
     {
         var value = new Single[] { 1.0f, 2.5f, -3.14f, 0f };
@@ -290,7 +290,7 @@ public class DataCodecTests
         Assert.Equal(value, decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试向量空值编解码")]
     public void TestEncodeDecodeVectorNull()
     {
         var encoded = _codec.Encode(null, DataType.Vector);
@@ -299,7 +299,7 @@ public class DataCodecTests
         Assert.Null(decoded);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空向量编解码")]
     public void TestEncodeDecodeEmptyVector()
     {
         var value = Array.Empty<Single>();
@@ -310,21 +310,21 @@ public class DataCodecTests
         Assert.Equal(4, encoded.Length); // 长度前缀 4 字节 + 0 字节数据
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试GeoPoint编码长度计算")]
     public void TestGetEncodedLengthGeoPoint()
     {
         var value = new GeoPoint(39.9042, 116.4074);
         Assert.Equal(16, _codec.GetEncodedLength(value, DataType.GeoPoint));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试向量编码长度计算")]
     public void TestGetEncodedLengthVector()
     {
         var value = new Single[] { 1.0f, 2.0f, 3.0f };
         Assert.Equal(4 + 3 * 4, _codec.GetEncodedLength(value, DataType.Vector));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试向量写入缓冲区编码")]
     public void TestEncodeVectorWithBuffer()
     {
         var value = new Single[] { 1.0f, 2.0f, 3.0f };
@@ -339,7 +339,7 @@ public class DataCodecTests
         Assert.Equal(encoded, buffer);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试向量短缓冲区编码抛异常")]
     public void TestEncodeVectorWithShortBuffer()
     {
         var value = new Single[] { 1.0f, 2.0f, 3.0f };

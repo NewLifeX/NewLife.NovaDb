@@ -36,19 +36,19 @@ public class DatabaseManagerTests : IDisposable
     }
 
     #region 构造函数
-    [Fact]
+    [Fact(DisplayName = "构造函数基础路径为 null 时抛异常")]
     public void TestConstructorNullBasePath()
     {
         Assert.Throws<ArgumentNullException>(() => new DatabaseManager(null!, _options));
     }
 
-    [Fact]
+    [Fact(DisplayName = "构造函数选项为 null 时抛异常")]
     public void TestConstructorNullOptions()
     {
         Assert.Throws<ArgumentNullException>(() => new DatabaseManager(_testPath, null!));
     }
 
-    [Fact]
+    [Fact(DisplayName = "构造函数基础路径为空字符串时抛异常")]
     public void TestConstructorEmptyBasePath()
     {
         Assert.Throws<ArgumentException>(() => new DatabaseManager("", _options));
@@ -57,7 +57,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region Initialize
-    [Fact]
+    [Fact(DisplayName = "初始化创建系统数据库")]
     public void TestInitializeCreatesSystemDatabase()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -70,7 +70,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.NotNull(manager.SystemDatabase);
     }
 
-    [Fact]
+    [Fact(DisplayName = "重复初始化不抛异常")]
     public void TestInitializeTwiceDoesNotThrow()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -78,7 +78,7 @@ public class DatabaseManagerTests : IDisposable
         manager.Initialize(); // 第二次应打开而非重新创建
     }
 
-    [Fact]
+    [Fact(DisplayName = "初始化验证系统数据库元数据")]
     public void TestInitializeVerifySystemDatabaseMetadata()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -95,7 +95,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region 阶段一：扫描默认目录
-    [Fact]
+    [Fact(DisplayName = "扫描默认目录发现有效数据库")]
     public void TestScanDiscoversValidDatabases()
     {
         CreateFakeDatabase("TestDb1", _testPath);
@@ -110,7 +110,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Contains(databases, d => d.Name == "TestDb2");
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描默认目录跳过系统数据库")]
     public void TestScanSkipsSystemDatabase()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -120,7 +120,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.DoesNotContain(databases, d => String.Equals(d.Name, DatabaseManager.SystemDatabaseName, StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描跳过无元数据的目录")]
     public void TestScanSkipsDirectoriesWithoutMetadata()
     {
         Directory.CreateDirectory(Path.Combine(_testPath, "NotADatabase"));
@@ -134,7 +134,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal("RealDb", databases[0].Name);
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描跳过元数据损坏的目录")]
     public void TestScanSkipsCorruptedMetadata()
     {
         var corruptedPath = Path.Combine(_testPath, "CorruptedDb");
@@ -151,7 +151,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal("GoodDb", databases[0].Name);
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描跳过元数据截断的目录")]
     public void TestScanSkipsTruncatedMetadata()
     {
         var shortPath = Path.Combine(_testPath, "ShortDb");
@@ -165,7 +165,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Empty(databases);
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描得到的数据库信息正确")]
     public void TestScanDatabaseInfoContainsCorrectData()
     {
         CreateFakeDatabase("InfoDb", _testPath);
@@ -185,7 +185,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.True(info.LastSeenAt > 0);
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描空基础目录返回空列表")]
     public void TestScanEmptyBaseDirectory()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -195,7 +195,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Empty(databases);
     }
 
-    [Fact]
+    [Fact(DisplayName = "扫描默认目录跳过已登记数据库")]
     public void TestScanDefaultDirectorySkipsAlreadyRegistered()
     {
         // 先创建两个数据库
@@ -218,7 +218,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region 阶段二：检查已登记数据库状态
-    [Fact]
+    [Fact(DisplayName = "检查已登记数据库检测离线状态")]
     public void TestCheckRegisteredDatabasesDetectsOffline()
     {
         CreateFakeDatabase("TempDb", _testPath);
@@ -239,7 +239,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Offline, info.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "检查已登记数据库恢复在线状态")]
     public void TestCheckRegisteredDatabasesRestoresOnline()
     {
         CreateFakeDatabase("FlickerDb", _testPath);
@@ -258,7 +258,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Online, manager.GetDatabase("FlickerDb")!.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "检查多个数据库状态同步更新")]
     public void TestCheckMultipleDatabasesStatusSync()
     {
         CreateFakeDatabase("Db1", _testPath);
@@ -277,7 +277,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Online, manager.GetDatabase("Db3")!.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "检查已登记数据库检测元数据损坏")]
     public void TestCheckDetectsCorruptedMetadata()
     {
         CreateFakeDatabase("CorruptDb", _testPath);
@@ -297,7 +297,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region 外部目录数据库
-    [Fact]
+    [Fact(DisplayName = "注册外部数据库")]
     public void TestRegisterExternalDatabase()
     {
         var externalDbPath = Path.Combine(_externalPath, "ExtDb");
@@ -313,7 +313,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(4096u, info.PageSize);
     }
 
-    [Fact]
+    [Fact(DisplayName = "基础目录内数据库不算外部")]
     public void TestRegisterDatabaseInsideBasePath()
     {
         // 在默认目录内的手动注册不算外部
@@ -329,7 +329,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.False(info.IsExternal);
     }
 
-    [Fact]
+    [Fact(DisplayName = "注册重复数据库抛异常")]
     public void TestRegisterDuplicateThrows()
     {
         CreateFakeDatabase("DupDb", _testPath);
@@ -342,7 +342,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(ErrorCode.DatabaseExists, ex.Code);
     }
 
-    [Fact]
+    [Fact(DisplayName = "注册不存在路径抛异常")]
     public void TestRegisterNonExistentPathThrows()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -353,7 +353,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(ErrorCode.DatabaseNotFound, ex.Code);
     }
 
-    [Fact]
+    [Fact(DisplayName = "注册元数据损坏的数据库抛异常")]
     public void TestRegisterCorruptedMetadataThrows()
     {
         var corruptedPath = Path.Combine(_externalPath, "CorruptExt");
@@ -368,7 +368,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
     }
 
-    [Fact]
+    [Fact(DisplayName = "外部数据库状态检查")]
     public void TestExternalDatabaseStatusCheck()
     {
         var externalDbPath = Path.Combine(_externalPath, "ExtCheck");
@@ -393,7 +393,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Online, manager.GetDatabase("ExtCheck")!.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "外部数据库信息持久化")]
     public void TestExternalDatabasePersistence()
     {
         var externalDbPath = Path.Combine(_externalPath, "ExtPersist");
@@ -414,7 +414,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Online, info.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "注册空名称抛异常")]
     public void TestRegisterEmptyNameThrows()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -424,7 +424,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Throws<ArgumentException>(() => manager.RegisterDatabase("  ", "/some/path"));
     }
 
-    [Fact]
+    [Fact(DisplayName = "注册空路径抛异常")]
     public void TestRegisterEmptyPathThrows()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -436,7 +436,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region 两阶段启动流程
-    [Fact]
+    [Fact(DisplayName = "两阶段启动处理本地与外部数据库")]
     public void TestTwoPhaseStartupWithMixedDatabases()
     {
         // 默认目录内创建数据库
@@ -464,7 +464,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Online, manager.GetDatabase("RemoteDb")!.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "带目录的完整重启加载全部数据库")]
     public void TestFullRestartWithCatalog()
     {
         // 默认目录 + 外部目录各一个
@@ -492,7 +492,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.True(ext.IsExternal);
     }
 
-    [Fact]
+    [Fact(DisplayName = "重启检测默认目录新增数据库")]
     public void TestRestartDetectsNewDatabaseInDefaultDir()
     {
         var manager1 = new DatabaseManager(_testPath, _options);
@@ -512,7 +512,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region 目录持久化
-    [Fact]
+    [Fact(DisplayName = "目录文件持久化数据库信息")]
     public void TestCatalogPersistence()
     {
         CreateFakeDatabase("PersistDb", _testPath);
@@ -532,7 +532,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal(DatabaseStatus.Online, info.Status);
     }
 
-    [Fact]
+    [Fact(DisplayName = "目录持久化离线数据库状态")]
     public void TestCatalogPersistenceWithOfflineDatabase()
     {
         CreateFakeDatabase("WillGoOfflineDb", _testPath);
@@ -554,7 +554,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region GetDatabase
-    [Fact]
+    [Fact(DisplayName = "获取不存在的数据库返回空")]
     public void TestGetDatabaseReturnsNull()
     {
         var manager = new DatabaseManager(_testPath, _options);
@@ -565,7 +565,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Null(manager.GetDatabase("  "));
     }
 
-    [Fact]
+    [Fact(DisplayName = "获取数据库名称大小写不敏感")]
     public void TestGetDatabaseCaseInsensitive()
     {
         CreateFakeDatabase("CaseTestDb", _testPath);
@@ -580,7 +580,7 @@ public class DatabaseManagerTests : IDisposable
     #endregion
 
     #region ListDatabases
-    [Fact]
+    [Fact(DisplayName = "在线数据库列表按名称排序")]
     public void TestListOnlineDatabasesSorted()
     {
         CreateFakeDatabase("Zebra", _testPath);
@@ -597,7 +597,7 @@ public class DatabaseManagerTests : IDisposable
         Assert.Equal("Zebra", databases[2].Name);
     }
 
-    [Fact]
+    [Fact(DisplayName = "全部数据库列表包含离线库")]
     public void TestListAllDatabasesIncludesOffline()
     {
         CreateFakeDatabase("OnlineDb", _testPath);

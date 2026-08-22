@@ -34,19 +34,19 @@ public class DatabaseDirectoryTests : IDisposable
     }
 
     #region 构造函数
-    [Fact]
+    [Fact(DisplayName = "构造函数路径为 null 时抛异常")]
     public void TestConstructorNullPath()
     {
         Assert.Throws<ArgumentNullException>(() => new DatabaseDirectory(null!, _options));
     }
 
-    [Fact]
+    [Fact(DisplayName = "构造函数选项为 null 时抛异常")]
     public void TestConstructorNullOptions()
     {
         Assert.Throws<ArgumentNullException>(() => new DatabaseDirectory(_testPath, null!));
     }
 
-    [Fact]
+    [Fact(DisplayName = "构造函数路径为空字符串时抛异常")]
     public void TestConstructorEmptyPath()
     {
         Assert.Throws<ArgumentException>(() => new DatabaseDirectory("", _options));
@@ -55,7 +55,7 @@ public class DatabaseDirectoryTests : IDisposable
     #endregion
 
     #region Create
-    [Fact]
+    [Fact(DisplayName = "创建数据库并生成目录与元数据文件")]
     public void TestCreateDatabase()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -65,7 +65,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.True(_testPath.CombinePath("nova.db").AsFile().Exists);
     }
 
-    [Fact]
+    [Fact(DisplayName = "创建数据库并验证元数据文件内容")]
     public void TestCreateDatabaseVerifyMetadata()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -82,7 +82,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.True(header.CreateTime.Year >= 2020);
     }
 
-    [Fact]
+    [Fact(DisplayName = "创建已存在数据库时抛异常")]
     public void TestCreateDatabaseAlreadyExists()
     {
         Directory.CreateDirectory(_testPath);
@@ -95,7 +95,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("already exists", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "在已有目录中创建数据库成功")]
     public void TestCreateDatabaseWithExistingDirectory()
     {
         Directory.CreateDirectory(_testPath);
@@ -109,7 +109,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Equal(FileHeader.HeaderSize, metaFile.Length);
     }
 
-    [Fact]
+    [Fact(DisplayName = "元数据文件为空时创建数据库成功")]
     public void TestCreateDatabaseWithEmptyMetadata()
     {
         Directory.CreateDirectory(_testPath);
@@ -124,7 +124,7 @@ public class DatabaseDirectoryTests : IDisposable
     #endregion
 
     #region Open
-    [Fact]
+    [Fact(DisplayName = "打开数据库成功")]
     public void TestOpenDatabase()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -134,7 +134,7 @@ public class DatabaseDirectoryTests : IDisposable
         db2.Open(); // Should not throw
     }
 
-    [Fact]
+    [Fact(DisplayName = "打开不存在的数据库抛异常")]
     public void TestOpenDatabaseNotExists()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -144,7 +144,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("does not exist", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "打开缺少元数据文件的数据库抛异常")]
     public void TestOpenDatabaseMissingMetadata()
     {
         // 创建目录但不写入元数据
@@ -156,7 +156,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("metadata file not found", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "打开元数据损坏的数据库抛异常")]
     public void TestOpenDatabaseCorruptedMetadata()
     {
         // 创建目录并写入损坏的元数据
@@ -168,7 +168,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Throws<NovaException>(() => db.Open());
     }
 
-    [Fact]
+    [Fact(DisplayName = "打开不支持版本的数据库抛异常")]
     public void TestOpenDatabaseUnsupportedVersion()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -187,7 +187,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("Unsupported database version", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "打开元数据截断的数据库抛异常")]
     public void TestOpenDatabaseTruncatedMetadata()
     {
         // 创建目录并写入过短的元数据
@@ -201,7 +201,7 @@ public class DatabaseDirectoryTests : IDisposable
     #endregion
 
     #region ListTables
-    [Fact]
+    [Fact(DisplayName = "列出数据库中的数据表")]
     public void TestListTables()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -221,7 +221,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("Orders", tables);
     }
 
-    [Fact]
+    [Fact(DisplayName = "空数据库列出数据表为空")]
     public void TestListTablesEmpty()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -231,7 +231,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Empty(tables);
     }
 
-    [Fact]
+    [Fact(DisplayName = "列出数据表排除系统表")]
     public void TestListTablesExcludesSystemTables()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -249,7 +249,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("Users", tables);
     }
 
-    [Fact]
+    [Fact(DisplayName = "列出数据表时合并分片文件")]
     public void TestListTablesWithShardFiles()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -265,7 +265,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("BigTable", tables);
     }
 
-    [Fact]
+    [Fact(DisplayName = "目录不存在时列出数据表返回空")]
     public void TestListTablesDirectoryNotExists()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -275,7 +275,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Empty(tables);
     }
 
-    [Fact]
+    [Fact(DisplayName = "列出数据表按名称排序")]
     public void TestListTablesReturnsSorted()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -294,7 +294,7 @@ public class DatabaseDirectoryTests : IDisposable
     #endregion
 
     #region GetTableFileManager
-    [Fact]
+    [Fact(DisplayName = "获取表文件管理器")]
     public void TestGetTableFileManager()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -305,7 +305,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Equal(_testPath, manager.DatabasePath);
     }
 
-    [Fact]
+    [Fact(DisplayName = "获取空名称的表文件管理器抛异常")]
     public void TestGetTableFileManagerEmptyName()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -315,7 +315,7 @@ public class DatabaseDirectoryTests : IDisposable
     #endregion
 
     #region Drop
-    [Fact]
+    [Fact(DisplayName = "删除数据库目录")]
     public void TestDropDatabase()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -328,7 +328,7 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.False(Directory.Exists(_testPath));
     }
 
-    [Fact]
+    [Fact(DisplayName = "删除不存在的数据库不抛异常")]
     public void TestDropDatabaseNotExists()
     {
         var db = new DatabaseDirectory(_testPath, _options);
@@ -337,7 +337,7 @@ public class DatabaseDirectoryTests : IDisposable
         db.Drop();
     }
 
-    [Fact]
+    [Fact(DisplayName = "删除含文件的数据库目录")]
     public void TestDropDatabaseWithFiles()
     {
         var db = new DatabaseDirectory(_testPath, _options);

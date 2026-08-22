@@ -8,7 +8,7 @@ namespace XUnitTest.Storage;
 
 public class PageHeaderTests
 {
-    [Fact]
+    [Fact(DisplayName = "测试页头序列化与反序列化")]
     public void TestSerializeDeserialize()
     {
         var header = new PageHeader
@@ -35,13 +35,13 @@ public class PageHeaderTests
         Assert.Equal(header.DataLength, deserialized.DataLength);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空缓冲区读取抛出异常")]
     public void TestNullBuffer()
     {
         Assert.Throws<ArgumentNullException>(() => PageHeader.Read(null!));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试缓冲区过短抛出异常")]
     public void TestBufferTooShort()
     {
         var bytes = new Byte[31]; // 少于 32 字节
@@ -49,7 +49,7 @@ public class PageHeaderTests
         Assert.Contains("too short", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试无效页类型抛出异常")]
     public void TestInvalidPageType()
     {
         var header = new PageHeader
@@ -69,7 +69,7 @@ public class PageHeaderTests
         Assert.Contains("Invalid page type", ex.Message);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试所有页类型序列化往返")]
     public void TestAllPageTypes()
     {
         foreach (PageType type in Enum.GetValues(typeof(PageType)))
@@ -89,7 +89,7 @@ public class PageHeaderTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试最大页 ID 序列化往返")]
     public void TestLargePageId()
     {
         var header = new PageHeader
@@ -106,7 +106,7 @@ public class PageHeaderTests
         Assert.Equal(UInt64.MaxValue, deserialized.PageId);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试最大 LSN 序列化往返")]
     public void TestLargeLsn()
     {
         var header = new PageHeader
@@ -124,7 +124,7 @@ public class PageHeaderTests
         Assert.Equal(UInt64.MaxValue, deserialized.Lsn);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试最大校验和序列化往返")]
     public void TestLargeChecksum()
     {
         var header = new PageHeader
@@ -142,7 +142,7 @@ public class PageHeaderTests
         Assert.Equal(UInt32.MaxValue, deserialized.Checksum);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试最大数据长度序列化往返")]
     public void TestLargeDataLength()
     {
         var header = new PageHeader
@@ -159,7 +159,7 @@ public class PageHeaderTests
         Assert.Equal(UInt32.MaxValue, deserialized.DataLength);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试零值页头序列化往返")]
     public void TestZeroValues()
     {
         var header = new PageHeader
@@ -182,7 +182,7 @@ public class PageHeaderTests
         Assert.Equal(0u, deserialized.DataLength);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试保留字节为零")]
     public void TestReservedBytesAreZero()
     {
         var header = new PageHeader
@@ -208,7 +208,7 @@ public class PageHeaderTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试随机数据序列化往返")]
     public void TestRoundTripWithRandomData()
     {
         var random = new Random(42);
@@ -237,7 +237,7 @@ public class PageHeaderTests
         }
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试元数据页类型序列化")]
     public void TestMetadataPageType()
     {
         var header = new PageHeader
@@ -255,7 +255,7 @@ public class PageHeaderTests
         Assert.Equal(PageType.Metadata, deserialized.PageType);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试页标志持久化")]
     public void TestFlagsPersistence()
     {
         var header = new PageHeader

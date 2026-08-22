@@ -9,7 +9,7 @@ namespace XUnitTest.Core;
 /// <summary>NovaException 异常测试</summary>
 public class NovaExceptionTests
 {
-    [Fact]
+    [Fact(DisplayName = "测试带消息构造函数")]
     public void TestConstructorWithMessage()
     {
         var exception = new NovaException(ErrorCode.TableNotFound, "Table 'users' not found");
@@ -19,7 +19,7 @@ public class NovaExceptionTests
         Assert.Null(exception.InnerException);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试带内部异常构造函数")]
     public void TestConstructorWithInnerException()
     {
         var innerException = new InvalidOperationException("Inner error");
@@ -34,7 +34,7 @@ public class NovaExceptionTests
         Assert.Same(innerException, exception.InnerException);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试错误码经捕获后保留")]
     public void TestErrorCodePreservedThroughCatch()
     {
         try
@@ -85,7 +85,7 @@ public class NovaExceptionTests
         Assert.Equal(expectedValue, (Int32)code);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试错误码分类区间")]
     public void TestErrorCodeCategories()
     {
         // 文件错误 (1000-1999)
@@ -121,14 +121,14 @@ public class NovaExceptionTests
         Assert.InRange((Int32)ErrorCode.NotMaster, 8000, 8999);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试继承自Exception")]
     public void TestInheritanceFromException()
     {
         var exception = new NovaException(ErrorCode.Unknown, "Test");
         Assert.IsAssignableFrom<Exception>(exception);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试多catch块精确捕获")]
     public void TestMultipleCatchBlocks()
     {
         Exception? caughtException = null;

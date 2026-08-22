@@ -33,32 +33,32 @@ public class TableFileManagerTests : IDisposable
     }
 
     #region 构造函数
-    [Fact]
+    [Fact(DisplayName = "测试数据库路径为空的构造异常")]
     public void TestConstructorNullDatabasePath()
     {
         Assert.Throws<ArgumentNullException>(() => new TableFileManager(null!, "Users", _options));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试表名为空的构造异常")]
     public void TestConstructorNullTableName()
     {
         Assert.Throws<ArgumentNullException>(() => new TableFileManager(_testPath, null!, _options));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空表名构造抛出异常")]
     public void TestConstructorEmptyTableName()
     {
         Assert.Throws<ArgumentException>(() => new TableFileManager(_testPath, "", _options));
         Assert.Throws<ArgumentException>(() => new TableFileManager(_testPath, "  ", _options));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试选项为空的构造异常")]
     public void TestConstructorNullOptions()
     {
         Assert.Throws<ArgumentNullException>(() => new TableFileManager(_testPath, "Users", null!));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试构造函数属性赋值")]
     public void TestConstructorProperties()
     {
         var manager = new TableFileManager(_testPath, "Products", _options);
@@ -68,7 +68,7 @@ public class TableFileManagerTests : IDisposable
     #endregion
 
     #region 路径生成
-    [Fact]
+    [Fact(DisplayName = "测试数据文件路径生成")]
     public void TestGetDataFilePath()
     {
         var manager = new TableFileManager(_testPath, "Users", _options);
@@ -83,7 +83,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Equal(Path.Combine(_testPath, "Users_5.data"), path3);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试主索引文件路径生成")]
     public void TestGetPrimaryIndexFilePath()
     {
         var manager = new TableFileManager(_testPath, "Orders", _options);
@@ -95,7 +95,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Equal(Path.Combine(_testPath, "Orders_0.idx"), path2);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试二级索引文件路径生成")]
     public void TestGetSecondaryIndexFilePath()
     {
         var manager = new TableFileManager(_testPath, "Products", _options);
@@ -107,7 +107,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Equal(Path.Combine(_testPath, "Products_2_idx_category.idx"), path2);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试空索引名路径生成抛出异常")]
     public void TestGetSecondaryIndexFilePathEmptyName()
     {
         var manager = new TableFileManager(_testPath, "Products", _options);
@@ -115,7 +115,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Throws<ArgumentException>(() => manager.GetSecondaryIndexFilePath("  "));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试 WAL 文件路径生成")]
     public void TestGetWalFilePath()
     {
         var manager = new TableFileManager(_testPath, "Logs", _options);
@@ -129,7 +129,7 @@ public class TableFileManagerTests : IDisposable
     #endregion
 
     #region ListDataShards
-    [Fact]
+    [Fact(DisplayName = "测试列出数据分片")]
     public void TestListDataShards()
     {
         var manager = new TableFileManager(_testPath, "BigTable", _options);
@@ -146,7 +146,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Equal(5, shards[2]);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试无数据分片时返回空列表")]
     public void TestListDataShardsEmpty()
     {
         var manager = new TableFileManager(_testPath, "EmptyTable", _options);
@@ -154,7 +154,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Empty(shards);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试目录不存在时列出分片返回空")]
     public void TestListDataShardsDirectoryNotExists()
     {
         var manager = new TableFileManager("/nonexistent/path", "Users", _options);
@@ -164,7 +164,7 @@ public class TableFileManagerTests : IDisposable
     #endregion
 
     #region ListSecondaryIndexes
-    [Fact]
+    [Fact(DisplayName = "测试列出二级索引")]
     public void TestListSecondaryIndexes()
     {
         var manager = new TableFileManager(_testPath, "Users", _options);
@@ -184,7 +184,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Contains("idx_name", indexes);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试无二级索引时返回空列表")]
     public void TestListSecondaryIndexesEmpty()
     {
         var manager = new TableFileManager(_testPath, "NoIndex", _options);
@@ -192,7 +192,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Empty(indexes);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试目录不存在时列出索引返回空")]
     public void TestListSecondaryIndexesDirectoryNotExists()
     {
         var manager = new TableFileManager("/nonexistent/path", "Users", _options);
@@ -200,7 +200,7 @@ public class TableFileManagerTests : IDisposable
         Assert.Empty(indexes);
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试二级索引跨分片去重")]
     public void TestListSecondaryIndexesDeduplication()
     {
         var manager = new TableFileManager(_testPath, "Multi", _options);
@@ -217,7 +217,7 @@ public class TableFileManagerTests : IDisposable
     #endregion
 
     #region DeleteAllFiles
-    [Fact]
+    [Fact(DisplayName = "测试删除表全部文件")]
     public void TestDeleteAllFiles()
     {
         var manager = new TableFileManager(_testPath, "TempTable", _options);
@@ -239,21 +239,21 @@ public class TableFileManagerTests : IDisposable
         Assert.False(File.Exists(manager.GetWalFilePath(0)));
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试无文件时删除不抛异常")]
     public void TestDeleteAllFilesNoFiles()
     {
         var manager = new TableFileManager(_testPath, "Empty", _options);
         manager.DeleteAllFiles(); // 不应抛异常
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试目录不存在时删除不抛异常")]
     public void TestDeleteAllFilesDirectoryNotExists()
     {
         var manager = new TableFileManager("/nonexistent/path", "Users", _options);
         manager.DeleteAllFiles(); // 不应抛异常
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试删除不影响其他表文件")]
     public void TestDeleteAllFilesDoesNotAffectOtherTables()
     {
         var manager1 = new TableFileManager(_testPath, "TableA", _options);
@@ -270,7 +270,7 @@ public class TableFileManagerTests : IDisposable
     #endregion
 
     #region Exists
-    [Fact]
+    [Fact(DisplayName = "测试表是否存在判断")]
     public void TestExists()
     {
         var manager = new TableFileManager(_testPath, "CheckTable", _options);
@@ -282,7 +282,7 @@ public class TableFileManagerTests : IDisposable
         Assert.True(manager.Exists());
     }
 
-    [Fact]
+    [Fact(DisplayName = "测试目录不存在时表不存在")]
     public void TestExistsDirectoryNotExists()
     {
         var manager = new TableFileManager("/nonexistent/path", "Users", _options);
@@ -291,7 +291,7 @@ public class TableFileManagerTests : IDisposable
     #endregion
 
     #region 分片文件综合
-    [Fact]
+    [Fact(DisplayName = "测试分片文件命名与枚举")]
     public void TestShardedFileNaming()
     {
         var manager = new TableFileManager(_testPath, "ShardedTable", _options);

@@ -8,7 +8,7 @@ namespace XUnitTest.Storage;
 public class PageCacheTests
 {
     #region 构造函数
-    [Fact]
+    [Fact(DisplayName = "构造函数有效容量")]
     public void TestConstructorValidCapacity()
     {
         var cache = new PageCache(100);
@@ -16,14 +16,14 @@ public class PageCacheTests
         Assert.Equal(0, cache.Count);
     }
 
-    [Fact]
+    [Fact(DisplayName = "构造函数非法容量抛异常")]
     public void TestConstructorInvalidCapacity()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new PageCache(0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new PageCache(-1));
     }
 
-    [Fact]
+    [Fact(DisplayName = "构造函数最小容量淘汰")]
     public void TestConstructorMinCapacity()
     {
         var cache = new PageCache(1);
@@ -39,7 +39,7 @@ public class PageCacheTests
     #endregion
 
     #region Put / TryGet
-    [Fact]
+    [Fact(DisplayName = "写入并获取页面数据")]
     public void TestPutAndGet()
     {
         var cache = new PageCache(3);
@@ -59,14 +59,14 @@ public class PageCacheTests
         Assert.False(cache.TryGet(3, out _));
     }
 
-    [Fact]
+    [Fact(DisplayName = "写入空数据抛异常")]
     public void TestPutNullData()
     {
         var cache = new PageCache(3);
         Assert.Throws<ArgumentNullException>(() => cache.Put(1, null!));
     }
 
-    [Fact]
+    [Fact(DisplayName = "更新已存在键的值")]
     public void TestPutUpdateExisting()
     {
         var cache = new PageCache(3);
@@ -79,7 +79,7 @@ public class PageCacheTests
         Assert.Equal(20, data![0]);
     }
 
-    [Fact]
+    [Fact(DisplayName = "获取未命中的键返回空")]
     public void TestGetMissReturnsNull()
     {
         var cache = new PageCache(3);
@@ -90,7 +90,7 @@ public class PageCacheTests
     #endregion
 
     #region LRU 淘汰
-    [Fact]
+    [Fact(DisplayName = "容量满时淘汰最久未访问项")]
     public void TestLruEviction()
     {
         var cache = new PageCache(2);
@@ -106,7 +106,7 @@ public class PageCacheTests
         Assert.True(cache.TryGet(3, out _));
     }
 
-    [Fact]
+    [Fact(DisplayName = "访问后不淘汰最近使用的项")]
     public void TestLruEvictionAfterAccess()
     {
         var cache = new PageCache(2);
@@ -125,7 +125,7 @@ public class PageCacheTests
         Assert.True(cache.TryGet(3, out _));
     }
 
-    [Fact]
+    [Fact(DisplayName = "更新后不淘汰最近使用的项")]
     public void TestLruEvictionAfterUpdate()
     {
         var cache = new PageCache(2);
@@ -145,7 +145,7 @@ public class PageCacheTests
         Assert.True(cache.TryGet(3, out _));
     }
 
-    [Fact]
+    [Fact(DisplayName = "连续插入按序淘汰最久未访问项")]
     public void TestLruEvictionSequence()
     {
         var cache = new PageCache(3);
@@ -170,7 +170,7 @@ public class PageCacheTests
     #endregion
 
     #region Remove
-    [Fact]
+    [Fact(DisplayName = "移除缓存键")]
     public void TestRemove()
     {
         var cache = new PageCache(3);
@@ -183,7 +183,7 @@ public class PageCacheTests
         Assert.False(cache.TryGet(1, out _));
     }
 
-    [Fact]
+    [Fact(DisplayName = "移除不存在的键返回 false")]
     public void TestRemoveNonExistent()
     {
         var cache = new PageCache(3);
@@ -192,7 +192,7 @@ public class PageCacheTests
         Assert.False(removed);
     }
 
-    [Fact]
+    [Fact(DisplayName = "移除键释放容量避免淘汰")]
     public void TestRemoveFreesCapacity()
     {
         var cache = new PageCache(2);
@@ -211,7 +211,7 @@ public class PageCacheTests
     #endregion
 
     #region Clear
-    [Fact]
+    [Fact(DisplayName = "清空缓存")]
     public void TestClear()
     {
         var cache = new PageCache(3);
@@ -228,7 +228,7 @@ public class PageCacheTests
         Assert.False(cache.TryGet(2, out _));
     }
 
-    [Fact]
+    [Fact(DisplayName = "清空重置命中未命中计数")]
     public void TestClearResetsHitMissCounters()
     {
         var cache = new PageCache(3);
@@ -246,7 +246,7 @@ public class PageCacheTests
         Assert.Equal(0, cache.MissCount);
     }
 
-    [Fact]
+    [Fact(DisplayName = "清空后缓存可复用")]
     public void TestClearThenReuse()
     {
         var cache = new PageCache(2);
@@ -263,7 +263,7 @@ public class PageCacheTests
     #endregion
 
     #region 统计
-    [Fact]
+    [Fact(DisplayName = "命中未命中计数正确")]
     public void TestHitMissCounters()
     {
         var cache = new PageCache(3);
@@ -283,7 +283,7 @@ public class PageCacheTests
     #endregion
 
     #region 并发安全
-    [Fact]
+    [Fact(DisplayName = "并发读写安全")]
     public void TestConcurrentAccess()
     {
         var cache = new PageCache(100);
