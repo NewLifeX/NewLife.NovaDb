@@ -17,7 +17,7 @@ Um banco de dados híbrido de médio a grande porte implementado em **C#**, exec
 - **Integração de Quatro Motores**:
   - **Nova Engine** (Relacional Geral): Índice SkipList + transações MVCC (Read Committed), suporta CRUD, consultas SQL, JOIN
   - **Flux Engine** (Séries Temporais + MQ): Particionamento baseado em tempo Append Only, suporta limpeza automática TTL, grupos de consumidores estilo Redis Stream + Pending + Ack
-  - **Modo KV** (Visão Lógica): Reutiliza Nova Engine, API oculta detalhes SQL, cada linha contém `Key + Value + TTL`
+  - **Modo KV** (armazenamento chave-valor): Motor Bitcask independente (índice em memória + valores em disco), suporta TTL, isolamento multi-tabela
   - **ADO.NET Provider**: Reconhece automaticamente o modo embarcado/servidor, integração nativa com XCode ORM
 - **Separação Dinâmica de Índices Quente-Frio**: Dados quentes totalmente carregados na memória física (nós SkipList), dados frios descarregados para MMF com apenas diretório esparso retido. Tabela de 10 milhões de linhas consultando apenas as últimas 10.000 linhas usa < 20 MB de memória.
 - **Código Puramente Gerenciado**: Sem dependências de componentes nativos (C#/.NET puro), fácil de implantar em plataformas e ambientes restritos.
@@ -28,7 +28,7 @@ Um banco de dados híbrido de médio a grande porte implementado em **C#**, exec
 |-------|-------------------|--------------|
 | **Nova Engine** | SkipList (Separação Memória+MMF Quente-Frio) | CRUD geral, tabelas de configuração, pedidos comerciais, dados de usuário |
 | **Flux Engine** | Particionamento baseado em tempo (Append Only) | Sensores IoT, coleta de logs, filas de mensagens internas, logs de auditoria |
-| **Modo KV** | Visão Lógica da Tabela Nova | Bloqueios distribuídos, cache, armazenamento de sessão, contadores, centro de configuração |
+| **Modo KV** | Bitcask (índice em memória + valores em disco) | Bloqueios distribuídos, cache, armazenamento de sessão, contadores, centro de configuração |
 
 ### Tipos de Dados
 

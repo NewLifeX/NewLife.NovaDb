@@ -17,7 +17,7 @@ A medium-to-large hybrid database implemented in **C#**, running on the **.NET p
 - **Four-Engine Integration**:
   - **Nova Engine** (General Relational): SkipList index + MVCC transactions (Read Committed), supports CRUD, SQL queries, JOIN
   - **Flux Engine** (Time-Series + MQ): Time-based sharding Append Only, supports TTL auto-cleanup, Redis Stream-style consumer groups + Pending + Ack
-  - **KV Mode** (Logical View): Reuses Nova Engine, API hides SQL details, each row contains `Key + Value + TTL`
+  - **KV Mode** (Key-Value Store): Independent Bitcask engine (in-memory index + on-disk values), supports TTL, multi-table isolation
   - **ADO.NET Provider**: Auto-recognizes embedded/network mode, native integration with XCode ORM
 - **Dynamic Hot-Cold Index Separation**: Hot data fully loaded into physical memory (SkipList nodes), cold data unloaded to MMF with only sparse directory retained. 10 million row table querying only the latest 10,000 rows uses < 20MB memory.
 - **Pure Managed Code**: No native component dependencies (pure C#/.NET), easy to deploy across platforms and in restricted environments.
@@ -28,7 +28,7 @@ A medium-to-large hybrid database implemented in **C#**, running on the **.NET p
 |--------|----------------|-----------|
 | **Nova Engine** | SkipList (Memory+MMF Hot-Cold Separation) | General CRUD, configuration tables, business orders, user data |
 | **Flux Engine** | Time-based Sharding (Append Only) | IoT sensors, log collection, internal message queues, audit logs |
-| **KV Mode** | Nova Table Logical View | Distributed locks, caching, session storage, counters, configuration center |
+| **KV Mode** | Bitcask (In-Memory Index + On-Disk Values) | Distributed locks, caching, session storage, counters, configuration center |
 
 ### Data Types
 

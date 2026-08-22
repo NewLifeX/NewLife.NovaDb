@@ -17,7 +17,7 @@ Une base de données hybride de moyenne à grande taille implémentée en **C#**
 - **Intégration de quatre moteurs** :
   - **Nova Engine** (relationnel général) : Index SkipList + transactions MVCC (Read Committed), prend en charge CRUD, requêtes SQL, JOIN
   - **Flux Engine** (séries temporelles + MQ) : Partitionnement basé sur le temps Append Only, prend en charge le nettoyage automatique TTL, groupes de consommateurs de style Redis Stream + Pending + Ack
-  - **Mode KV** (vue logique) : Réutilise Nova Engine, l'API masque les détails SQL, chaque ligne contient `Key + Value + TTL`
+  - **Mode KV** (stockage clé-valeur) : Moteur Bitcask indépendant (index en mémoire + valeurs sur disque), prend en charge TTL, isolation multi-tables
   - **ADO.NET Provider** : Reconnaît automatiquement le mode embarqué/serveur, intégration native avec XCode ORM
 - **Séparation d'index chaud-froid dynamique** : Les données chaudes sont entièrement chargées dans la mémoire physique (nœuds SkipList), les données froides sont déchargées vers MMF avec seulement un répertoire clairsemé conservé. Une table de 10 millions de lignes interrogeant uniquement les 10 000 dernières lignes utilise < 20 Mo de mémoire.
 - **Code purement géré** : Aucune dépendance de composant natif (pur C#/.NET), facile à déployer sur plusieurs plateformes et dans des environnements restreints.
@@ -28,7 +28,7 @@ Une base de données hybride de moyenne à grande taille implémentée en **C#**
 |--------|----------------------|-------------------|
 | **Nova Engine** | SkipList (Séparation mémoire+MMF chaud-froid) | CRUD général, tables de configuration, commandes commerciales, données utilisateur |
 | **Flux Engine** | Partitionnement basé sur le temps (Append Only) | Capteurs IoT, collecte de journaux, files d'attente de messages internes, journaux d'audit |
-| **Mode KV** | Vue logique de table Nova | Verrous distribués, mise en cache, stockage de session, compteurs, centre de configuration |
+| **Mode KV** | Bitcask (index en mémoire + valeurs sur disque) | Verrous distribués, mise en cache, stockage de session, compteurs, centre de configuration |
 
 ### Types de données
 

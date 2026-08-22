@@ -320,6 +320,24 @@ SELECT * FROM orders_DLQ ORDER BY timestamp DESC LIMIT 100;
 - 死信队列消息数量
 - 消费速率（条/秒）
 
+### 4.8 NovaQueue 队列适配层（F09）
+
+`NovaQueue<T>` 是基于 FluxEngine 封装 `IProducerConsumer<T>` 的队列适配器，`NovaEventBus<TEvent>` 基于 NovaQueue 封装 `IEventBus`（位于 `Queues/`）。参考 RedisStream 设计，消费组管理、Pending/Ack、延迟投递、死信队列及阻塞读取等 Stream/MQ 语义全部融合到 NovaQueue：
+
+```csharp
+// 通过 NovaClientFactory 统一入口获取队列（嵌入/网络双模）
+var queue = factory.GetQueue<OrderEvent>(connStr, "orders", "order-processor");
+queue.Add(new OrderEvent { OrderId = 1001, Action = "created" });
+await queue.ConsumeAsync(msg => Handle(msg), token);
+
+// 事件总线（带消费组自动后台消费）
+var bus = new NovaEventBus<OrderEvent>(engine, "orders", "order-processor");
+await bus.PublishAsync(orderEvent);
+```
+
+- 同一 FluxEngine 实例可承载多个 topic（表名隔离），消费组按 `topic + group` 区分
+- NovaQueue 与 NovaCache（K03）均可通过 `NovaCacheProvider` 聚合获取，适合同时需要缓存与队列的场景
+
 ## 5. 数据保留（TTL）
 
 ### 5.1 保留策略

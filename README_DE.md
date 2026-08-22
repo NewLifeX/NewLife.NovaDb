@@ -17,7 +17,7 @@ Eine in **C#** implementierte mittelgroße bis große Hybrid-Datenbank, die auf 
 - **Vier-Motoren-Integration**:
   - **Nova Engine** (Allgemein relational): SkipList-Index + MVCC-Transaktionen (Read Committed), unterstützt CRUD, SQL-Abfragen, JOIN
   - **Flux Engine** (Zeitreihen + MQ): Zeitbasierte Sharding Append Only, unterstützt TTL-Auto-Cleanup, Redis Stream-ähnliche Consumer-Gruppen + Pending + Ack
-  - **KV-Modus** (Logische Ansicht): Verwendet Nova Engine wieder, API verbirgt SQL-Details, jede Zeile enthält `Key + Value + TTL`
+  - **KV-Modus** (Schlüssel-Wert-Speicher): Unabhängiger Bitcask-Engine (In-Memory-Index + On-Disk-Werte), unterstützt TTL, Multi-Tabellen-Isolation
   - **ADO.NET Provider**: Erkennt automatisch eingebetteten/Server-Modus, native Integration mit XCode ORM
 - **Dynamische Hot-Cold-Index-Trennung**: Hot-Daten vollständig in den physischen Speicher geladen (SkipList-Knoten), Cold-Daten in MMF entladen mit nur spärlichem Verzeichnis beibehalten. 10 Millionen Zeilen Tabelle, die nur die neuesten 10.000 Zeilen abfragt, verwendet < 20 MB Speicher.
 - **Reiner verwalteter Code**: Keine nativen Komponentenabhängigkeiten (reines C#/.NET), einfach plattformübergreifend und in eingeschränkten Umgebungen bereitzustellen.
@@ -28,7 +28,7 @@ Eine in **C#** implementierte mittelgroße bis große Hybrid-Datenbank, die auf 
 |--------|---------------|-----------------|
 | **Nova Engine** | SkipList (Speicher+MMF Hot-Cold-Trennung) | Allgemeines CRUD, Konfigurationstabellen, Geschäftsbestellungen, Benutzerdaten |
 | **Flux Engine** | Zeitbasierte Sharding (Append Only) | IoT-Sensoren, Log-Sammlung, interne Nachrichtenwarteschlangen, Audit-Logs |
-| **KV-Modus** | Nova-Tabellenlogische Ansicht | Verteilte Sperren, Caching, Sitzungsspeicher, Zähler, Konfigurationszentrum |
+| **KV-Modus** | Bitcask (In-Memory-Index + On-Disk-Werte) | Verteilte Sperren, Caching, Sitzungsspeicher, Zähler, Konfigurationszentrum |
 
 ### Datentypen
 

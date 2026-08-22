@@ -17,7 +17,7 @@ Una base de datos híbrida de tamaño mediano a grande implementada en **C#**, e
 - **Integración de cuatro motores**:
   - **Nova Engine** (relacional general): Índice SkipList + transacciones MVCC (Read Committed), admite CRUD, consultas SQL, JOIN
   - **Flux Engine** (series temporales + MQ): Particionamiento basado en tiempo Append Only, admite limpieza automática TTL, grupos de consumidores estilo Redis Stream + Pending + Ack
-  - **Modo KV** (vista lógica): Reutiliza Nova Engine, la API oculta los detalles SQL, cada fila contiene `Key + Value + TTL`
+  - **Modo KV** (almacén de clave-valor): Motor Bitcask independiente (índice en memoria + valores en disco), admite TTL, aislamiento multi-tabla
   - **ADO.NET Provider**: Reconoce automáticamente el modo integrado/servidor, integración nativa con XCode ORM
 - **Separación dinámica de índices calientes-fríos**: Los datos calientes se cargan completamente en la memoria física (nodos SkipList), los datos fríos se descargan a MMF con solo directorio disperso retenido. Tabla de 10 millones de filas consultando solo las últimas 10,000 filas usa < 20 MB de memoria.
 - **Código puramente gestionado**: Sin dependencias de componentes nativos (puro C#/.NET), fácil de implementar en plataformas y entornos restringidos.
@@ -28,7 +28,7 @@ Una base de datos híbrida de tamaño mediano a grande implementada en **C#**, e
 |-------|---------------------|--------------|
 | **Nova Engine** | SkipList (Separación memoria+MMF caliente-frío) | CRUD general, tablas de configuración, pedidos comerciales, datos de usuario |
 | **Flux Engine** | Particionamiento basado en tiempo (Append Only) | Sensores IoT, recopilación de registros, colas de mensajes internas, registros de auditoría |
-| **Modo KV** | Vista lógica de tabla Nova | Bloqueos distribuidos, almacenamiento en caché, almacenamiento de sesiones, contadores, centro de configuración |
+| **Modo KV** | Bitcask (índice en memoria + valores en disco) | Bloqueos distribuidos, almacenamiento en caché, almacenamiento de sesiones, contadores, centro de configuración |
 
 ### Tipos de datos
 

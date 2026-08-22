@@ -17,7 +17,7 @@
 - **四引擎融合**：
   - **Nova Engine**（通用关系型）：SkipList 索引 + MVCC 事务（Read Committed），支持 CRUD、SQL 查询、JOIN
   - **Flux Engine**（时序 + MQ）：按时间分片 Append Only，支持 TTL 自动清理、Redis Stream 风格消费组 + Pending + Ack
-  - **KV 模式**（逻辑视图）：复用 Nova Engine，API 屏蔽 SQL 细节，每行 `Key + Value + TTL`
+  - **KV 模式**（键值存储）：独立 Bitcask 引擎（内存索引 + 磁盘值），支持 TTL、多表隔离
   - **ADO.NET Provider**：嵌入/网络自动识别，兼容 XCode ORM 原生集成
 - **动态冷热分离索引**：热数据完整加载至物理内存（SkipList 节点），冷数据卸载至 MMF 仅保留稀疏目录。1000 万行表仅查最新 1 万行时，内存占用 < 20MB。
 - **纯托管代码**：不依赖 Native 组件（纯 C#/.NET），便于跨平台与受限环境部署。
@@ -28,7 +28,7 @@
 |------|----------|----------|
 | **Nova Engine** | SkipList（内存+MMF 冷热分离） | 通用 CRUD、配置表、业务订单、用户数据 |
 | **Flux Engine** | 按时间分片（Append Only） | IoT 传感器、日志收集、内部消息队列、审计日志 |
-| **KV 模式** | Nova 表逻辑视图 | 分布式锁、缓存、会话存储、计数器、配置中心 |
+| **KV 模式** | Bitcask（内存索引 + 磁盘值） | 分布式锁、缓存、会话存储、计数器、配置中心 |
 
 ### 数据类型
 
