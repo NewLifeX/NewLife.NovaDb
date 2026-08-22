@@ -182,7 +182,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// 供 NewLife.AI 等上层框架作为向量后端使用（接口定义于 NewLife.Data，双方无直接引用）。
     /// </remarks>
     /// <param name="connectionString">连接字符串。嵌入模式：Data Source=../data/mydb；网络模式：Server=localhost;Port=3306</param>
-    /// <param name="tableName">向量表名。默认 "vector_store"</param>
+    /// <param name="tableName">默认集合名（对应一张向量表）。默认 "vector_store"</param>
     /// <returns>IVectorStore 向量存储实例</returns>
     public IVectorStore GetVectorStore(String connectionString, String tableName = "vector_store")
     {
@@ -192,7 +192,11 @@ public sealed class NovaClientFactory : DbProviderFactory
         var conn = (NovaConnection)CreateConnection();
         conn.ConnectionString = connectionString;
 
-        return new NovaVectorStore(conn, tableName);
+        var store = new NovaVectorStore(conn);
+        // 预创建默认集合，调用方可通过 GetCollection(tableName) 使用
+        store.GetCollection(tableName);
+
+        return store;
     }
 
     /// <summary>创建 NovaCacheProvider 实例（兼容旧接口）</summary>
