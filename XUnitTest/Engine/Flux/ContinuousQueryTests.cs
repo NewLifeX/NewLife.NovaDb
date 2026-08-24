@@ -209,7 +209,9 @@ public class ContinuousQueryTests : IDisposable
 
         var minute = TimeSpan.FromMinutes(1).Ticks;
         // 使用相对当前时间的时间戳，避免与游标推进逻辑冲突
-        var start = DateTime.UtcNow.AddMinutes(-2).Ticks;
+        // 两条数据偏移固定为整分钟内的 10s/30s，数学上保证同桶，避免整点边界跨桶导致的 flaky
+        var baseTicks = DateTime.UtcNow.AddMinutes(-2).Ticks;
+        var bucketStart = baseTicks / minute * minute;
         var def = new ContinuousQueryDefinition
         {
             Name = "upsert_agg",
@@ -217,19 +219,19 @@ public class ContinuousQueryTests : IDisposable
             FieldName = "value",
             Rollups = [minute],
             TargetPrefix = "u",
-            LastProcessedTicks = start
+            LastProcessedTicks = bucketStart
         };
         manager.Register(def);
 
         // 同一分钟桶内的两条数据，一次处理
         engine.Append(new FluxEntry
         {
-            Timestamp = start,
+            Timestamp = bucketStart + 10 * TimeSpan.TicksPerSecond,
             Fields = new Dictionary<String, Object?> { ["value"] = 10.0 }
         });
         engine.Append(new FluxEntry
         {
-            Timestamp = start + 10 * TimeSpan.TicksPerSecond,
+            Timestamp = bucketStart + 30 * TimeSpan.TicksPerSecond,
             Fields = new Dictionary<String, Object?> { ["value"] = 20.0 }
         });
         manager.Run("upsert_agg");
