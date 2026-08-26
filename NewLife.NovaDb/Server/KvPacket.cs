@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using NewLife.Buffers;
 using NewLife.Data;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Utilities;
 
 namespace NewLife.NovaDb.Server;
@@ -31,12 +32,12 @@ internal static class KvPacket
     public static IOwnerPacket EncodeSet(String tableName, String key, Byte[]? value, Int32 ttlSeconds)
     {
         var table = tableName ?? "default";
-        var bufSize = 32 + _encoding.GetByteCount(table) + _encoding.GetByteCount(key) + (value?.Length ?? 0);
+        var bufSize = 32 + _encoding.GetByteCount(table) + _encoding.GetByteCount(key) + (value?.Length ?? 0) + 8;
         var pk = new OwnerPacket(bufSize);
         var writer = new SpanWriter(pk);
         writer.Write(table);
         writer.Write(key);
-        WriteNullableBytes(ref writer, value);
+        WriteNullableBytesWithFlag(ref writer, value);
         writer.Write(ttlSeconds);
         return pk.Resize(writer.Position);
     }
@@ -173,7 +174,7 @@ internal static class KvPacket
         var reader = new SpanReader(data);
         var tableName = ReadString(ref reader);
         var key = ReadString(ref reader);
-        var value = ReadNullableBytes(ref reader);
+        var value = ReadNullableBytesWithFlag(ref reader);
         var ttlSeconds = reader.ReadInt32();
         return (tableName, key, value, ttlSeconds);
     }
@@ -395,11 +396,41 @@ internal static class KvPacket
         return new SpanReader(pk).ReadDouble();
     }
 
-    /// <summary>解码 Get 响应（空包=未找到；非空=存储的原始字节）</summary>
+    /// <summary>编码 Get 响应（含压缩标志）。空包语义不变（未找到）</summary>
+    /// <param name="value">原始值字节</param>
+    /// <returns>带压缩标志的值响应包</returns>
+    public static IOwnerPacket EncodeValue(Byte[] value)
+    {
+        if (value == null) throw new ArgumentNullException(nameof(value));
+
+        // 压缩（小数据原样返回，CompressionCodec 内部阈值判断）
+        var compressed = CompressionCodec.Default.Compress(value);
+        var flag = ReferenceEquals(compressed, value) ? (Byte)0 : (Byte)CompressionCodec.Default.Algorithm;
+
+        var pk = new OwnerPacket(compressed.Length + 5);
+        var writer = new SpanWriter(pk);
+        writer.WriteByte(flag);
+        writer.WriteEncodedInt(compressed.Length);
+        writer.Write(compressed);
+        return pk.Resize(writer.Position);
+    }
+
+    /// <summary>解码 Get 响应（空包=未找到；非空=[1B flag][EncodedInt n][n 字节]，flag 非 0 时解压）</summary>
     public static Byte[]? DecodeNullableValue(IPacket? pk)
     {
         if (pk == null || pk.Length == 0) return null;
-        return pk.ReadBytes();
+
+        var reader = new SpanReader(pk);
+        var flag = reader.ReadByte();
+        var len = reader.ReadEncodedInt();
+        if (len < 0) return null;
+        if (len == 0) return EmptyBytes;
+
+        var data = reader.ReadBytes(len).ToArray();
+        if (flag == (Byte)CompressionAlgorithm.GZip || flag == (Byte)CompressionAlgorithm.Deflate)
+            return CompressionCodec.Default.Decompress(data);
+
+        return data;
     }
 
     /// <summary>解码字符串数组响应</summary>
@@ -453,6 +484,46 @@ internal static class KvPacket
             writer.WriteEncodedInt(value.Length);
             if (value.Length > 0) writer.Write(value);
         }
+    }
+
+    private static void WriteNullableBytesWithFlag(ref SpanWriter writer, Byte[]? value)
+    {
+        if (value == null)
+        {
+            writer.WriteEncodedInt(-1);
+            return;
+        }
+
+        if (value.Length == 0)
+        {
+            writer.WriteEncodedInt(0);
+            return;
+        }
+
+        // 压缩（小数据原样返回，CompressionCodec 内部阈值判断）
+        var compressed = CompressionCodec.Default.Compress(value);
+        var flag = ReferenceEquals(compressed, value) ? (Byte)0 : (Byte)CompressionCodec.Default.Algorithm;
+
+        writer.WriteEncodedInt(compressed.Length + 1);
+        writer.WriteByte(flag);
+        writer.Write(compressed);
+    }
+
+    private static Byte[]? ReadNullableBytesWithFlag(ref SpanReader reader)
+    {
+        var len = reader.ReadEncodedInt();
+        if (len < 0) return null;
+        if (len == 0) return EmptyBytes;
+
+        // 新格式：len 含 1 字节压缩标志
+        var flag = reader.ReadByte();
+        var dataLen = len - 1;
+        var data = dataLen > 0 ? reader.ReadBytes(dataLen).ToArray() : EmptyBytes;
+
+        if (flag == (Byte)CompressionAlgorithm.GZip || flag == (Byte)CompressionAlgorithm.Deflate)
+            return CompressionCodec.Default.Decompress(data);
+
+        return data;
     }
 
     private static String ReadString(ref SpanReader reader)

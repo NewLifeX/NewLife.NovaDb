@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Server;
 using Xunit;
 
@@ -90,5 +91,27 @@ public class NovaServerTests : IDisposable
         _server.Start();
         _server.Start(); // Should not throw
         Assert.True(_server.IsRunning);
+    }
+
+    [Fact(DisplayName = "服务器注册 GetVersion 操作")]
+    public void TestGetVersionRegistered()
+    {
+        _server.Start();
+        var manager = _server.Server!.Manager;
+        Assert.True(manager.Services.ContainsKey("Nova/GetVersion"), "Missing action: Nova/GetVersion");
+    }
+
+    [Fact(DisplayName = "GetVersion 返回协议版本且客户端连接校验通过")]
+    public void GetVersion_ReturnsProtocolVersion()
+    {
+        _server.Start();
+
+        using var client = new NovaClient($"tcp://127.0.0.1:{_server.Port}");
+        client.Open(); // Open 内部校验版本，匹配则通过
+
+        var version = client.InvokeAsync<Int32>("Nova/GetVersion").GetAwaiter().GetResult();
+        Assert.Equal(NovaProtocol.ProtocolVersion, version);
+
+        client.Close();
     }
 }

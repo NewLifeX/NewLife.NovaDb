@@ -1,4 +1,5 @@
 ﻿using NewLife.Data;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Server;
 using NewLife.Remoting;
 
@@ -42,6 +43,18 @@ public class NovaClient : DisposeBase
         var client = new ApiClient(ServerUri);
         client.Open();
         _client = client;
+
+        VerifyVersion();
+    }
+
+    /// <summary>校验协议版本。连接时与服务端交换版本，跨主版本不兼容则拒绝</summary>
+    private void VerifyVersion()
+    {
+        var serverVersion = _client!.InvokeAsync<Int32>("Nova/GetVersion").GetAwaiter().GetResult();
+        if (serverVersion != NovaProtocol.ProtocolVersion)
+            throw new NovaException(ErrorCode.ProtocolError,
+                $"Protocol version mismatch: server={serverVersion}, client={NovaProtocol.ProtocolVersion}. " +
+                "Please upgrade client or server to the same major version.");
     }
 
     /// <summary>关闭连接</summary>

@@ -42,6 +42,10 @@ internal class NovaController : IApi
     /// <returns>服务器时间</returns>
     public String Ping() => DateTime.UtcNow.ToString("o");
 
+    /// <summary>获取服务器协议版本</summary>
+    /// <returns>协议版本号（主版本）</returns>
+    public Int32 GetVersion() => NovaProtocol.ProtocolVersion;
+
     /// <summary>解析数据库名对应的引擎</summary>
     /// <param name="db">数据库名，为空时回退到默认引擎</param>
     /// <returns>引擎实例，不存在返回 null</returns>

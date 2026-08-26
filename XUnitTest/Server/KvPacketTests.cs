@@ -50,6 +50,60 @@ public class KvPacketTests
         Assert.Empty(decodedValue);
     }
 
+    [Fact(DisplayName = "Set 大值压缩编解码往返")]
+    public void EncodeDecodeSet_LargeValue_RoundTrip()
+    {
+        var value = Encoding.UTF8.GetBytes(new String('A', 4096));
+
+        using var pk = KvPacket.EncodeSet("default", "bigKey", value, 60);
+        // 请求包应小于原始值 + 键名（传输省带宽）
+        Assert.True(pk.Length < value.Length, $"Set 请求未压缩，包长度 {pk.Length} >= 原始 {value.Length}");
+
+        var (_, _, decodedValue, _) = KvPacket.DecodeSet(pk);
+        Assert.Equal(value, decodedValue);
+    }
+
+    [Fact(DisplayName = "Set 小值不压缩")]
+    public void EncodeDecodeSet_SmallValue_NoCompression()
+    {
+        var value = Encoding.UTF8.GetBytes("tiny");
+        using var pk = KvPacket.EncodeSet("default", "smallKey", value, 60);
+
+        var (_, _, decodedValue, _) = KvPacket.DecodeSet(pk);
+        Assert.Equal(value, decodedValue);
+    }
+
+    [Fact(DisplayName = "Get 响应大值压缩往返")]
+    public void EncodeValue_LargeValue_RoundTrip()
+    {
+        var value = Encoding.UTF8.GetBytes(new String('B', 8192));
+
+        using var pk = KvPacket.EncodeValue(value);
+        Assert.True(pk.Length < value.Length, $"Get 响应未压缩，包长度 {pk.Length} >= 原始 {value.Length}");
+
+        var decoded = KvPacket.DecodeNullableValue(pk);
+        Assert.Equal(value, decoded);
+    }
+
+    [Fact(DisplayName = "Get 响应小值不压缩")]
+    public void EncodeValue_SmallValue_NoCompression()
+    {
+        var value = Encoding.UTF8.GetBytes("small");
+
+        using var pk = KvPacket.EncodeValue(value);
+        // 格式：[1B flag][EncodedInt n][n 字节]，小值 flag 应为 0
+        Assert.Equal(0, pk.GetSpan()[0]);
+
+        var decoded = KvPacket.DecodeNullableValue(pk);
+        Assert.Equal(value, decoded);
+    }
+
+    [Fact(DisplayName = "Get 响应空包解码为 null")]
+    public void DecodeNullableValue_Empty_ReturnsNull()
+    {
+        Assert.Null(KvPacket.DecodeNullableValue(null));
+    }
+
     [Fact(DisplayName = "TableKey编解码往返")]
     public void EncodeDecodeTableKey_RoundTrip()
     {

@@ -85,9 +85,8 @@ internal class KvController : IApi
         using var pk = store.Get(key);
         if (pk == null) return KvPacket.EncodeEmpty();
 
-        // 通过 GetSpan() 直接读取底层缓冲区并复制到新数组，避免 ReadBytes() + 再包装 IPacket 的双重分配。
-        // 不能直接 return pk，原因见上方注释。
-        return new ArrayPacket(pk.GetSpan().ToArray());
+        // 压缩后返回（大值省带宽），通过 GetSpan() 直接读取底层缓冲区并复制到新数组
+        return KvPacket.EncodeValue(pk.GetSpan().ToArray());
     }
 
     /// <summary>KV 删除键</summary>

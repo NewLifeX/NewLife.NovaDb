@@ -3,6 +3,13 @@ using NewLife.Data;
 
 namespace NewLife.NovaDb.Server;
 
+/// <summary>NovaDb 网络协议版本与消息定义</summary>
+public static class NovaProtocol
+{
+    /// <summary>当前协议版本（主版本）。同一主版本内保持兼容，跨主版本不兼容</summary>
+    public const Int32 ProtocolVersion = 1;
+}
+
 /// <summary>请求类型</summary>
 public enum RequestType : Byte
 {
