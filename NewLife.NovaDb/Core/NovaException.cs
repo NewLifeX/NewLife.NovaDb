@@ -67,9 +67,6 @@ public enum ErrorCode
     /// <summary>约束违反</summary>
     ConstraintViolation = 4003,
 
-    /// <summary>唯一约束违反</summary>
-    UniqueConstraintViolation = 4009,
-
     /// <summary>分片未找到</summary>
     ShardNotFound = 4004,
 
@@ -90,6 +87,9 @@ public enum ErrorCode
 
     /// <summary>键已过期</summary>
     KeyExpired = 4010,
+
+    /// <summary>唯一约束违反</summary>
+    UniqueConstraintViolation = 4011,
 
     /// <summary>不支持的操作</summary>
     NotSupported = 5000,

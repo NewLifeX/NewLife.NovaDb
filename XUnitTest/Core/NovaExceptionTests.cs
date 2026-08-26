@@ -68,6 +68,7 @@ public class NovaExceptionTests
     [InlineData(ErrorCode.MessageExpired, 4008)]
     [InlineData(ErrorCode.KeyNotFound, 4009)]
     [InlineData(ErrorCode.KeyExpired, 4010)]
+    [InlineData(ErrorCode.UniqueConstraintViolation, 4011)]
     [InlineData(ErrorCode.NotSupported, 5000)]
     [InlineData(ErrorCode.InvalidArgument, 5001)]
     [InlineData(ErrorCode.IoError, 6000)]
@@ -103,6 +104,7 @@ public class NovaExceptionTests
         // 数据错误 (4000-4999)
         Assert.InRange((Int32)ErrorCode.TableNotFound, 4000, 4999);
         Assert.InRange((Int32)ErrorCode.PrimaryKeyConflict, 4000, 4999);
+        Assert.InRange((Int32)ErrorCode.UniqueConstraintViolation, 4000, 4999);
 
         // 通用错误 (5000-5999)
         Assert.InRange((Int32)ErrorCode.NotSupported, 5000, 5999);
