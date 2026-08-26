@@ -8,8 +8,8 @@ public class NovaMetrics
     /// <summary>表数量</summary>
     public Int32 TableCount { get; set; }
 
-    /// <summary>总行数（所有表）</summary>
-    public Int64 TotalRows { get; set; }
+    /// <summary>总行数（所有表）。由 DML 执行器维护，线程安全</summary>
+    public Int64 TotalRows { get => Interlocked.Read(ref _totalRows); set => Interlocked.Exchange(ref _totalRows, value); }
 
     /// <summary>启动时间</summary>
     public DateTime StartTime { get; set; }
@@ -19,6 +19,7 @@ public class NovaMetrics
     #endregion
 
     #region 计数器（线程安全）
+    private Int64 _totalRows;
     private Int64 _executeCount;
     private Int64 _queryCount;
     private Int64 _insertCount;
@@ -27,6 +28,10 @@ public class NovaMetrics
     private Int64 _ddlCount;
     private Int64 _commitCount;
     private Int64 _rollbackCount;
+
+    /// <summary>累加总行数（线程安全，删除时传负值）</summary>
+    /// <param name="delta">行数增量</param>
+    public void AddTotalRows(Int64 delta) => Interlocked.Add(ref _totalRows, delta);
 
     /// <summary>SQL 执行次数</summary>
     public Int64 ExecuteCount { get => Interlocked.Read(ref _executeCount); set => Interlocked.Exchange(ref _executeCount, value); }

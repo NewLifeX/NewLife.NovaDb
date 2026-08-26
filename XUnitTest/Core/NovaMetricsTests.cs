@@ -124,4 +124,76 @@ public class NovaMetricsTests : IDisposable
         Assert.True(metrics.Uptime.TotalMilliseconds >= 0);
         Assert.True(metrics.Uptime.TotalHours < 1);
     }
+
+    [Fact(DisplayName = "TotalRows 随 INSERT 增加")]
+    public void TestTotalRows_InsertIncreases()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice')");
+        _engine.Execute("INSERT INTO users VALUES (2, 'Bob'), (3, 'Charlie')");
+
+        Assert.Equal(3, _engine.Metrics.TotalRows);
+    }
+
+    [Fact(DisplayName = "TotalRows 随 DELETE 减少")]
+    public void TestTotalRows_DeleteDecreases()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')");
+        _engine.Execute("DELETE FROM users WHERE id >= 2");
+
+        Assert.Equal(1, _engine.Metrics.TotalRows);
+    }
+
+    [Fact(DisplayName = "TotalRows 不因 UPDATE 变化")]
+    public void TestTotalRows_UpdateUnchanged()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice')");
+        _engine.Execute("UPDATE users SET name = 'Bob' WHERE id = 1");
+
+        Assert.Equal(1, _engine.Metrics.TotalRows);
+    }
+
+    [Fact(DisplayName = "CommitCount 随 COMMIT 增加")]
+    public void TestCommitCount()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("BEGIN");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice')");
+        _engine.Execute("COMMIT");
+
+        Assert.Equal(1, _engine.Metrics.CommitCount);
+        Assert.Equal(0, _engine.Metrics.RollbackCount);
+    }
+
+    [Fact(DisplayName = "RollbackCount 随 ROLLBACK 增加")]
+    public void TestRollbackCount()
+    {
+        _engine.Execute("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR)");
+        _engine.Execute("BEGIN");
+        _engine.Execute("INSERT INTO users VALUES (1, 'Alice')");
+        _engine.Execute("ROLLBACK");
+
+        Assert.Equal(1, _engine.Metrics.RollbackCount);
+        Assert.Equal(0, _engine.Metrics.CommitCount);
+    }
+
+    [Fact(DisplayName = "AddTotalRows 线程安全累加")]
+    public void TestAddTotalRows_ThreadSafe()
+    {
+        var metrics = new NovaMetrics();
+        var tasks = new System.Threading.Tasks.Task[8];
+        for (var i = 0; i < tasks.Length; i++)
+        {
+            tasks[i] = System.Threading.Tasks.Task.Run(() =>
+            {
+                for (var j = 0; j < 1000; j++)
+                    metrics.AddTotalRows(1);
+            });
+        }
+        System.Threading.Tasks.Task.WaitAll(tasks);
+
+        Assert.Equal(8000, metrics.TotalRows);
+    }
 }

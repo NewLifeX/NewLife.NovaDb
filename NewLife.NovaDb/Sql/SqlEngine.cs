@@ -399,6 +399,7 @@ public partial class SqlEngine : IDisposable
                     throw new NovaException(ErrorCode.TransactionError, "No active transaction to commit");
                 commitTx.Commit();
                 _sessionTransaction.Value = null;
+                Metrics.CommitCount++;
                 break;
 
             case SqlStatementType.RollbackTransaction:
@@ -407,6 +408,7 @@ public partial class SqlEngine : IDisposable
                     throw new NovaException(ErrorCode.TransactionError, "No active transaction to rollback");
                 rollbackTx.Rollback();
                 _sessionTransaction.Value = null;
+                Metrics.RollbackCount++;
                 break;
 
             default:
@@ -418,9 +420,9 @@ public partial class SqlEngine : IDisposable
 
     private SqlResult TrackDdl(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.DdlCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Ddl, sql, result.AffectedRows); return result; }
     private SqlResult TrackQuery(SqlResult result) { Metrics.ExecuteCount++; Metrics.QueryCount++; _lastAffectedRows = result.AffectedRows; return result; }
-    private SqlResult TrackInsert(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.InsertCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Insert, sql, result.AffectedRows); return result; }
+    private SqlResult TrackInsert(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.InsertCount++; Metrics.AddTotalRows(result.AffectedRows); _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Insert, sql, result.AffectedRows); return result; }
     private SqlResult TrackUpdate(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.UpdateCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Update, sql, result.AffectedRows); return result; }
-    private SqlResult TrackDelete(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.DeleteCount++; _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Delete, sql, result.AffectedRows); return result; }
+    private SqlResult TrackDelete(SqlResult result, String sql) { Metrics.ExecuteCount++; Metrics.DeleteCount++; Metrics.AddTotalRows(-result.AffectedRows); _lastAffectedRows = result.AffectedRows; Binlog?.Write(BinlogEventType.Delete, sql, result.AffectedRows); return result; }
 
     #region 释放
     /// <summary>释放资源</summary>
