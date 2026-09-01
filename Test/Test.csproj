@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="NewLife.Core" Version="11.18.2026.822-beta1706" />
+    <PackageReference Include="NewLife.Core" Version="11.19.2026.901" />
     <PackageReference Include="NewLife.Stardust.Extensions" Version="3.10.2026.801" />
     <PackageReference Include="xunit.assert" Version="2.9.3" />
   </ItemGroup>
