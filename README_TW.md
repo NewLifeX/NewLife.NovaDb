@@ -59,6 +59,7 @@
 | 交易 | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
 | SQL 函數 | ✅ | 字串/數值/日期/轉換/條件/雜湊（60+ 函數） |
 | 子查詢 | ✅ | IN/EXISTS 子查詢 |
+| 全文檢索 | ✅ | 全文索引 + BM25 評分，Top-K 結果，支援 RAG 混合檢索 |
 | 進階 | ❌ | 無視圖/觸發器/儲存程序/視窗函數 |
 
 ---
@@ -534,7 +535,7 @@ NovaDb 支援**一主多從**架構，透過 Binlog 實現非同步資料同步�
 | **v1.1** | P0 級 SQL 函數（字串/數值/日期/轉換/條件約 30 個函數） |
 | **v1.2** | MQ 阻塞讀取、KV Add/Inc 操作、P1 級 SQL 函數 |
 | **v1.3** | MQ 延遲訊息、死信佇列 |
-| **v2.0** | GeoPoint 地理編碼 + Vector 向量類型（AI 向量檢索）、可觀測性與管理工具 |
+| **v2.0**（已完成） | GeoPoint 地理編碼 + Vector 向量類型（AI 向量檢索）、GIS 地理擴充、全文檢索（BM25）、NovaVectorStore（IVectorStore 多集合）、增量物化視圖、Binlog 管理、可觀測性與管理工具 |
 
 ## 對比定位
 

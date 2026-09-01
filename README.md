@@ -59,6 +59,7 @@ Implemented standard SQL subset, covering approximately 60% of common business s
 | Transaction | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
 | SQL Functions | ✅ | String/numeric/date/conversion/conditional/hash (60+ functions) |
 | Subquery | ✅ | IN/EXISTS subqueries |
+| Full-Text Search | ✅ | Full-text index with BM25 scoring, Top-K results for RAG hybrid retrieval |
 | Advanced | ❌ | No views/triggers/stored procedures/window functions |
 
 ---
@@ -453,7 +454,7 @@ NovaDb supports a **one-master, multiple-slave** architecture with asynchronous 
 | **v1.1** (Completed) | P0-level SQL functions (string/numeric/date/conversion/conditional ~30 functions) |
 | **v1.2** (Completed) | MQ blocking read, KV Add/Inc operations, P1-level SQL functions |
 | **v1.3** (Completed) | MQ delayed messages, dead letter queue |
-| **v2.0** (Completed) | GeoPoint geo-encoding + Vector type (AI vector search), GIS extension, full-text search, observability and management tools |
+| **v2.0** (Completed) | GeoPoint geo-encoding + Vector type (AI vector search), GIS extension, full-text search (BM25), NovaVectorStore (IVectorStore, multi-collection), incremental materialized views, Binlog management, observability and management tools |
 
 ## Positioning
 

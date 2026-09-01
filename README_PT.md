@@ -59,6 +59,7 @@ Subconjunto SQL padrão implementado, cobrindo aproximadamente 60% dos cenários
 | Transação | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
 | Funções SQL | ✅ | Funções de string/numérica/data/conversão/condicional/hash (60+ funções) |
 | Subconsulta | ✅ | Subconsultas IN/EXISTS |
+| Pesquisa de texto completo | ✅ | Índice de texto completo com pontuação BM25, resultados Top-K para recuperação híbrida RAG |
 | Avançado | ❌ | Sem views/triggers/procedimentos armazenados/funções de janela |
 
 ---
@@ -453,7 +454,7 @@ O NovaDb suporta uma arquitetura **um master, vários slaves** com replicação 
 | **v1.1** | Funções SQL de nível P0 (string/numérica/data/conversão/condicional ~30 funções) |
 | **v1.2** | Leitura bloqueante MQ, operações KV Add/Inc, funções SQL de nível P1 |
 | **v1.3** | Mensagens atrasadas MQ, fila de mensagens mortas |
-| **v2.0** | Geocodificação GeoPoint + tipo Vector (busca de vetores AI), observabilidade e ferramentas de gerenciamento |
+| **v2.0** (Concluído) | Geocodificação GeoPoint + tipo Vector (busca de vetores AI), extensão GIS, pesquisa de texto completo (BM25), NovaVectorStore (IVectorStore, multi-coleção), visualizações materializadas incrementais, gerenciamento de Binlog, observabilidade e ferramentas de gerenciamento |
 
 ## Posicionamento
 
