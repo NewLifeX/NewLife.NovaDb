@@ -22,6 +22,9 @@ public class SqlEngineFullTests : IDisposable
         _engine = new SqlEngine(_testDir, new DbOptions { Path = _testDir, WalMode = WalMode.None });
     }
 
+    /// <summary>CREATE DATABASE 生成的库目录位于数据目录同级，使用唯一名称避免多目标框架并行时互相踩踏</summary>
+    private readonly String _dbPrefix = "full_" + Guid.NewGuid().ToString("N");
+
     public void Dispose()
     {
         _engine.Dispose();
@@ -357,23 +360,23 @@ public class SqlEngineFullTests : IDisposable
     [Fact(DisplayName = "CREATE DATABASE 和 DROP DATABASE")]
     public void CreateAndDropDatabase()
     {
-        var result = _engine.Execute("CREATE DATABASE testdb");
+        var result = _engine.Execute($"CREATE DATABASE {_dbPrefix}1");
         Assert.Equal(0, result.AffectedRows);
 
-        result = _engine.Execute("DROP DATABASE testdb");
+        result = _engine.Execute($"DROP DATABASE {_dbPrefix}1");
         Assert.Equal(0, result.AffectedRows);
     }
 
     [Fact(DisplayName = "CREATE DATABASE IF NOT EXISTS")]
     public void CreateDatabaseIfNotExists()
     {
-        _engine.Execute("CREATE DATABASE testdb2");
+        _engine.Execute($"CREATE DATABASE {_dbPrefix}2");
 
-        var result = _engine.Execute("CREATE DATABASE IF NOT EXISTS testdb2");
+        var result = _engine.Execute($"CREATE DATABASE IF NOT EXISTS {_dbPrefix}2");
         Assert.Equal(0, result.AffectedRows);
 
         // 清理
-        _engine.Execute("DROP DATABASE testdb2");
+        _engine.Execute($"DROP DATABASE {_dbPrefix}2");
     }
 
     [Fact(DisplayName = "DROP DATABASE IF EXISTS 不存在")]
@@ -386,17 +389,17 @@ public class SqlEngineFullTests : IDisposable
     [Fact(DisplayName = "CREATE DATABASE 已存在异常")]
     public void CreateDatabaseDuplicate()
     {
-        _engine.Execute("CREATE DATABASE dupdb");
+        _engine.Execute($"CREATE DATABASE {_dbPrefix}3");
 
         try
         {
             var ex = Assert.Throws<NovaException>(() =>
-                _engine.Execute("CREATE DATABASE dupdb"));
+                _engine.Execute($"CREATE DATABASE {_dbPrefix}3"));
             Assert.Equal(ErrorCode.DatabaseExists, ex.Code);
         }
         finally
         {
-            _engine.Execute("DROP DATABASE IF EXISTS dupdb");
+            _engine.Execute($"DROP DATABASE IF EXISTS {_dbPrefix}3");
         }
     }
 

@@ -18,6 +18,9 @@ public class DdlExtendedTests : IDisposable
         _engine = new SqlEngine(_testDir, new DbOptions { Path = _testDir, WalMode = WalMode.None });
     }
 
+    /// <summary>CREATE DATABASE 生成的库目录位于数据目录同级，使用唯一名称避免多目标框架并行时互相踩踏</summary>
+    private readonly String _dbPrefix = "ddl_" + Guid.NewGuid().ToString("N");
+
     public void Dispose()
     {
         _engine.Dispose();
@@ -45,10 +48,10 @@ public class DdlExtendedTests : IDisposable
     [Fact(DisplayName = "测试 CREATE DATABASE")]
     public void TestCreateDatabase()
     {
-        var result = _engine.Execute("CREATE DATABASE testdb");
+        var result = _engine.Execute($"CREATE DATABASE {_dbPrefix}1");
         Assert.Equal(0, result.AffectedRows);
 
-        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, "testdb");
+        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, $"{_dbPrefix}1");
         Assert.True(Directory.Exists(dbPath));
 
         // 清理
@@ -58,27 +61,27 @@ public class DdlExtendedTests : IDisposable
     [Fact(DisplayName = "测试 CREATE DATABASE IF NOT EXISTS")]
     public void TestCreateDatabaseIfNotExists()
     {
-        _engine.Execute("CREATE DATABASE testdb2");
-        var result = _engine.Execute("CREATE DATABASE IF NOT EXISTS testdb2");
+        _engine.Execute($"CREATE DATABASE {_dbPrefix}2");
+        var result = _engine.Execute($"CREATE DATABASE IF NOT EXISTS {_dbPrefix}2");
         Assert.Equal(0, result.AffectedRows);
 
         // 清理
-        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, "testdb2");
+        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, $"{_dbPrefix}2");
         Directory.Delete(dbPath, recursive: true);
     }
 
     [Fact(DisplayName = "测试 CREATE DATABASE 已存在异常")]
     public void TestCreateDatabaseDuplicate()
     {
-        _engine.Execute("CREATE DATABASE testdb3");
+        _engine.Execute($"CREATE DATABASE {_dbPrefix}3");
 
         var ex = Assert.Throws<NovaException>(() =>
-            _engine.Execute("CREATE DATABASE testdb3"));
+            _engine.Execute($"CREATE DATABASE {_dbPrefix}3"));
 
         Assert.Equal(ErrorCode.DatabaseExists, ex.Code);
 
         // 清理
-        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, "testdb3");
+        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, $"{_dbPrefix}3");
         Directory.Delete(dbPath, recursive: true);
     }
 
@@ -89,11 +92,11 @@ public class DdlExtendedTests : IDisposable
     [Fact(DisplayName = "测试 DROP DATABASE")]
     public void TestDropDatabase()
     {
-        _engine.Execute("CREATE DATABASE testdb4");
-        var result = _engine.Execute("DROP DATABASE testdb4");
+        _engine.Execute($"CREATE DATABASE {_dbPrefix}4");
+        var result = _engine.Execute($"DROP DATABASE {_dbPrefix}4");
         Assert.Equal(0, result.AffectedRows);
 
-        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, "testdb4");
+        var dbPath = Path.Combine(Path.GetDirectoryName(_testDir)!, $"{_dbPrefix}4");
         Assert.False(Directory.Exists(dbPath));
     }
 
