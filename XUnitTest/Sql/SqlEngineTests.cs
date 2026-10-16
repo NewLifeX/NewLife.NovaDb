@@ -787,7 +787,7 @@ public class SqlEngineTests : IDisposable
         Assert.Equal(1, result.AffectedRows);
 
         var selectResult = _engine.Execute("SELECT age FROM users WHERE id = 1");
-        Assert.Equal(1, selectResult.Rows.Count);
+        Assert.Single(selectResult.Rows);
         Assert.Equal(31, Convert.ToInt32(selectResult.Rows[0][0]));
     }
 
@@ -802,7 +802,7 @@ public class SqlEngineTests : IDisposable
         Assert.Equal(1, result.AffectedRows);
 
         var selectResult = _engine.Execute("SELECT * FROM users");
-        Assert.Equal(1, selectResult.Rows.Count);
+        Assert.Single(selectResult.Rows);
     }
 
     #endregion

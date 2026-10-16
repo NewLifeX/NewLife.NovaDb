@@ -76,7 +76,7 @@ public class GeoPointAdvancedTests
         var point = new GeoPoint(39.9042, 116.4074);
         var center = new GeoPoint(39.9142, 116.4174);
 
-        Assert.True(point.WithinRadius(center, 50_000)); // 50km 范围内
+        Assert.True(point.WithinRadius(in center, 50_000)); // 50km 范围内
     }
 
     [Fact(DisplayName = "GeoPoint WithinRadius - 超出范围")]
@@ -85,7 +85,7 @@ public class GeoPointAdvancedTests
         var beijing = new GeoPoint(39.9042, 116.4074);
         var shanghai = new GeoPoint(31.2304, 121.4737);
 
-        Assert.False(beijing.WithinRadius(shanghai, 100_000)); // 100km 范围外
+        Assert.False(beijing.WithinRadius(in shanghai, 100_000)); // 100km 范围外
     }
 
     [Fact(DisplayName = "GeoPoint Parse - 标准格式")]

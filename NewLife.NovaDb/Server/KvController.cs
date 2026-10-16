@@ -37,7 +37,8 @@ internal class KvController : IApi
         if (String.IsNullOrEmpty(tableName) || "default".Equals(tableName, StringComparison.OrdinalIgnoreCase))
             return SharedKvStore;
 
-        return SharedServer?.GetKvStore(tableName);
+        // 低版本目标框架的 String.IsNullOrEmpty 缺少 NotNullWhen 注解，此处空引用已被排除
+        return SharedServer?.GetKvStore(tableName!);
     }
 
     /// <summary>KV 设置键值对</summary>

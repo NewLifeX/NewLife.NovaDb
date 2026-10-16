@@ -180,7 +180,7 @@ public class NovaMetricsTests : IDisposable
     }
 
     [Fact(DisplayName = "AddTotalRows 线程安全累加")]
-    public void TestAddTotalRows_ThreadSafe()
+    public async System.Threading.Tasks.Task TestAddTotalRows_ThreadSafe()
     {
         var metrics = new NovaMetrics();
         var tasks = new System.Threading.Tasks.Task[8];
@@ -192,7 +192,7 @@ public class NovaMetricsTests : IDisposable
                     metrics.AddTotalRows(1);
             });
         }
-        System.Threading.Tasks.Task.WaitAll(tasks);
+        await System.Threading.Tasks.Task.WhenAll(tasks);
 
         Assert.Equal(8000, metrics.TotalRows);
     }

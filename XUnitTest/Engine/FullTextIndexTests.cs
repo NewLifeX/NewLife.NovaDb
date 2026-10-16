@@ -100,7 +100,7 @@ public class FullTextIndexTests
 
         idx.Remove(1);
         Assert.Equal(1, idx.DocCount);
-        Assert.Equal(1, idx.Search("hello").Count);
+        Assert.Single(idx.Search("hello"));
         Assert.Equal(2, idx.Search("hello")[0].DocId);
     }
 
@@ -146,8 +146,8 @@ public class FullTextIndexTests
         idx.Add(1, "NewLife");
         idx.Add(2, "XCode");
 
-        Assert.Equal(1, idx.Search("newlife").Count);
-        Assert.Equal(1, idx.Search("NEWLIFE").Count);
-        Assert.Equal(1, idx.Search("xcode").Count);
+        Assert.Single(idx.Search("newlife"));
+        Assert.Single(idx.Search("NEWLIFE"));
+        Assert.Single(idx.Search("xcode"));
     }
 }

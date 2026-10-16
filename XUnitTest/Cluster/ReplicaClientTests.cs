@@ -1,4 +1,6 @@
-﻿using System;
+#nullable enable
+
+using System;
 using System.Collections.Generic;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.WAL;

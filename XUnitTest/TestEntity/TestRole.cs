@@ -64,8 +64,8 @@ public class TestRole : Entity<TestRole>
             switch (name)
             {
                 case "ID": _ID = value.ToInt(); break;
-                case "Name": _Name = Convert.ToString(value); break;
-                case "Remark": _Remark = Convert.ToString(value); break;
+                case "Name": _Name = Convert.ToString(value) ?? String.Empty; break;
+                case "Remark": _Remark = Convert.ToString(value) ?? String.Empty; break;
                 default: base[name] = value; break;
             }
         }
@@ -85,7 +85,7 @@ public class TestRole : Entity<TestRole>
         /// <summary>说明</summary>
         public static readonly Field Remark = FindByName("Remark");
 
-        static Field FindByName(String name) => Meta.Table.FindByName(name);
+        static Field FindByName(String name) => Meta.Table.FindByName(name)!;
     }
     #endregion
 }

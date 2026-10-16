@@ -1,3 +1,5 @@
+#nullable enable
+
 using System;
 using NewLife.NovaDb.Engine.Flux.Coding;
 using Xunit;

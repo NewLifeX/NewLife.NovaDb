@@ -334,9 +334,9 @@ public class ContinuousQueryTests : IDisposable
                 Fields = new Dictionary<String, Object?> { ["value"] = 42.0 }
             });
 
-            // 消费消息触发聚合
-            var msg = queue.TakeOne(0);
-            Assert.NotNull(msg);
+            // 消费消息触发聚合；队列泛型为 Int32 而消息体为 FluxEntry，故只校验消息进入 Pending
+            queue.TakeOne(0);
+            Assert.Single(queue.GetPendingEntries("g1"));
 
             // OnConsumed 事件由 ConsumeAsync 循环触发，此处手动验证挂接处理器可调用
             var handler = manager.AttachRealtime(queue, "rt_agg");

@@ -511,7 +511,7 @@ public class NovaDbNetworkTests : IClassFixture<IntegrationServerFixture>
         Assert.Equal("", result4);
 
         // 测试null
-        var result5 = formatCommentMethod.Invoke(meta, new Object?[] { null }) as String;
+        var result5 = formatCommentMethod.Invoke(meta, new Object[] { null }) as String;
         Assert.Null(result5);
     }
 
