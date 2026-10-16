@@ -2,6 +2,7 @@
 using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Threading;
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
@@ -568,15 +569,45 @@ public partial class KvStore
                 throw;
             }
 
-            // 关闭旧文件流后用临时文件替换
+            // 关闭旧文件流后用临时文件替换（单步原子替换，避免删除+移动两步之间的失败窗口）
             _fileStream!.Dispose();
             _fileStream = null;
 
-            File.Delete(_filePath);
-            File.Move(tempPath, _filePath);
+            // 外部进程（杀毒扫描、索引器）可能短时占用文件导致替换失败；短暂等待后重试
+            var swapped = false;
+            for (var attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+#if NET5_0_OR_GREATER
+                    File.Move(tempPath, _filePath, true);
+#else
+                    File.Replace(tempPath, _filePath, null);
+#endif
+                    swapped = true;
+                    break;
+                }
+                catch
+                {
+                    Thread.Sleep(50);
+                }
+            }
+
+            if (!swapped)
+            {
+                // 替换持续失败：放弃本次压缩，丢弃临时文件并恢复原文件流。
+                // 内存索引尚未更新，继续沿用旧文件，后续读写不受影响（压缩为维护性操作，不应导致业务请求失败）
+                try { File.Delete(tempPath); } catch { }
+                _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+                _fileStream.Position = _fileStream.Length;
+
+                // 重置写入计数，避免下一次写入立即再次触发压缩
+                _writeCount = 0;
+                return;
+            }
 
             // 重新打开文件流，定位到末尾供后续追加写入
-            _fileStream = new FileStream(_filePath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+            _fileStream = new FileStream(_filePath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
             _fileStream.Position = _fileStream.Length;
 
             // 更新内存索引
