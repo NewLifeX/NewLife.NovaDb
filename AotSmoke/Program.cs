@@ -14,7 +14,9 @@ using NewLife.Data;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Engine.Flux;
 using NewLife.NovaDb.Server;
+using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.WAL;
 
@@ -256,6 +258,55 @@ Run("MQ 队列 NovaQueue（IProducerConsumer）", () =>
     var got = queue.Take(10).ToList();
     if (got.Count != 3) throw new Exception($"Take 数量为 {got.Count}");
     if (got[0] != "m1") throw new Exception($"首条消息为 {got[0]}");
+});
+
+Run("时序列式封存、滚动聚合与窗口分组", () =>
+{
+    var dir = Path.Combine(temp, "fluxwin");
+    var start = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc).Ticks;
+    var minute = TimeSpan.FromMinutes(1).Ticks;
+
+    using var flux = new FluxEngine(Path.Combine(dir, "flux"), new DbOptions { FluxPartitionHours = 24 });
+    for (var i = 0; i < 120; i++)
+    {
+        flux.Append(new FluxEntry
+        {
+            Timestamp = start + i * minute,
+            Fields = new Dictionary<String, Object?> { ["value"] = (Double)(i + 1) },
+        });
+    }
+
+    // 列式封存与压缩率统计
+    if (flux.SealPartitions(sealAll: true) != 1) throw new Exception("封存分区数量不为 1");
+    var stats = flux.GetCompressionStats();
+    if (stats.EntryCount != 120 || stats.BlockBytes <= 0 || stats.RowBytes <= 0) throw new Exception("压缩统计异常");
+
+    using var sql = new SqlEngine(Path.Combine(dir, "sql"), new DbOptions { WalMode = WalMode.None }) { FluxProvider = () => flux };
+    var report = sql.Execute("SELECT * FROM _sys.flux_compression");
+    if (report.Rows.Count == 0) throw new Exception("压缩率报告为空");
+
+    // 滚动聚合回填与查询自动路由
+    using var manager = new ContinuousQueryManager(flux, sql);
+    manager.RegisterRollup("smoke_rollup", "sensor", "value", [minute, TimeSpan.FromHours(1).Ticks], "rollup_sensor", start);
+    manager.Backfill("smoke_rollup", start, start + 2 * TimeSpan.FromHours(1).Ticks);
+    if (manager.ResolveTargetTable("sensor", "value", TimeSpan.FromHours(1).Ticks) == null) throw new Exception("聚合查询未命中预聚合表");
+
+    flux.Clear();
+    var avg = manager.QueryAggregate("sensor", start, start + 2 * TimeSpan.FromHours(1).Ticks, TimeSpan.FromHours(1).Ticks, "value", "avg");
+    if (avg.Count != 2 || Math.Abs(avg[0].Value - 30.5) > 0.0001) throw new Exception($"自动路由结果异常: {avg.Count}");
+
+    // 会话/状态窗口分组
+    sql.Execute("CREATE TABLE states (id INT PRIMARY KEY, ts DATETIME, status VARCHAR)");
+    sql.Execute("INSERT INTO states VALUES (1, '2026-01-01 08:00:00', 'idle')");
+    sql.Execute("INSERT INTO states VALUES (2, '2026-01-01 08:10:00', 'idle')");
+    sql.Execute("INSERT INTO states VALUES (3, '2026-01-01 09:00:00', 'busy')");
+    sql.Execute("INSERT INTO states VALUES (4, '2026-01-01 09:05:00', 'idle')");
+
+    var sessions = sql.Execute("SELECT SESSION_WINDOW(ts, 300) AS session, COUNT(*) FROM states GROUP BY SESSION_WINDOW(ts, 300)");
+    if (sessions.Rows.Count != 3) throw new Exception($"会话窗口数量为 {sessions.Rows.Count}");
+
+    var stateWindows = sql.Execute("SELECT STATE_WINDOW(status) AS win, COUNT(*) FROM states GROUP BY STATE_WINDOW(status)");
+    if (stateWindows.Rows.Count != 3) throw new Exception($"状态窗口数量为 {stateWindows.Rows.Count}");
 });
 
 Run("向量存储 Top-K 检索", () =>
