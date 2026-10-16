@@ -5,17 +5,20 @@ using NewLife.NovaDb.Sql;
 
 namespace NewLife.NovaDb.Engine.Flux;
 
-/// <summary>连续查询管理器（对应 F10 连续查询、F11 实时聚合引擎、F12 多粒度汇总）</summary>
+/// <summary>连续查询管理器（对应 F10 连续查询、F11 实时聚合引擎、F12 多粒度汇总、F16 滚动聚合与查询自动路由）</summary>
 /// <remarks>
 /// 对标 TDengine TSMA：对 Flux 时序表的新增数据自动执行聚合，把结果写入目标统计表。
 /// 支持多粒度链（Rollups），一次写入同时维护 1分钟/15分钟/1小时/1天 多级统计表，
 /// 目标表由引擎自动创建（UPSERT 语义），向应用层隐藏统计表，解决手工建表与 DDL 权限问题。
+/// 注册滚动聚合后，聚合查询可自动路由到预聚合表（<see cref="QueryAggregate"/>），
+/// 未命中粒度时回退原始数据扫描；历史数据可用 <see cref="Backfill"/> 一次性回填。
 /// </remarks>
 public class ContinuousQueryManager : IDisposable
 {
     private readonly FluxEngine _flux;
     private readonly SqlEngine _sql;
     private readonly Dictionary<String, ContinuousQueryDefinition> _queries = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<RouteEntry> _routes = [];
 #if NET9_0_OR_GREATER
     private readonly System.Threading.Lock _lock = new();
 #else
@@ -80,7 +83,10 @@ public class ContinuousQueryManager : IDisposable
     {
         lock (_lock)
         {
-            return _queries.Remove(name);
+            if (!_queries.Remove(name)) return false;
+
+            _routes.RemoveAll(r => r.QueryName.EqualIgnoreCase(name));
+            return true;
         }
     }
 
@@ -136,6 +142,165 @@ public class ContinuousQueryManager : IDisposable
         return ProcessNewData(def);
     }
 
+    #region 滚动聚合与查询路由（F16）
+
+    /// <summary>注册滚动聚合：多粒度预聚合，并把聚合查询自动路由到目标统计表</summary>
+    /// <param name="name">查询名称</param>
+    /// <param name="sourceTable">源表名，用于聚合查询路由匹配</param>
+    /// <param name="fieldName">聚合字段名</param>
+    /// <param name="granules">粒度链（Ticks），如 1 分钟与 1 小时</param>
+    /// <param name="targetPrefix">目标统计表前缀，实际表名为 前缀_粒度标签</param>
+    /// <param name="startTicks">聚合游标起点，0 表示只处理注册之后的新数据</param>
+    /// <returns>注册后的查询定义</returns>
+    public ContinuousQueryDefinition RegisterRollup(String name, String sourceTable, String fieldName, IReadOnlyList<Int64> granules, String targetPrefix, Int64 startTicks = 0)
+    {
+        if (granules == null) throw new ArgumentNullException(nameof(granules));
+        if (granules.Count == 0) throw new ArgumentException("At least one granule is required", nameof(granules));
+
+        var def = new ContinuousQueryDefinition
+        {
+            Name = name,
+            SourceTable = sourceTable,
+            FieldName = fieldName,
+            TargetPrefix = targetPrefix,
+            Rollups = granules.ToList(),
+            Aggregations = ["count", "sum", "min", "max"],
+            LastProcessedTicks = startTicks,
+        };
+
+        Register(def);
+
+        lock (_lock)
+        {
+            foreach (var granule in def.Rollups)
+            {
+                _routes.Add(new RouteEntry
+                {
+                    QueryName = def.Name,
+                    SourceTable = sourceTable,
+                    FieldName = fieldName,
+                    GranuleTicks = granule,
+                    TargetTable = def.GetTargetTable(granule),
+                });
+            }
+        }
+
+        return def;
+    }
+
+    /// <summary>解析聚合查询应使用的预聚合表</summary>
+    /// <remarks>选择能整除查询分桶大小的最大粒度；目标表尚无数据时返回 null，由调用方回退原始扫描</remarks>
+    /// <param name="sourceTable">源表名</param>
+    /// <param name="fieldName">聚合字段名</param>
+    /// <param name="bucketTicks">查询分桶大小（Ticks）</param>
+    /// <returns>目标统计表名，未命中返回 null</returns>
+    public String? ResolveTargetTable(String sourceTable, String fieldName, Int64 bucketTicks)
+    {
+        if (bucketTicks <= 0) return null;
+
+        RouteEntry? best = null;
+        lock (_lock)
+        {
+            foreach (var route in _routes)
+            {
+                if (!route.SourceTable.EqualIgnoreCase(sourceTable) || !route.FieldName.EqualIgnoreCase(fieldName)) continue;
+                if (route.GranuleTicks <= 0 || bucketTicks % route.GranuleTicks != 0) continue;
+                if (best == null || route.GranuleTicks > best.GranuleTicks) best = route;
+            }
+        }
+
+        if (best == null || !_sql.TableNames.Contains(best.TargetTable)) return null;
+
+        return best.TargetTable;
+    }
+
+    /// <summary>回填历史数据的滚动聚合</summary>
+    /// <remarks>不推进实时游标；同一区间重复回填会重复累计，请先清理目标表或避免区间重叠</remarks>
+    /// <param name="name">查询名称</param>
+    /// <param name="startTicks">回填起始（含）</param>
+    /// <param name="endTicks">回填结束（含）</param>
+    /// <returns>处理的数据条数</returns>
+    public Int64 Backfill(String name, Int64 startTicks, Int64 endTicks)
+    {
+        if (endTicks <= startTicks) return 0;
+
+        ContinuousQueryDefinition def;
+        lock (_lock)
+        {
+            if (!_queries.TryGetValue(name, out var q)) return 0;
+            def = q;
+        }
+
+        var cursor = def.LastProcessedTicks;
+        var processed = ProcessRange(def, startTicks, endTicks);
+
+        // 回填不推进游标，保持实时链路连续
+        if (cursor > def.LastProcessedTicks) def.LastProcessedTicks = cursor;
+
+        return processed;
+    }
+
+    /// <summary>聚合查询自动路由：命中预聚合粒度时读取统计表，否则回退原始数据扫描</summary>
+    /// <param name="sourceTable">源表名</param>
+    /// <param name="startTicks">起始时间 Ticks</param>
+    /// <param name="endTicks">结束时间 Ticks</param>
+    /// <param name="bucketTicks">分桶大小 Ticks</param>
+    /// <param name="fieldName">聚合字段名</param>
+    /// <param name="aggregation">聚合方式：avg/sum/min/max/count</param>
+    /// <returns>降采样结果列表</returns>
+    public List<DownsampleResult> QueryAggregate(String sourceTable, Int64 startTicks, Int64 endTicks, Int64 bucketTicks, String fieldName, String aggregation)
+    {
+        if (bucketTicks <= 0) throw new ArgumentOutOfRangeException(nameof(bucketTicks));
+
+        var target = ResolveTargetTable(sourceTable, fieldName, bucketTicks);
+        if (target == null) return _flux.Downsample(startTicks, endTicks, bucketTicks, fieldName, aggregation);
+
+        // 从预聚合表读取，再按查询分桶二次合并
+        var buckets = new SortedDictionary<Int64, BucketAccumulator>();
+        var rows = _sql.Execute($"SELECT bucket_start, cnt, sum_val, min_val, max_val FROM `{target}`").Rows;
+        foreach (var row in rows)
+        {
+            var bucketStart = Convert.ToDateTime(row[0]).Ticks;
+            if (bucketStart < startTicks || bucketStart > endTicks) continue;
+
+            var key = (bucketStart - startTicks) / bucketTicks * bucketTicks + startTicks;
+            if (!buckets.TryGetValue(key, out var acc))
+            {
+                acc = new BucketAccumulator();
+                buckets[key] = acc;
+            }
+
+            acc.AddAggregate(Convert.ToInt64(row[1]), Convert.ToDouble(row[2]), Convert.ToDouble(row[3]), Convert.ToDouble(row[4]));
+        }
+
+        var result = new List<DownsampleResult>();
+        foreach (var kvp in buckets)
+        {
+            result.Add(new DownsampleResult(kvp.Key, ComputeAggregate(aggregation, kvp.Value)));
+        }
+
+        return result;
+    }
+
+    /// <summary>由累计结果计算聚合值</summary>
+    /// <param name="aggregation">聚合方式</param>
+    /// <param name="acc">累计器</param>
+    /// <returns>聚合值</returns>
+    private static Double ComputeAggregate(String aggregation, BucketAccumulator acc)
+    {
+        return aggregation.ToLower() switch
+        {
+            "avg" or "average" => acc.Sum / acc.Count,
+            "sum" => acc.Sum,
+            "min" => acc.Min,
+            "max" => acc.Max,
+            "count" => acc.Count,
+            _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown aggregation: {aggregation}")
+        };
+    }
+
+    #endregion
+
     /// <summary>挂接消息队列消费事件，消费消息后自动聚合（F11 实时聚合引擎）</summary>
     /// <remarks>消息被消费确认后触发一次聚合，实现"MQ 消费时自动聚合，批量更新统计表"</remarks>
     /// <typeparam name="T">消息类型</typeparam>
@@ -173,13 +338,22 @@ public class ContinuousQueryManager : IDisposable
         var cursor = def.LastProcessedTicks;
         if (cursor >= now) return 0;
 
-        // 查询新增数据
-        var entries = _flux.QueryRange(cursor, now);
-        if (entries.Count == 0)
-        {
-            def.LastProcessedTicks = now;
-            return 0;
-        }
+        var processed = ProcessRange(def, cursor, now);
+        def.LastProcessedTicks = now;
+
+        return processed;
+    }
+
+    /// <summary>聚合指定时间区间的数据并 UPSERT 到各粒度目标表</summary>
+    /// <param name="def">查询定义</param>
+    /// <param name="startTicks">起始时间（含）</param>
+    /// <param name="endTicks">结束时间（含）</param>
+    /// <returns>处理的数据条数</returns>
+    private Int64 ProcessRange(ContinuousQueryDefinition def, Int64 startTicks, Int64 endTicks)
+    {
+        // 查询区间数据
+        var entries = _flux.QueryRange(startTicks, endTicks);
+        if (entries.Count == 0) return 0;
 
         // 按粒度分组聚合：粒度 → 桶起始 → 聚合累计器
         var buckets = new Dictionary<Int64, Dictionary<Int64, BucketAccumulator>>();
@@ -222,7 +396,6 @@ public class ContinuousQueryManager : IDisposable
         def.ProcessedCount += entries.Count;
         def.RunCount++;
         def.LastRunTime = DateTime.UtcNow;
-        def.LastProcessedTicks = now;
 
         return entries.Count;
     }
@@ -322,5 +495,37 @@ public class ContinuousQueryManager : IDisposable
             if (value < Min) Min = value;
             if (value > Max) Max = value;
         }
+
+        /// <summary>累计一个已聚合桶，用于从预聚合表读取后二次合并</summary>
+        /// <param name="count">桶内条数</param>
+        /// <param name="sum">桶内求和</param>
+        /// <param name="min">桶内最小值</param>
+        /// <param name="max">桶内最大值</param>
+        public void AddAggregate(Int64 count, Double sum, Double min, Double max)
+        {
+            Count += count;
+            Sum += sum;
+            if (min < Min) Min = min;
+            if (max > Max) Max = max;
+        }
+    }
+
+    /// <summary>聚合查询路由条目（F16）</summary>
+    private sealed class RouteEntry
+    {
+        /// <summary>所属查询名称</summary>
+        public String QueryName { get; set; } = String.Empty;
+
+        /// <summary>源表名</summary>
+        public String SourceTable { get; set; } = String.Empty;
+
+        /// <summary>聚合字段名</summary>
+        public String FieldName { get; set; } = String.Empty;
+
+        /// <summary>粒度（Ticks）</summary>
+        public Int64 GranuleTicks { get; set; }
+
+        /// <summary>目标统计表名</summary>
+        public String TargetTable { get; set; } = String.Empty;
     }
 }
