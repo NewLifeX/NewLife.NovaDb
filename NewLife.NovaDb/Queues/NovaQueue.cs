@@ -13,7 +13,7 @@ namespace NewLife.NovaDb.Queues;
 /// 内置消费组管理、Pending/Ack、延迟投递、死信队列及阻塞读取等完整 Stream/MQ 语义。
 /// </remarks>
 /// <typeparam name="T">消息类型</typeparam>
-public class NovaQueue<T> : IProducerConsumer<T>, IDisposable
+public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] T> : IProducerConsumer<T>, IDisposable
 {
     #region 属性
     private readonly FluxEngine _engine;

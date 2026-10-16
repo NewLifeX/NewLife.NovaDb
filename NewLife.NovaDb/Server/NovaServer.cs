@@ -6,6 +6,7 @@ using NewLife.NovaDb.Engine.Flux;
 using NewLife.NovaDb.Engine.KV;
 using NewLife.NovaDb.Sql;
 using NewLife.NovaDb.Storage;
+using NewLife.NovaDb.Tx;
 using NewLife.Remoting;
 
 namespace NewLife.NovaDb.Server;
@@ -22,6 +23,17 @@ public class NovaServer : DisposeBase
     private readonly ConcurrentDictionary<String, KvStore> _kvStores = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<String, SqlEngine> _engines = new(StringComparer.OrdinalIgnoreCase);
     private FluxEngine? _fluxEngine;
+
+    // 控制器共享状态由服务器实例持有并按实例注入控制器，避免同进程多服务器使用全局静态互相干扰
+    private readonly Dictionary<String, (SqlEngine Engine, Transaction Tx)> _transactions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<String, ConsumerGroup> _consumerGroups = [];
+#if NET9_0_OR_GREATER
+    private readonly System.Threading.Lock _txLock = new();
+    private readonly System.Threading.Lock _consumerLock = new();
+#else
+    private readonly Object _txLock = new();
+    private readonly Object _consumerLock = new();
+#endif
 
     /// <summary>端口</summary>
     public Int32 Port => _server?.Port ?? _port;
@@ -101,10 +113,6 @@ public class NovaServer : DisposeBase
 
         _sqlEngine = GetOrCreateEngine(DatabaseManager.SystemDatabaseName);
 
-        // 注册多库路由：客户端连接串 Database 参数决定目标引擎
-        NovaController.EngineResolver = GetOrCreateEngine;
-        NovaController.DatabaseListProvider = () => _dbManager.ListAllDatabases().Select(e => e.Name).ToList();
-
         // 初始化 KV 存储引擎
         var kvPath = Path.Combine(dbPath, "default.kvd");
         _kvStore = new KvStore(dbOptions, kvPath);
@@ -125,16 +133,11 @@ public class NovaServer : DisposeBase
             _replicationManager = new ReplicationManager(Path.Combine(dbPath, "wal"), masterInfo);
         }
 
-        // 设置共享引擎供控制器使用
-        NovaController.SharedEngine = _sqlEngine;
-        NovaController.SharedReplication = _replicationManager;
-        KvController.SharedKvStore = _kvStore;
-        KvController.SharedServer = this;
-        FluxController.SharedEngine = _fluxEngine;
-
         var server = new ApiServer(_port)
         {
             Log = XTrace.Log,
+            // 控制器按请求创建，由本服务器的提供者注入共享状态（多库路由/事务/KV 表/消费组）
+            ServiceProvider = new ControllerProvider(this),
         };
 
         // 注册 NovaDb 业务控制器
@@ -159,14 +162,6 @@ public class NovaServer : DisposeBase
 
         _server?.Stop(reason ?? "NovaServer.Stop");
         _server = null;
-
-        NovaController.SharedEngine = null;
-        NovaController.SharedReplication = null;
-        NovaController.EngineResolver = null;
-        NovaController.DatabaseListProvider = null;
-        KvController.SharedKvStore = null;
-        KvController.SharedServer = null;
-        FluxController.Reset();
 
         _fluxEngine?.Dispose();
         _fluxEngine = null;
@@ -223,14 +218,6 @@ public class NovaServer : DisposeBase
         _server.TryDispose();
         _server = null;
 
-        NovaController.SharedEngine = null;
-        NovaController.SharedReplication = null;
-        NovaController.EngineResolver = null;
-        NovaController.DatabaseListProvider = null;
-        KvController.SharedKvStore = null;
-        KvController.SharedServer = null;
-        FluxController.Reset();
-
         _fluxEngine?.Dispose();
         _fluxEngine = null;
         _kvStore?.Dispose();
@@ -252,6 +239,43 @@ public class NovaServer : DisposeBase
 
         _sqlEngine = null;
         _dbManager = null;
+    }
+
+    /// <summary>控制器实例提供者。按请求创建控制器并注入本服务器实例的共享状态，
+    /// 替代全局静态注入，使同进程多服务器实例互不干扰</summary>
+    /// <param name="server">所属服务器实例</param>
+    private sealed class ControllerProvider(NovaServer server) : IServiceProvider
+    {
+        /// <summary>按类型提供控制器实例；其余类型返回 null 交由 Remoting 默认链路处理</summary>
+        /// <param name="serviceType">服务类型</param>
+        /// <returns>控制器实例，非 NovaDb 控制器返回 null</returns>
+        public Object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(NovaController)) return new NovaController
+            {
+                SharedEngine = server._sqlEngine,
+                SharedReplication = server._replicationManager,
+                EngineResolver = server.GetOrCreateEngine,
+                DatabaseListProvider = () => server._dbManager?.ListAllDatabases().Select(e => e.Name).ToList() ?? [],
+                Transactions = server._transactions,
+                TxLock = server._txLock,
+            };
+
+            if (serviceType == typeof(KvController)) return new KvController
+            {
+                SharedKvStore = server._kvStore,
+                SharedServer = server,
+            };
+
+            if (serviceType == typeof(FluxController)) return new FluxController
+            {
+                SharedEngine = server._fluxEngine,
+                ConsumerGroups = server._consumerGroups,
+                SyncRoot = server._consumerLock,
+            };
+
+            return null;
+        }
     }
 }
 

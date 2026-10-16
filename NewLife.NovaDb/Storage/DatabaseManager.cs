@@ -1,4 +1,5 @@
-﻿using NewLife.Data;
+using System.Diagnostics.CodeAnalysis;
+using NewLife.Data;
 using NewLife.Log;
 using NewLife.NovaDb.Core;
 using NewLife.Serialization;
@@ -355,6 +356,8 @@ public class DatabaseManager
 
     #region 目录持久化
     /// <summary>从系统库目录中加载数据库目录信息</summary>
+    // NativeAOT：DatabaseInfo 经反射反序列化，裁剪器无法从调用点看到反射访问，显式保留公开成员
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(DatabaseInfo))]
     private void LoadCatalog()
     {
         if (SystemDatabase == null) return;
@@ -386,6 +389,8 @@ public class DatabaseManager
     }
 
     /// <summary>将数据库目录信息持久化到系统库</summary>
+    // NativeAOT：序列化同样依赖反射读取 DatabaseInfo 成员
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(DatabaseInfo))]
     private void SaveCatalog()
     {
         if (SystemDatabase == null) return;

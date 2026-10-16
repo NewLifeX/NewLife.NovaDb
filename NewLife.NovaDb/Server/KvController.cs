@@ -12,7 +12,7 @@ namespace NewLife.NovaDb.Server;
 /// 通过 SpanReader 直接读取二进制参数，跳过 JSON 序列化。
 /// 返回值也为 IPacket（IsPacketReturn=True），通过 SpanWriter 写入 ArrayPacket，
 /// 或直接返回 KvStore 的 IOwnerPacket（网络层发送后自动释放回池）。
-/// 控制器实例由 Remoting 框架按请求创建，通过静态字段共享引擎。
+/// 控制器实例由 Remoting 框架按请求创建，共享状态（默认 KV 存储与服务器实例）由 NovaServer 按实例注入。
 /// 二进制协议说明：
 ///   EncodedString = EncodedInt(UTF8字节数) + UTF8字节
 ///   EncodedInt    = 变长整数（1-5 字节，最高位 1 表示后续还有字节）
@@ -23,16 +23,16 @@ internal class KvController : IApi
     /// <summary>会话</summary>
     public IApiSession Session { get; set; } = null!;
 
-    /// <summary>共享默认 KV 存储引擎，由 NovaServer 启动时设置</summary>
-    internal static KvStore? SharedKvStore { get; set; }
+    /// <summary>共享默认 KV 存储引擎，由 NovaServer 启动时注入</summary>
+    internal KvStore? SharedKvStore { get; set; }
 
     /// <summary>共享 NovaServer 实例，用于获取多 KV 表</summary>
-    internal static NovaServer? SharedServer { get; set; }
+    internal NovaServer? SharedServer { get; set; }
 
     /// <summary>根据表名获取对应的 KvStore 实例</summary>
     /// <param name="tableName">KV 表名，为空或 "default" 时返回默认表</param>
     /// <returns>KvStore 实例，未初始化时返回 null</returns>
-    private static KvStore? GetStore(String? tableName)
+    private KvStore? GetStore(String? tableName)
     {
         if (String.IsNullOrEmpty(tableName) || "default".Equals(tableName, StringComparison.OrdinalIgnoreCase))
             return SharedKvStore;

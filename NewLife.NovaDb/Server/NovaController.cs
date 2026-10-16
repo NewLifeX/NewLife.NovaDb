@@ -11,31 +11,33 @@ namespace NewLife.NovaDb.Server;
 /// <remarks>
 /// 控制器方法通过 Remoting RPC 暴露为远程接口。
 /// 路由格式：Nova/{方法名}，如 Nova/Ping、Nova/Execute。
-/// 控制器实例由 Remoting 框架按请求创建，通过静态字段共享 SQL 引擎与事务。
+/// 控制器实例由 Remoting 框架按请求创建，共享状态（SQL 引擎与事务）由 NovaServer 按实例注入。
 /// </remarks>
 internal class NovaController : IApi
 {
     /// <summary>会话</summary>
     public IApiSession Session { get; set; } = null!;
 
-    /// <summary>共享 SQL 执行引擎，由 NovaServer 启动时设置</summary>
-    internal static SqlEngine? SharedEngine { get; set; }
+    /// <summary>共享 SQL 执行引擎，由 NovaServer 启动时注入</summary>
+    internal SqlEngine? SharedEngine { get; set; }
 
-    /// <summary>引擎解析器。根据数据库名获取对应引擎，由 NovaServer 启动时设置（多库路由）</summary>
-    internal static Func<String?, SqlEngine?>? EngineResolver { get; set; }
+    /// <summary>引擎解析器。根据数据库名获取对应引擎，由 NovaServer 启动时注入（多库路由）</summary>
+    internal Func<String?, SqlEngine?>? EngineResolver { get; set; }
 
     /// <summary>数据库列表提供器。SHOW DATABASES 由服务器返回库列表</summary>
-    internal static Func<List<String>>? DatabaseListProvider { get; set; }
+    internal Func<List<String>>? DatabaseListProvider { get; set; }
 
-    /// <summary>共享复制管理器，由 NovaServer 启动时设置</summary>
-    internal static ReplicationManager? SharedReplication { get; set; }
+    /// <summary>共享复制管理器，由 NovaServer 启动时注入</summary>
+    internal ReplicationManager? SharedReplication { get; set; }
 
-    /// <summary>共享事务字典，跨请求维护事务状态</summary>
-    private static readonly Dictionary<String, (SqlEngine Engine, Transaction Tx)> _transactions = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>共享事务字典，跨请求维护事务状态（由服务器持有，按实例注入）</summary>
+    internal Dictionary<String, (SqlEngine Engine, Transaction Tx)> Transactions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>事务字典锁（由服务器持有，按实例注入）</summary>
 #if NET9_0_OR_GREATER
-    private static readonly System.Threading.Lock _txLock = new();
+    internal System.Threading.Lock TxLock { get; set; } = new();
 #else
-    private static readonly Object _txLock = new();
+    internal Object TxLock { get; set; } = new();
 #endif
 
     /// <summary>心跳</summary>
@@ -49,7 +51,7 @@ internal class NovaController : IApi
     /// <summary>解析数据库名对应的引擎</summary>
     /// <param name="db">数据库名，为空时回退到默认引擎</param>
     /// <returns>引擎实例，不存在返回 null</returns>
-    private static SqlEngine? ResolveEngine(String? db) => EngineResolver?.Invoke(db) ?? SharedEngine;
+    private SqlEngine? ResolveEngine(String? db) => EngineResolver?.Invoke(db) ?? SharedEngine;
 
     /// <summary>执行 SQL（非查询）</summary>
     /// <param name="sql">SQL 语句</param>
@@ -91,10 +93,11 @@ internal class NovaController : IApi
             {
                 var dbs = DatabaseListProvider?.Invoke();
                 var rows = dbs?.Select(e => new[] { (Object)e }).ToList();
-                return new
+                // 返回值用字典而非匿名类型：NativeAOT 下匿名类型成员会被裁剪，客户端将收到空结果
+                return new Dictionary<String, Object?>
                 {
-                    ColumnNames = new[] { "Database" },
-                    Rows = rows
+                    ["ColumnNames"] = new[] { "Database" },
+                    ["Rows"] = rows
                 };
             }
 
@@ -104,10 +107,10 @@ internal class NovaController : IApi
             var result = ExecuteWithTransaction(engine, sql, txId);
             if (!result.IsQuery) return result.AffectedRows;
 
-            return new
+            return new Dictionary<String, Object?>
             {
-                result.ColumnNames,
-                Rows = result.Rows.Select(r => r.ToArray()).ToArray()
+                ["ColumnNames"] = result.ColumnNames,
+                ["Rows"] = result.Rows.Select(r => r.ToArray()).ToArray()
             };
         }
         catch (Exception ex)
@@ -122,14 +125,14 @@ internal class NovaController : IApi
     /// <param name="sql">SQL 语句</param>
     /// <param name="txId">事务 ID（可选）</param>
     /// <returns>执行结果</returns>
-    private static SqlResult ExecuteWithTransaction(SqlEngine engine, String sql, String? txId)
+    private SqlResult ExecuteWithTransaction(SqlEngine engine, String sql, String? txId)
     {
         // 有事务 ID 时，绑定到已开启的事务
         if (!txId.IsNullOrEmpty())
         {
-            lock (_txLock)
+            lock (TxLock)
             {
-                if (_transactions.TryGetValue(txId, out var txState))
+                if (Transactions.TryGetValue(txId, out var txState))
                     return txState.Engine.Execute(sql, null, txState.Tx);
             }
 
@@ -151,9 +154,9 @@ internal class NovaController : IApi
         var tx = engine.TxManager.BeginTransaction();
         var txId = tx.TxId.ToString();
 
-        lock (_txLock)
+        lock (TxLock)
         {
-            _transactions[txId] = (engine, tx);
+            Transactions[txId] = (engine, tx);
         }
 
         return txId;
@@ -164,12 +167,12 @@ internal class NovaController : IApi
     /// <returns>是否成功</returns>
     public Boolean CommitTransaction(String txId)
     {
-        lock (_txLock)
+        lock (TxLock)
         {
-            if (!_transactions.TryGetValue(txId, out var txState)) return true;
+            if (!Transactions.TryGetValue(txId, out var txState)) return true;
 
             txState.Tx.Commit();
-            _transactions.Remove(txId);
+            Transactions.Remove(txId);
             return true;
         }
     }
@@ -179,12 +182,12 @@ internal class NovaController : IApi
     /// <returns>是否成功</returns>
     public Boolean RollbackTransaction(String txId)
     {
-        lock (_txLock)
+        lock (TxLock)
         {
-            if (!_transactions.TryGetValue(txId, out var txState)) return true;
+            if (!Transactions.TryGetValue(txId, out var txState)) return true;
 
             txState.Tx.Rollback();
-            _transactions.Remove(txId);
+            Transactions.Remove(txId);
             return true;
         }
     }

@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using NewLife.Caching;
 using NewLife.Data;
 using NewLife.Log;
@@ -153,7 +154,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     /// <param name="topic">队列主题名称</param>
     /// <param name="group">消费组名称。指定后使用消费组模式</param>
     /// <returns>IProducerConsumer 队列实例</returns>
-    public IProducerConsumer<T> GetQueue<T>(String connectionString, String topic, String? group = null)
+    public IProducerConsumer<T> GetQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] T>(String connectionString, String topic, String? group = null)
     {
         if (String.IsNullOrEmpty(connectionString))
             throw new ArgumentNullException(nameof(connectionString));

@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 
 namespace NewLife.NovaDb.Client;
 
@@ -181,6 +182,9 @@ public class NovaDataReader : DbDataReader
     /// <summary>获取字段类型</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>字段类型</returns>
+    // 返回值为运行时数据值类型（基元/常用 BCL 类型），其成员由 BCL 保留；标注与 DbDataReader 基类契约一致
+    [UnconditionalSuppressMessage("Trimming", "IL2073", Justification = "返回值来自运行时数据值，均为保留完整的 BCL 基元/常用类型")]
+    [return: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)]
     public override Type GetFieldType(Int32 ordinal)
     {
         if (_currentRow >= 0 && _currentRow < _rows.Count)

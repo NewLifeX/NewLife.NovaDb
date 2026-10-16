@@ -1,11 +1,12 @@
-﻿using NewLife.Messaging;
+using System.Diagnostics.CodeAnalysis;
+using NewLife.Messaging;
 using NewLife.NovaDb.Engine.Flux;
 
 namespace NewLife.NovaDb.Queues;
 
 /// <summary>NovaDb 事件总线，基于 NovaQueue 实现 IEventBus 接口</summary>
 /// <typeparam name="TEvent">事件类型</typeparam>
-public class NovaEventBus<TEvent> : EventBus<TEvent>
+public class NovaEventBus<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] TEvent> : EventBus<TEvent>
 {
     private readonly NovaQueue<TEvent> _queue;
     private CancellationTokenSource? _cts;

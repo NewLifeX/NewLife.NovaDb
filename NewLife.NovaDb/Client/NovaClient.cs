@@ -1,4 +1,5 @@
-﻿using NewLife.Data;
+using System.Diagnostics.CodeAnalysis;
+using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Server;
 using NewLife.Remoting;
@@ -79,7 +80,8 @@ public class NovaClient : DisposeBase
     public async Task<Int32> ExecuteAsync(String sql)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql, db = Database }).ConfigureAwait(false);
+        // 参数用字典而非匿名类型：NativeAOT 下匿名类型成员会被裁剪，服务端将收到空参数
+        return await _client!.InvokeAsync<Int32>("Nova/Execute", new Dictionary<String, Object?> { ["sql"] = sql, ["db"] = Database }).ConfigureAwait(false);
     }
 
     /// <summary>执行 SQL（非查询，绑定事务）</summary>
@@ -89,26 +91,26 @@ public class NovaClient : DisposeBase
     public async Task<Int32> ExecuteAsync(String sql, String? txId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Int32>("Nova/Execute", new { sql, txId, db = Database }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Int32>("Nova/Execute", new Dictionary<String, Object?> { ["sql"] = sql, ["txId"] = txId, ["db"] = Database }).ConfigureAwait(false);
     }
 
     /// <summary>查询</summary>
     /// <param name="sql">SQL 语句</param>
     /// <returns>查询结果</returns>
-    public async Task<TResult?> QueryAsync<TResult>(String sql)
+    public async Task<TResult?> QueryAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] TResult>(String sql)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql, db = Database }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<TResult>("Nova/Query", new Dictionary<String, Object?> { ["sql"] = sql, ["db"] = Database }).ConfigureAwait(false);
     }
 
     /// <summary>查询（绑定事务）</summary>
     /// <param name="sql">SQL 语句</param>
     /// <param name="txId">事务 ID（可选）</param>
     /// <returns>查询结果</returns>
-    public async Task<TResult?> QueryAsync<TResult>(String sql, String? txId)
+    public async Task<TResult?> QueryAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] TResult>(String sql, String? txId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<TResult>("Nova/Query", new { sql, txId, db = Database }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<TResult>("Nova/Query", new Dictionary<String, Object?> { ["sql"] = sql, ["txId"] = txId, ["db"] = Database }).ConfigureAwait(false);
     }
 
     /// <summary>开始事务</summary>
@@ -116,7 +118,7 @@ public class NovaClient : DisposeBase
     public async Task<String?> BeginTransactionAsync()
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<String>("Nova/BeginTransaction", new { db = Database }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<String>("Nova/BeginTransaction", new Dictionary<String, Object?> { ["db"] = Database }).ConfigureAwait(false);
     }
 
     /// <summary>提交事务</summary>
@@ -125,7 +127,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> CommitTransactionAsync(String txId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/CommitTransaction", new { txId }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Nova/CommitTransaction", new Dictionary<String, Object?> { ["txId"] = txId }).ConfigureAwait(false);
     }
 
     /// <summary>回滚事务</summary>
@@ -134,7 +136,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> RollbackTransactionAsync(String txId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Nova/RollbackTransaction", new { txId }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Nova/RollbackTransaction", new Dictionary<String, Object?> { ["txId"] = txId }).ConfigureAwait(false);
     }
 
     /// <summary>泛型 RPC 调用</summary>
@@ -142,7 +144,7 @@ public class NovaClient : DisposeBase
     /// <param name="action">远程操作名称</param>
     /// <param name="args">参数</param>
     /// <returns>调用结果</returns>
-    public async Task<TResult?> InvokeAsync<TResult>(String action, Object? args = null)
+    public async Task<TResult?> InvokeAsync<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] TResult>(String action, Object? args = null)
     {
         EnsureOpen();
         return await _client!.InvokeAsync<TResult>(action, args).ConfigureAwait(false);
@@ -347,7 +349,7 @@ public class NovaClient : DisposeBase
     public async Task<String?> MqPublishAsync(IDictionary<String, Object?> data)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<String>("Flux/Publish", new { data }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<String>("Flux/Publish", new Dictionary<String, Object?> { ["data"] = data }).ConfigureAwait(false);
     }
 
     /// <summary>创建消费组</summary>
@@ -356,7 +358,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> MqCreateGroupAsync(String groupName)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Flux/CreateGroup", new { groupName }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Flux/CreateGroup", new Dictionary<String, Object?> { ["groupName"] = groupName }).ConfigureAwait(false);
     }
 
     /// <summary>消费组读取消息</summary>
@@ -367,7 +369,7 @@ public class NovaClient : DisposeBase
     public async Task<Object?> MqReadGroupAsync(String groupName, String consumer, Int32 count = 10)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Object>("Flux/ReadGroup", new { groupName, consumer, count }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Object>("Flux/ReadGroup", new Dictionary<String, Object?> { ["groupName"] = groupName, ["consumer"] = consumer, ["count"] = count }).ConfigureAwait(false);
     }
 
     /// <summary>确认消息</summary>
@@ -377,7 +379,7 @@ public class NovaClient : DisposeBase
     public async Task<Boolean> MqAckAsync(String groupName, String messageId)
     {
         EnsureOpen();
-        return await _client!.InvokeAsync<Boolean>("Flux/Ack", new { groupName, messageId }).ConfigureAwait(false);
+        return await _client!.InvokeAsync<Boolean>("Flux/Ack", new Dictionary<String, Object?> { ["groupName"] = groupName, ["messageId"] = messageId }).ConfigureAwait(false);
     }
     #endregion
 

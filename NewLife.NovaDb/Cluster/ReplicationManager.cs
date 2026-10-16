@@ -417,7 +417,7 @@ public class ReplicationManager : IDisposable
         }
 
         // 通过 RPC 推送到从节点
-        var result = await client.InvokeAsync<ReplicationAckDto>("Nova/ApplyReplication", new { events }).ConfigureAwait(false);
+        var result = await client.InvokeAsync<ReplicationAckDto>("Nova/ApplyReplication", new Dictionary<String, Object?> { ["events"] = events }).ConfigureAwait(false);
         if (result != null && result.Success)
         {
             AcknowledgeReplication(nodeId, result.AckedLsn);

@@ -145,11 +145,11 @@ public class ReplicaClient : IDisposable
     {
         if (_remoteClient == null) return;
 
-        await _remoteClient.InvokeAsync<Boolean>("Nova/RegisterSlave", new
+        await _remoteClient.InvokeAsync<Boolean>("Nova/RegisterSlave", new Dictionary<String, Object?>
         {
-            nodeId = _localNode.NodeId,
-            endpoint = _localNode.Endpoint,
-            lastLsn = _lastAppliedLsn
+            ["nodeId"] = _localNode.NodeId,
+            ["endpoint"] = _localNode.Endpoint,
+            ["lastLsn"] = _lastAppliedLsn
         }).ConfigureAwait(false);
     }
 
@@ -202,10 +202,10 @@ public class ReplicaClient : IDisposable
 
         try
         {
-            _remoteClient.InvokeAsync<String>("Nova/ReplicaHeartbeat", new
+            _remoteClient.InvokeAsync<String>("Nova/ReplicaHeartbeat", new Dictionary<String, Object?>
             {
-                nodeId = _localNode.NodeId,
-                lastLsn = _lastAppliedLsn
+                ["nodeId"] = _localNode.NodeId,
+                ["lastLsn"] = _lastAppliedLsn
             }).ConfigureAwait(false).GetAwaiter().GetResult();
 
             _localNode.LastHeartbeat = DateTime.UtcNow;
@@ -221,11 +221,11 @@ public class ReplicaClient : IDisposable
     {
         if (_remoteClient == null) return;
 
-        var result = await _remoteClient.InvokeAsync<PullBinlogResultDto>("Nova/PullBinlog", new
+        var result = await _remoteClient.InvokeAsync<PullBinlogResultDto>("Nova/PullBinlog", new Dictionary<String, Object?>
         {
-            nodeId = _localNode.NodeId,
-            fromLsn = _lastAppliedLsn,
-            maxCount = MaxPullBatchSize
+            ["nodeId"] = _localNode.NodeId,
+            ["fromLsn"] = _lastAppliedLsn,
+            ["maxCount"] = MaxPullBatchSize
         }).ConfigureAwait(false);
 
         if (result?.Events == null || result.Events.Length == 0) return;

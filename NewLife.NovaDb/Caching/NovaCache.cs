@@ -353,6 +353,9 @@ public class NovaCache : Cache
     /// <typeparam name="T">元素类型</typeparam>
     /// <param name="key">键</param>
     /// <returns>队列实例</returns>
+    // NewLife.Caching 基类签名未带裁剪注解，重写方法不允许声明更严格约束（IL2095）；
+    // T 的成员可达性由使用方静态保证，工厂路径 NovaClientFactory.GetQueue 已带完整注解
+    [UnconditionalSuppressMessage("Trimming", "IL2091", Justification = "基类签名无裁剪注解，无法在重写方法约束 T")]
     public override IProducerConsumer<T> GetQueue<T>(String key)
     {
         if (_fluxEngine == null)
@@ -366,6 +369,8 @@ public class NovaCache : Cache
     /// <param name="topic">主题</param>
     /// <param name="clientId">客户标识</param>
     /// <returns>事件总线实例</returns>
+    // 同 GetQueue：基类签名无裁剪注解，重写方法不允许声明更严格约束（IL2095）
+    [UnconditionalSuppressMessage("Trimming", "IL2091", Justification = "基类签名无裁剪注解，无法在重写方法约束 TEvent")]
     public override IEventBus<TEvent> CreateEventBus<TEvent>(String topic, String clientId = "")
     {
         if (_fluxEngine == null) return base.CreateEventBus<TEvent>(topic, clientId);

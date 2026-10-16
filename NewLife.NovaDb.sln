@@ -28,6 +28,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NewLife.NovaServer", "NewLi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Benchmark", "Benchmark\Benchmark.csproj", "{9753FD97-F200-42DA-AA78-96E38C253262}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AotSmoke", "AotSmoke\AotSmoke.csproj", "{16A16A80-1203-40A9-83B2-277F428D3A25}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -98,6 +100,18 @@ Global
 		{9753FD97-F200-42DA-AA78-96E38C253262}.Release|x64.Build.0 = Release|Any CPU
 		{9753FD97-F200-42DA-AA78-96E38C253262}.Release|x86.ActiveCfg = Release|Any CPU
 		{9753FD97-F200-42DA-AA78-96E38C253262}.Release|x86.Build.0 = Release|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Debug|x64.Build.0 = Debug|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Debug|x86.Build.0 = Debug|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Release|Any CPU.Build.0 = Release|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Release|x64.ActiveCfg = Release|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Release|x64.Build.0 = Release|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Release|x86.ActiveCfg = Release|Any CPU
+		{16A16A80-1203-40A9-83B2-277F428D3A25}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

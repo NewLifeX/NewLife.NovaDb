@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,29 +18,22 @@ public class KvControllerTests : IDisposable
     private readonly String _testDir;
     private readonly KvStore _kvStore;
     private readonly KvController _controller;
-    private readonly KvStore? _originalKvStore;
-    private readonly NovaServer? _originalServer;
 
     public KvControllerTests()
     {
         _testDir = Path.Combine(Path.GetTempPath(), "KvControllerTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_testDir);
 
-        _originalKvStore = KvController.SharedKvStore;
-        _originalServer = KvController.SharedServer;
-
         _kvStore = CreateStore();
-        KvController.SharedKvStore = _kvStore;
-        KvController.SharedServer = null;
-
-        _controller = new KvController();
+        _controller = new KvController
+        {
+            SharedKvStore = _kvStore,
+            SharedServer = null,
+        };
     }
 
     public void Dispose()
     {
-        KvController.SharedKvStore = _originalKvStore;
-        KvController.SharedServer = _originalServer;
-
         _kvStore.Dispose();
 
         try { Directory.Delete(_testDir, true); } catch { }
@@ -178,16 +171,15 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "Set_存储未初始化返回false")]
     public void Set_StoreNotInitialized_ReturnsFalse()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var result = CtrlSet("default", "key1", Encoding.UTF8.GetBytes("v"));
             Assert.False(result);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -214,16 +206,15 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "Get_存储未初始化返回null")]
     public void Get_StoreNotInitialized_ReturnsNull()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var result = CtrlGet("default", "key1");
             Assert.Null(result);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -249,16 +240,15 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "Delete_存储未初始化返回false")]
     public void Delete_StoreNotInitialized_ReturnsFalse()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var result = CtrlDelete("default", "key1");
             Assert.False(result);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -280,15 +270,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "Exists_存储未初始化返回false")]
     public void Exists_StoreNotInitialized_ReturnsFalse()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.False(CtrlExists("default", "key1"));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -317,15 +306,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "DeleteByPattern_存储未初始化返回0")]
     public void DeleteByPattern_StoreNotInitialized_ReturnsZero()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.Equal(0, CtrlDeleteByPattern("default", "*"));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -350,15 +338,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "GetCount_存储未初始化返回0")]
     public void GetCount_StoreNotInitialized_ReturnsZero()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.Equal(0, CtrlGetCount("default"));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -387,17 +374,16 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "GetAllKeys_存储未初始化返回空数组")]
     public void GetAllKeys_StoreNotInitialized_ReturnsEmptyArray()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var keys = CtrlGetAllKeys("default");
             Assert.NotNull(keys);
             Assert.Empty(keys);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -441,15 +427,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "SetExpire_存储未初始化返回false")]
     public void SetExpire_StoreNotInitialized_ReturnsFalse()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.False(CtrlSetExpire("default", "key1", 60));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -473,15 +458,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "GetExpire_存储未初始化返回-1")]
     public void GetExpire_StoreNotInitialized_ReturnsMinusOne()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.Equal(-1, CtrlGetExpire("default", "key1"));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -505,15 +489,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "Increment_存储未初始化返回0")]
     public void Increment_StoreNotInitialized_ReturnsZero()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.Equal(0, CtrlIncrement("default", "key1", 1));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -540,15 +523,14 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "IncrementDouble_存储未初始化返回0")]
     public void IncrementDouble_StoreNotInitialized_ReturnsZero()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             Assert.Equal(0, CtrlIncrementDouble("default", "key1", 1.0));
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -578,17 +560,16 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "Search_存储未初始化返回空数组")]
     public void Search_StoreNotInitialized_ReturnsEmptyArray()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var result = CtrlSearch("default", "*");
             Assert.NotNull(result);
             Assert.Empty(result);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -656,17 +637,16 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "GetAll_存储未初始化返回空字典")]
     public void GetAll_StoreNotInitialized_ReturnsEmptyDictionary()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var result = CtrlGetAll("default", ["k1"]);
             Assert.NotNull(result);
             Assert.Empty(result);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion
@@ -707,16 +687,15 @@ public class KvControllerTests : IDisposable
     [Fact(DisplayName = "SetAll_存储未初始化返回0")]
     public void SetAll_StoreNotInitialized_ReturnsZero()
     {
-        var original = KvController.SharedKvStore;
         try
         {
-            KvController.SharedKvStore = null;
+            _controller.SharedKvStore = null;
             var count = CtrlSetAll("default", new Dictionary<String, Byte[]?> { ["k1"] = [1] });
             Assert.Equal(0, count);
         }
         finally
         {
-            KvController.SharedKvStore = original;
+            _controller.SharedKvStore = _kvStore;
         }
     }
     #endregion

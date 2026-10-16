@@ -1,4 +1,5 @@
-﻿using NewLife.Caching;
+using System.Diagnostics.CodeAnalysis;
+using NewLife.Caching;
 using NewLife.Collections;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Queues;
@@ -95,6 +96,9 @@ public class NovaCacheProvider : CacheProvider, IDisposable
     /// <param name="topic">主题</param>
     /// <param name="group">消费组</param>
     /// <returns>队列实例</returns>
+    // NewLife.Caching 基类签名未带裁剪注解，重写方法不允许声明更严格约束（IL2095）；
+    // T 的成员可达性由使用方静态保证，工厂路径 NovaClientFactory.GetQueue 已带完整注解
+    [UnconditionalSuppressMessage("Trimming", "IL2091", Justification = "基类签名无裁剪注解，无法在重写方法约束 T")]
     public override IProducerConsumer<T> GetQueue<T>(String topic, String? group = null)
     {
         if (_embeddedDb != null)

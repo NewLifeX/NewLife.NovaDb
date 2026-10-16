@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
@@ -405,9 +406,9 @@ internal class SchemaProvider(NovaConnection connection)
         collection.AddColumn("TABLE_COMMENT", typeof(String));
 
         var dbRestriction = new String[4];
-        if (restrictions != null && restrictions.Length >= 1)
+        if (restrictions != null && restrictions.Length >= 1 && restrictions[0] is { } catalog)
         {
-            dbRestriction[0] = restrictions[0];
+            dbRestriction[0] = catalog;
         }
         var dbs = GetDatabases(dbRestriction);
         if (restrictions != null)
@@ -873,7 +874,7 @@ class SchemaCollection
 
     public SchemaCollection(String name) : this() => Name = name;
 
-    internal SchemaColumn AddColumn(String name, Type t)
+    internal SchemaColumn AddColumn(String name, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] Type t)
     {
         var schemaColumn = new SchemaColumn
         {
@@ -979,5 +980,6 @@ class SchemaColumn
 {
     public String Name { get; set; } = String.Empty;
 
+    [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)]
     public Type Type { get; set; } = typeof(Object);
 }

@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Diagnostics.CodeAnalysis;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.Serialization;
 
@@ -56,6 +57,10 @@ public static class SchemaPersister
     /// <summary>将表架构保存到磁盘</summary>
     /// <param name="dbPath">数据库目录</param>
     /// <param name="schema">表架构</param>
+    // NativeAOT：DTO 经反射序列化，裁剪器无法从序列化调用点看到反射访问，显式保留公开成员
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(TableSchemaDto))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(ColumnDto))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(IndexDto))]
     public static void Save(String dbPath, TableSchema schema)
     {
         if (dbPath == null) throw new ArgumentNullException(nameof(dbPath));
@@ -107,6 +112,10 @@ public static class SchemaPersister
     /// <summary>扫描数据库目录加载所有表架构</summary>
     /// <param name="dbPath">数据库目录</param>
     /// <returns>表架构列表</returns>
+    // NativeAOT：反序列化同样依赖反射读取 DTO 成员，显式保留（与 Save 一致）
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(TableSchemaDto))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(ColumnDto))]
+    [DynamicDependency(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties, typeof(IndexDto))]
     public static List<TableSchema> LoadAll(String dbPath)
     {
         var result = new List<TableSchema>();

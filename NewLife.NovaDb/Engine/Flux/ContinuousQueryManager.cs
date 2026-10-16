@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Queues;
 using NewLife.NovaDb.Sql;
@@ -141,7 +142,7 @@ public class ContinuousQueryManager : IDisposable
     /// <param name="queue">消息队列</param>
     /// <param name="name">连续查询名称</param>
     /// <returns>挂接的处理器（用于取消挂接）</returns>
-    public Action<String> AttachRealtime<T>(NovaQueue<T> queue, String name)
+    public Action<String> AttachRealtime<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] T>(NovaQueue<T> queue, String name)
     {
         if (queue == null) throw new ArgumentNullException(nameof(queue));
 
@@ -154,7 +155,7 @@ public class ContinuousQueryManager : IDisposable
     /// <param name="queue">消息队列</param>
     /// <param name="name">连续查询名称</param>
     /// <returns>取消订阅的动作</returns>
-    public Action SubscribeRealtime<T>(NovaQueue<T> queue, String name)
+    public Action SubscribeRealtime<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] T>(NovaQueue<T> queue, String name)
     {
         if (queue == null) throw new ArgumentNullException(nameof(queue));
 
