@@ -478,6 +478,49 @@ public class SqlFunctionTests : IDisposable
         Assert.True(variance > 0);
     }
 
+    [Fact(DisplayName = "FIRST/LAST 取扫描序首尾非空值")]
+    public void TestFirstLast()
+    {
+        CreateUsersTable();
+        var r = _engine.Execute("SELECT FIRST(name), LAST(name), FIRST(age), LAST(age) FROM users");
+        Assert.Equal("Alice", r.Rows[0][0]);
+        Assert.Equal("Charlie", r.Rows[0][1]);
+        Assert.Equal(30, Convert.ToInt32(r.Rows[0][2]));
+        Assert.Equal(35, Convert.ToInt32(r.Rows[0][3]));
+    }
+
+    [Fact(DisplayName = "FIRST/LAST 遵循 WHERE 过滤后的扫描序")]
+    public void TestFirstLastWithWhere()
+    {
+        CreateUsersTable();
+        var r1 = _engine.Execute("SELECT FIRST(name) FROM users WHERE age > 26");
+        Assert.Equal("Alice", r1.Rows[0][0]);
+
+        var r2 = _engine.Execute("SELECT LAST(name) FROM users WHERE age > 26");
+        Assert.Equal("Charlie", r2.Rows[0][0]);
+    }
+
+    [Fact(DisplayName = "FIRST/LAST 跳过 NULL 值")]
+    public void TestFirstLastSkipNull()
+    {
+        _engine.Execute("CREATE TABLE fn_first_null (id INT PRIMARY KEY, v VARCHAR)");
+        _engine.Execute("INSERT INTO fn_first_null VALUES (1, NULL)");
+        _engine.Execute("INSERT INTO fn_first_null VALUES (2, 'x')");
+        _engine.Execute("INSERT INTO fn_first_null VALUES (3, NULL)");
+
+        var r = _engine.Execute("SELECT FIRST(v), LAST(v) FROM fn_first_null");
+        Assert.Equal("x", r.Rows[0][0]);
+        Assert.Equal("x", r.Rows[0][1]);
+    }
+
+    [Fact(DisplayName = "SPREAD 最大值与最小值之差")]
+    public void TestSpread()
+    {
+        CreateUsersTable();
+        var r = _engine.Execute("SELECT SPREAD(age) FROM users");
+        Assert.Equal(10.0, Convert.ToDouble(r.Rows[0][0]));
+    }
+
     #endregion
 
     #region 表行级标量函数

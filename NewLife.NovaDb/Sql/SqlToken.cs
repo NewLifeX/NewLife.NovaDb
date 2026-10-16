@@ -114,6 +114,12 @@ public enum SqlTokenType
     Stddev,
     /// <summary>VARIANCE</summary>
     Variance,
+    /// <summary>FIRST</summary>
+    First,
+    /// <summary>LAST</summary>
+    Last,
+    /// <summary>SPREAD</summary>
+    Spread,
     /// <summary>DATABASE</summary>
     Database,
     /// <summary>ALTER</summary>

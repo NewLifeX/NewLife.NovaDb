@@ -1488,6 +1488,9 @@ public class SqlParser
             case SqlTokenType.GroupConcat:
             case SqlTokenType.Stddev:
             case SqlTokenType.Variance:
+            case SqlTokenType.First:
+            case SqlTokenType.Last:
+            case SqlTokenType.Spread:
                 return ParseFunction();
 
             case SqlTokenType.Star:
@@ -1641,6 +1644,7 @@ public class SqlParser
             IsAggregate = funcToken.Type is SqlTokenType.Count or SqlTokenType.Sum or SqlTokenType.Avg
                 or SqlTokenType.Min or SqlTokenType.Max or SqlTokenType.StringAgg
                 or SqlTokenType.GroupConcat or SqlTokenType.Stddev or SqlTokenType.Variance
+                or SqlTokenType.First or SqlTokenType.Last or SqlTokenType.Spread
         };
 
         // 解析参数

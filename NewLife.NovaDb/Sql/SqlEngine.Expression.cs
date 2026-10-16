@@ -231,6 +231,38 @@ partial class SqlEngine
                 var varMean = varValues.Average();
                 return varValues.Sum(v => (v - varMean) * (v - varMean)) / (varValues.Count - 1);
 
+            case "FIRST":
+                // 按扫描顺序取首个非 NULL 值（时序插入序即时间序），与 TDengine FIRST 语义对齐
+                foreach (var row in rows)
+                {
+                    var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
+                    if (val != null) return val;
+                }
+                return null;
+
+            case "LAST":
+                Object? lastVal = null;
+                foreach (var row in rows)
+                {
+                    var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
+                    if (val != null) lastVal = val;
+                }
+                return lastVal;
+
+            case "SPREAD":
+                Object? spreadMin = null;
+                Object? spreadMax = null;
+                foreach (var row in rows)
+                {
+                    var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
+                    if (val == null) continue;
+                    if (spreadMin == null || CompareValues(val, spreadMin) < 0) spreadMin = val;
+                    if (spreadMax == null || CompareValues(val, spreadMax) > 0) spreadMax = val;
+                }
+                if (spreadMin == null) return null;
+                // 最大值与最小值之差，与 TDengine SPREAD 语义对齐（单值时返回 0）
+                return Convert.ToDouble(spreadMax) - Convert.ToDouble(spreadMin);
+
             default:
                 throw new NovaException(ErrorCode.NotSupported, $"Unsupported aggregate function: {func.FunctionName}");
         }

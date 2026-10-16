@@ -51,6 +51,9 @@
 | `AVG` | `AVG(expr)` | DOUBLE | 全 NULL → NULL | ✅ |
 | `MIN` | `MIN(expr)` | 与 expr 同类 | 全 NULL → NULL | ✅ |
 | `MAX` | `MAX(expr)` | 与 expr 同类 | 全 NULL → NULL | ✅ |
+| `FIRST` | `FIRST(expr)` | 与 expr 同类 | 扫描序首个非 NULL 值 | ✅ |
+| `LAST` | `LAST(expr)` | 与 expr 同类 | 扫描序最后一个非 NULL 值 | ✅ |
+| `SPREAD` | `SPREAD(expr)` | DOUBLE | 最大值与最小值之差；全 NULL → NULL | ✅ |
 
 ### 2.2 字符串函数
 
