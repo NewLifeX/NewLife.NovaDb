@@ -42,6 +42,9 @@ internal sealed class EmbeddedDatabase
         }
     }
 
+    /// <summary>已创建的 Flux 引擎，未使用消息队列时为 null。不会触发创建</summary>
+    public FluxEngine? ExistingFluxEngine => _fluxEngine;
+
     /// <summary>创建嵌入模式数据库实例</summary>
     /// <param name="dbPath">数据库目录路径（已标准化的完整路径）</param>
     /// <param name="csb">连接字符串设置</param>

@@ -97,6 +97,7 @@ partial class SqlEngine
             "metrics" => BuildSysMetricsData(),
             "version" => BuildSysVersionData(),
             "binlog" => BuildSysBinlogData(),
+            "flux_compression" => BuildSysFluxCompressionData(),
             _ => throw new NovaException(ErrorCode.TableNotFound, $"System table '{stmt.TableName}' not found")
         };
 
@@ -313,6 +314,31 @@ partial class SqlEngine
                 rows.Add([fileName, size, isCurrent]);
             }
         }
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysFluxCompressionData()
+    {
+        var schema = new TableSchema("_sys.flux_compression");
+        schema.AddColumn(new ColumnDefinition("metric", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("value", DataType.String, false));
+
+        var rows = new List<Object?[]>();
+
+        // 未使用消息队列时不存在 Flux 引擎，返回空结果
+        var flux = FluxProvider?.Invoke();
+        if (flux == null) return (schema, rows);
+
+        var stats = flux.GetCompressionStats();
+        rows.Add(["block_count", stats.BlockCount.ToString()]);
+        rows.Add(["entry_count", stats.EntryCount.ToString()]);
+        rows.Add(["column_count", stats.ColumnCount.ToString()]);
+        rows.Add(["compressed_column_count", stats.CompressedColumnCount.ToString()]);
+        rows.Add(["row_bytes", stats.RowBytes.ToString()]);
+        rows.Add(["block_bytes", stats.BlockBytes.ToString()]);
+        rows.Add(["compression_ratio", stats.CompressionRatio.ToString("F2")]);
+        rows.Add(["saved_ratio", stats.SavedRatio.ToString("F4")]);
 
         return (schema, rows);
     }

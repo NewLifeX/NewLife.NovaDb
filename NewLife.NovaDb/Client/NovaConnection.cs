@@ -101,6 +101,9 @@ public class NovaConnection : DbConnection
                     };
                     return new SqlEngine(p, options);
                 });
+
+                // 嵌入模式与消息队列共用 Flux 引擎，供 _sys.flux_compression 报告压缩率
+                _sqlEngine.FluxProvider = () => Factory.GetOrCreateEmbeddedDatabase(Setting).ExistingFluxEngine;
             }
         }
         else

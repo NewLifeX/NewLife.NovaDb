@@ -3,6 +3,7 @@ using System.Threading;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Engine.Flux;
 using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
 using NewLife.NovaDb.WAL;
@@ -56,6 +57,10 @@ public partial class SqlEngine : IDisposable
 
     /// <summary>Binlog 写入器（可选，启用后记录已提交的 SQL 变更）</summary>
     public BinlogWriter? Binlog { get; set; }
+
+    /// <summary>Flux 引擎提供者（可选，用于 _sys.flux_compression 列式压缩率报告）</summary>
+    /// <remarks>使用提供者而不是直接持有引擎，避免 SQL 连接在未使用消息队列时提前创建 Flux 引擎目录</remarks>
+    public Func<FluxEngine?>? FluxProvider { get; set; }
 
     /// <summary>获取所有表名</summary>
     public IReadOnlyCollection<String> TableNames

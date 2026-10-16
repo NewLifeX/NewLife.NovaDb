@@ -202,7 +202,8 @@ public class NovaServer : DisposeBase
             // 每个库一个子目录：基目录/{库名}。SqlEngine 构造直接使用路径参数
             var enginePath = Path.Combine(basePath, db);
 
-            return new SqlEngine(enginePath, Options);
+            // 动态提供本服务器实例的 Flux 引擎，供 _sys.flux_compression 报告压缩率
+            return new SqlEngine(enginePath, Options) { FluxProvider = () => _fluxEngine };
         });
     }
     /// <param name="disposing">是否由 Dispose 调用</param>
