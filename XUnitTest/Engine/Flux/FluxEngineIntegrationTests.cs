@@ -13,8 +13,8 @@ namespace XUnitTest.Engine.Flux;
 /// <summary>Flux 时序引擎集成测试夹具。维护固定测试目录，每次启动前清空</summary>
 public sealed class FluxDbFixture : IDisposable
 {
-    /// <summary>固定测试目录，位于项目根目录 TestData/FluxDb/</summary>
-    public static readonly String DbPath = "../TestData/FluxDb/".GetFullPath();
+    /// <summary>固定测试目录，位于测试输出目录 TestData/FluxDb/（按目标框架隔离）</summary>
+    public static readonly String DbPath = TestDataHelper.GetPath("FluxDb");
 
     /// <summary>共享 FluxEngine 实例，每个测试使用唯一 topic 名区分数据</summary>
     public FluxEngine Engine { get; }
@@ -37,7 +37,7 @@ public sealed class FluxDbFixture : IDisposable
 
 /// <summary>Flux 时序引擎嵌入模式集成测试，覆盖追加/查询/删除及数据文件验证</summary>
 /// <remarks>
-/// 测试数据保存到 TestData/FluxDb/ 目录（项目根目录），每次运行前清空，
+/// 测试数据保存到测试输出目录 TestData/FluxDb/（按目标框架隔离），每次运行前清空，
 /// 测试后文件留存，可人工检查 flux.rlog 文件内容。
 /// 时序引擎为 Append-Only，"修改" 对应追加新条目后验证查询结果，"删除" 对应按 TTL 过期分区删除。
 /// </remarks>

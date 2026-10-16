@@ -14,8 +14,8 @@ namespace XUnitTest;
 /// <summary>关系型引擎集成测试夹具。维护固定测试目录，每次测试启动前清空</summary>
 public sealed class RelationalDbFixture
 {
-    /// <summary>固定测试目录，位于项目根目录 TestData/RelationalDb/，方便人工检查</summary>
-    public static readonly String DbPath = "../TestData/RelationalDb/".GetFullPath();
+    /// <summary>固定测试目录，位于测试输出目录 TestData/RelationalDb/（按目标框架隔离），方便人工检查</summary>
+    public static readonly String DbPath = TestDataHelper.GetPath("RelationalDb");
 
     /// <summary>嵌入式连接字符串</summary>
     public String ConnectionString => $"Data Source={DbPath}";
@@ -31,7 +31,7 @@ public sealed class RelationalDbFixture
 
 /// <summary>关系型引擎嵌入模式集成测试，覆盖 DDL/DML/查询/事务及数据文件验证</summary>
 /// <remarks>
-/// 测试数据保存到 TestData/RelationalDb/ 目录（项目根目录），每次运行前清空，
+/// 测试数据保存到测试输出目录 TestData/RelationalDb/（按目标框架隔离），每次运行前清空，
 /// 测试后数据留存，可人工检查数据库目录内文件的正确性。
 /// 每个测试方法使用独立命名的表，互不干扰。
 /// </remarks>

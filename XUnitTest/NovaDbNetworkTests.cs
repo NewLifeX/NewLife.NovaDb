@@ -598,9 +598,9 @@ public class NovaDbNetworkTests : IClassFixture<IntegrationServerFixture>
         var sql2 = db.PageSplit("Select * From test", 0, 10, null);
         Assert.Equal("Select * From test limit 10", sql2);
 
-        // 后续页
+        // 后续页（NovaDb 方言：标准 limit N offset M）
         var sql3 = db.PageSplit("Select * From test", 20, 10, null);
-        Assert.Equal("Select * From test limit 20, 10", sql3);
+        Assert.Equal("Select * From test limit 10 offset 20", sql3);
     }
 
     [Fact(DisplayName = "网络模式-测试数据库类型")]

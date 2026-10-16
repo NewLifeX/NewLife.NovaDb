@@ -16,8 +16,8 @@ namespace XUnitTest.Queues;
 /// <summary>MQ 消息队列集成测试夹具。维护固定测试目录，每次启动前清空</summary>
 public sealed class QueueDbFixture
 {
-    /// <summary>固定测试目录，位于项目根目录 TestData/QueueDb/</summary>
-    public static readonly String DbPath = "../TestData/QueueDb/".GetFullPath();
+    /// <summary>固定测试目录，位于测试输出目录 TestData/QueueDb/（按目标框架隔离）</summary>
+    public static readonly String DbPath = TestDataHelper.GetPath("QueueDb");
 
     /// <summary>嵌入式连接字符串</summary>
     public String ConnectionString => $"Data Source={DbPath}";
@@ -37,7 +37,7 @@ public sealed class QueueDbFixture
 /// <summary>MQ 消息队列嵌入模式集成测试，覆盖发布/消费/ACK/多 topic 及数据文件验证</summary>
 /// <remarks>
 /// 通过 NovaClientFactory.GetQueue&lt;T&gt;() 统一入口创建队列。
-/// 测试数据保存到 TestData/QueueDb/ 目录（项目根目录），每次运行前清空，
+/// 测试数据保存到测试输出目录 TestData/QueueDb/（按目标框架隔离），每次运行前清空，
 /// 测试后文件留存，可人工检查 flux/flux.rlog 文件内容。
 /// 每个测试使用唯一 topic 名，互不干扰。
 /// </remarks>

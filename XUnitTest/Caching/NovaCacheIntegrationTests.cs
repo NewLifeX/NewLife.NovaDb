@@ -15,8 +15,8 @@ namespace XUnitTest.Caching;
 /// <summary>KV 缓存集成测试夹具。维护固定测试目录，每次启动前清空</summary>
 public sealed class KvDbFixture
 {
-    /// <summary>固定测试目录，位于项目根目录 TestData/KvDb/</summary>
-    public static readonly String DbPath = "../TestData/KvDb/".GetFullPath();
+    /// <summary>固定测试目录，位于测试输出目录 TestData/KvDb/（按目标框架隔离）</summary>
+    public static readonly String DbPath = TestDataHelper.GetPath("KvDb");
 
     /// <summary>嵌入式连接字符串</summary>
     public String ConnectionString => $"Data Source={DbPath}";
@@ -33,7 +33,7 @@ public sealed class KvDbFixture
 /// <summary>KV 缓存（NovaCache）嵌入模式集成测试，覆盖 ICache 各核心接口及数据文件验证</summary>
 /// <remarks>
 /// 通过 NovaClientFactory.GetCache() 统一入口创建 NovaCache。
-/// 测试数据保存到 TestData/KvDb/ 目录（项目根目录），每次运行前清空，
+/// 测试数据保存到测试输出目录 TestData/KvDb/（按目标框架隔离），每次运行前清空，
 /// 测试后 .kvd 文件留存，可人工检查 KV 存储文件内容。
 /// 每个测试方法使用不同的 key 前缀，互不干扰。
 /// </remarks>
