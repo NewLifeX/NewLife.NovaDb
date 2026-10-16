@@ -440,6 +440,9 @@ public class SelectStatement : SqlStatement
     /// <summary>GROUP BY 列</summary>
     public List<String>? GroupBy { get; set; }
 
+    /// <summary>GROUP BY 中的窗口函数表达式（SESSION_WINDOW/STATE_WINDOW），与 <see cref="GroupBy"/> 按位置对齐，普通列位置为 null</summary>
+    public List<SqlExpression?>? GroupByWindows { get; set; }
+
     /// <summary>HAVING 条件</summary>
     public SqlExpression? Having { get; set; }
 

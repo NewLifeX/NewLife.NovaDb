@@ -315,6 +315,11 @@ partial class SqlEngine
 
         switch (func.FunctionName)
         {
+            // 窗口分组函数仅支持在 GROUP BY 中使用（F17）
+            case "SESSION_WINDOW":
+            case "STATE_WINDOW":
+                throw new NovaException(ErrorCode.InvalidArgument, $"{func.FunctionName} is only supported in GROUP BY");
+
             // 字符串函数
             case "CONCAT":
                 return String.Concat(args.Select(a => Convert.ToString(a) ?? String.Empty));

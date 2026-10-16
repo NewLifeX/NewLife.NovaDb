@@ -1075,11 +1075,27 @@ public class SqlParser
             Expect(SqlTokenType.By);
             stmt.GroupBy = [];
 
+            // 会话/状态窗口函数（F17）：与普通列混合分组时按位置对齐
+            List<SqlExpression?>? windows = null;
             do
             {
-                stmt.GroupBy.Add(ExpectIdentifier());
+                var item = Peek();
+                if (item.Type == SqlTokenType.Identifier && IsWindowFunctionName(item.Value) && PeekAt(1).Type == SqlTokenType.LeftParen)
+                {
+                    var func = ParsePrimary();
+                    windows ??= FillNulls(stmt.GroupBy.Count);
+                    windows.Add(func);
+                    stmt.GroupBy.Add(item.Value.ToUpper());
+                }
+                else
+                {
+                    stmt.GroupBy.Add(ExpectIdentifier());
+                    windows?.Add(null);
+                }
             }
             while (TryConsume(SqlTokenType.Comma));
+
+            stmt.GroupByWindows = windows;
         }
 
         // HAVING
@@ -1589,6 +1605,26 @@ public class SqlParser
 
         Expect(SqlTokenType.RightParen);
         return func;
+    }
+
+    /// <summary>判断是否为 GROUP BY 窗口分组函数（SESSION_WINDOW / STATE_WINDOW）</summary>
+    /// <param name="name">函数名</param>
+    /// <returns>是否支持</returns>
+    private static Boolean IsWindowFunctionName(String name) =>
+        name.EqualIgnoreCase("SESSION_WINDOW") || name.EqualIgnoreCase("STATE_WINDOW");
+
+    /// <summary>创建指定长度的空位列表，用于对齐已解析的分组项</summary>
+    /// <param name="count">空位数量</param>
+    /// <returns>填充 null 的列表</returns>
+    private static List<SqlExpression?> FillNulls(Int32 count)
+    {
+        var list = new List<SqlExpression?>(count + 1);
+        for (var i = 0; i < count; i++)
+        {
+            list.Add(null);
+        }
+
+        return list;
     }
 
     /// <summary>解析 CASE WHEN ... THEN ... ELSE ... END 表达式</summary>

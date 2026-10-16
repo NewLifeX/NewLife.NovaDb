@@ -656,15 +656,20 @@ partial class SqlEngine
 
     private SqlResult ExecuteGroupBy(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
     {
-        // 按 GROUP BY 列分组
+        // 窗口分组状态（F17）：SESSION_WINDOW / STATE_WINDOW 需要按行序推进
+        var states = CreateWindowStates(stmt);
+
+        // 按 GROUP BY 列与窗口函数分组
         var groups = new Dictionary<String, List<Object?[]>>();
+        var windowKeys = new Dictionary<String, Object?[]>();
         foreach (var row in rows)
         {
-            var key = BuildGroupKey(row, stmt.GroupBy!, schema);
+            var key = BuildGroupByKey(stmt, row, schema, parameters, states, out var keys);
             if (!groups.TryGetValue(key, out var group))
             {
                 group = [];
                 groups[key] = group;
+                windowKeys[key] = keys;
             }
             group.Add(row);
         }
@@ -689,10 +694,23 @@ partial class SqlEngine
         {
             var representative = group.Value[0];
             var outputRow = new Object?[stmt.Columns.Count];
+            var keys = windowKeys.TryGetValue(group.Key, out var k) ? k : null;
 
             for (var i = 0; i < stmt.Columns.Count; i++)
             {
                 var col = stmt.Columns[i];
+
+                // 窗口函数列直接取分组时确定的窗口键
+                if (keys != null && col.Expression is FunctionExpression func)
+                {
+                    var wi = FindWindowIndex(stmt, func);
+                    if (wi >= 0)
+                    {
+                        outputRow[i] = keys[wi];
+                        continue;
+                    }
+                }
+
                 outputRow[i] = EvaluateSelectExpression(col.Expression, group.Value, representative, schema, parameters);
             }
 
@@ -701,6 +719,177 @@ partial class SqlEngine
 
         return result;
     }
+
+    #region 窗口分组（F17）
+
+    /// <summary>创建窗口分组状态列表，与 GROUP BY 项按位置对齐</summary>
+    /// <param name="stmt">查询语句</param>
+    /// <returns>状态列表，无窗口函数时返回 null</returns>
+    private static List<GroupByWindowStates?>? CreateWindowStates(SelectStatement stmt)
+    {
+        var windows = stmt.GroupByWindows;
+        if (windows == null) return null;
+
+        var states = new List<GroupByWindowStates?>(windows.Count);
+        for (var i = 0; i < windows.Count; i++)
+        {
+            states.Add(windows[i] == null ? null : new GroupByWindowStates());
+        }
+
+        return states;
+    }
+
+    /// <summary>构建分组键，普通列与窗口函数混合时按位置拼接</summary>
+    /// <param name="stmt">查询语句</param>
+    /// <param name="row">数据行</param>
+    /// <param name="schema">表结构</param>
+    /// <param name="parameters">查询参数</param>
+    /// <param name="states">窗口分组状态</param>
+    /// <param name="windowKeys">输出各分组项的窗口键值</param>
+    /// <returns>分组键字符串</returns>
+    private String BuildGroupByKey(SelectStatement stmt, Object?[] row, TableSchema schema, Dictionary<String, Object?>? parameters, List<GroupByWindowStates?>? states, out Object?[] windowKeys)
+    {
+        var windows = stmt.GroupByWindows;
+        var keys = windows == null ? [] : new Object?[windows.Count];
+        windowKeys = keys;
+
+        return states == null ? BuildGroupKey(row, stmt.GroupBy!, schema) : BuildWindowGroupKey(stmt, row, schema, parameters, states, keys);
+    }
+
+    /// <summary>构建含窗口函数的分组键，窗口状态按其余分组列隔离</summary>
+    /// <param name="stmt">查询语句</param>
+    /// <param name="row">数据行</param>
+    /// <param name="schema">表结构</param>
+    /// <param name="parameters">查询参数</param>
+    /// <param name="states">窗口分组状态</param>
+    /// <param name="keys">输出各分组项的窗口键值</param>
+    /// <returns>分组键字符串</returns>
+    private String BuildWindowGroupKey(SelectStatement stmt, Object?[] row, TableSchema schema, Dictionary<String, Object?>? parameters, List<GroupByWindowStates?> states, Object?[] keys)
+    {
+        var windows = stmt.GroupByWindows!;
+
+        // 先计算普通分组列，作为窗口状态的分区键（同一设备/维度独立推进窗口）
+        var parts = new List<String>(stmt.GroupBy!.Count);
+        for (var i = 0; i < stmt.GroupBy.Count; i++)
+        {
+            if (windows[i] != null) continue;
+
+            var idx = schema.GetColumnIndex(stmt.GroupBy[i]);
+            parts.Add(FormatGroupValue(idx >= 0 && idx < row.Length ? row[idx] : null));
+        }
+
+        var partitionKey = String.Join("|", parts);
+
+        for (var i = 0; i < stmt.GroupBy.Count; i++)
+        {
+            var window = windows[i];
+            if (window == null) continue;
+
+            var holder = states[i]!;
+            if (!holder.States.TryGetValue(partitionKey, out var state))
+            {
+                state = new GroupByWindowState();
+                holder.States[partitionKey] = state;
+            }
+
+            var value = EvaluateWindowKey(state, window, row, schema, parameters);
+            keys[i] = value;
+            parts.Add(FormatGroupValue(value));
+        }
+
+        return String.Join("|", parts);
+    }
+
+    /// <summary>推进窗口函数状态并返回当前窗口键</summary>
+    /// <param name="state">窗口状态</param>
+    /// <param name="expr">窗口函数表达式</param>
+    /// <param name="row">数据行</param>
+    /// <param name="schema">表结构</param>
+    /// <param name="parameters">查询参数</param>
+    /// <returns>当前窗口键：SESSION_WINDOW 返回窗口起始时间，STATE_WINDOW 返回窗口起始行时间或序号</returns>
+    private Object? EvaluateWindowKey(GroupByWindowState state, SqlExpression expr, Object?[] row, TableSchema schema, Dictionary<String, Object?>? parameters)
+    {
+        if (expr is not FunctionExpression func) return null;
+
+        if (func.FunctionName.EqualIgnoreCase("SESSION_WINDOW"))
+        {
+            if (func.Arguments.Count < 2) throw new NovaException(ErrorCode.InvalidArgument, "SESSION_WINDOW requires (time, gapSeconds)");
+
+            var ts = EvaluateExpression(func.Arguments[0], row, schema, parameters);
+            var gap = Convert.ToDouble(EvaluateExpression(func.Arguments[1], row, schema, parameters));
+            if (ts == null) return state.CurrentKey;
+
+            if (!state.Initialized)
+            {
+                state.Initialized = true;
+                state.LastValue = ts;
+                state.CurrentKey = ts;
+                return state.CurrentKey;
+            }
+
+            // 与上一行时间差超过间隔即开启新会话
+            if (IsGapExceeded(ts, state.LastValue!, gap)) state.CurrentKey = ts;
+            state.LastValue = ts;
+            return state.CurrentKey;
+        }
+
+        // STATE_WINDOW：值变化即开启新窗口
+        var value = func.Arguments.Count > 0 ? EvaluateExpression(func.Arguments[0], row, schema, parameters) : null;
+        if (!state.Initialized || !Equals(value, state.LastValue))
+        {
+            state.Initialized = true;
+            state.LastValue = value;
+            state.Ordinal++;
+            state.CurrentKey = func.Arguments.Count > 1 ? EvaluateExpression(func.Arguments[1], row, schema, parameters) ?? state.Ordinal : state.Ordinal;
+        }
+
+        return state.CurrentKey;
+    }
+
+    /// <summary>判断两行时间差是否超过窗口间隔</summary>
+    /// <param name="current">当前行时间</param>
+    /// <param name="last">上一行时间</param>
+    /// <param name="gap">间隔：时间为 DateTime 时为秒，数值时间戳时与数值同单位</param>
+    /// <returns>是否超过间隔</returns>
+    private static Boolean IsGapExceeded(Object current, Object last, Double gap)
+    {
+        if (current is DateTime dt)
+        {
+            var lt = Convert.ToDateTime(last);
+            return Math.Abs((dt - lt).TotalSeconds) > gap;
+        }
+
+        return Math.Abs(Convert.ToDouble(current) - Convert.ToDouble(last)) > gap;
+    }
+
+    /// <summary>格式化分组键分量</summary>
+    /// <param name="value">分量值</param>
+    /// <returns>字符串</returns>
+    private static String FormatGroupValue(Object? value) => value switch
+    {
+        null => "NULL",
+        DateTime dt => dt.ToString("o"),
+        _ => Convert.ToString(value) ?? "NULL",
+    };
+
+    /// <summary>查找 SELECT 列中的窗口函数在 GROUP BY 中的位置</summary>
+    /// <param name="stmt">查询语句</param>
+    /// <param name="func">函数表达式</param>
+    /// <returns>位置索引，未匹配时返回 -1</returns>
+    private static Int32 FindWindowIndex(SelectStatement stmt, FunctionExpression func)
+    {
+        var windows = stmt.GroupByWindows;
+        if (windows == null) return -1;
+
+        for (var i = 0; i < windows.Count; i++)
+        {
+            if (windows[i] is FunctionExpression gf && gf.FunctionName.EqualIgnoreCase(func.FunctionName)) return i;
+        }
+
+        return -1;
+    }
+
+    #endregion
 
     private SqlResult ExecuteAggregate(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
     {
@@ -717,6 +906,29 @@ partial class SqlEngine
 
         result.Rows.Add(outputRow);
         return result;
+    }
+
+    /// <summary>GROUP BY 窗口函数的分组状态容器，按其余分组列隔离（F17）</summary>
+    private sealed class GroupByWindowStates
+    {
+        /// <summary>各分组维度的窗口状态，键为普通分组列拼接的字符串</summary>
+        public Dictionary<String, GroupByWindowState> States { get; } = new(StringComparer.Ordinal);
+    }
+
+    /// <summary>GROUP BY 窗口函数的分组状态（F17）</summary>
+    private sealed class GroupByWindowState
+    {
+        /// <summary>是否已处理首行</summary>
+        public Boolean Initialized { get; set; }
+
+        /// <summary>上一行的分组依据值（时间或状态值）</summary>
+        public Object? LastValue { get; set; }
+
+        /// <summary>当前窗口键</summary>
+        public Object? CurrentKey { get; set; }
+
+        /// <summary>窗口序号，STATE_WINDOW 未提供时间参数时作为窗口键</summary>
+        public Int64 Ordinal { get; set; }
     }
 
     private SqlResult BuildSelectResult(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
