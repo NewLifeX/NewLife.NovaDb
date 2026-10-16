@@ -63,6 +63,9 @@ public partial class FluxEngine
             ValidateFluxLogHeader();
             LoadFromFluxLog();
         }
+
+        // 加载列式封存块（F13），与行式日志回放结果合并
+        LoadColumnarBlocks();
     }
 
     /// <summary>写入文件头</summary>
@@ -424,6 +427,7 @@ public partial class FluxEngine
     private void ReplayFluxPurge(Byte[] body, Int32 offset, Int32 dataLength)
     {
         var cutoffKey = _encoding.GetString(body, offset, dataLength);
+        _purgeCutoffKey = cutoffKey;
 
         var toRemove = new List<String>();
         foreach (var key in _partitions.Keys)
@@ -438,26 +442,36 @@ public partial class FluxEngine
         }
     }
 
-    /// <summary>压缩时序日志（重写仅包含存活条目的日志）</summary>
+    /// <summary>压缩时序日志（重写仅包含存活条目的日志，已封存的分区由列式块承载）</summary>
     public void CompactFluxLog()
     {
         if (_fluxLogStream == null) return;
 
         lock (_lock)
         {
-            _fluxLogStream.SetLength(FluxLogHeaderSize);
-            _fluxLogStream.Position = FluxLogHeaderSize;
-
-            foreach (var list in _partitions.Values)
-            {
-                foreach (var entry in list)
-                {
-                    PersistFluxAppend(entry);
-                }
-            }
-
-            _fluxLogStream.Flush();
+            CompactFluxLogNoLock();
         }
+    }
+
+    /// <summary>重写时序日志实现，须在持锁状态下调用</summary>
+    private void CompactFluxLogNoLock()
+    {
+        if (_fluxLogStream == null) return;
+
+        _fluxLogStream.SetLength(FluxLogHeaderSize);
+        _fluxLogStream.Position = FluxLogHeaderSize;
+
+        foreach (var kvp in _partitions)
+        {
+            if (_sealedPartitions.Contains(kvp.Key)) continue;
+
+            foreach (var entry in kvp.Value)
+            {
+                PersistFluxAppend(entry);
+            }
+        }
+
+        _fluxLogStream.Flush();
     }
 
     /// <summary>截断时序日志（清空所有数据，仅保留文件头）</summary>

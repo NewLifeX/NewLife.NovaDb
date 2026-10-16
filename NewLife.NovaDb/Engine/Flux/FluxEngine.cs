@@ -39,11 +39,18 @@ public partial class FluxEngine : IDisposable
         lock (_lock)
         {
             var key = GetPartitionKey(entry.Timestamp);
+
+            // 时间片滚动时自动封存已完成分区（F13）
+            if (IsPartitionRolloverNoLock(key)) AutoSealPartitionsNoLock(key);
+
             if (!_partitions.TryGetValue(key, out var list))
             {
                 list = [];
                 _partitions[key] = list;
             }
+
+            // 迟到数据写回已封存分区：该分区重新回到行式日志，块在下次封存时重建
+            _sealedPartitions.Remove(key);
 
             // 同毫秒自增序列号
             var mid = MessageId.Auto(list, entry.Timestamp);
@@ -66,11 +73,18 @@ public partial class FluxEngine : IDisposable
             foreach (var entry in entries)
             {
                 var key = GetPartitionKey(entry.Timestamp);
+
+                // 时间片滚动时自动封存已完成分区（F13）
+                if (IsPartitionRolloverNoLock(key)) AutoSealPartitionsNoLock(key);
+
                 if (!_partitions.TryGetValue(key, out var list))
                 {
                     list = [];
                     _partitions[key] = list;
                 }
+
+                // 迟到数据写回已封存分区：该分区重新回到行式日志，块在下次封存时重建
+                _sealedPartitions.Remove(key);
 
                 var mid = MessageId.Auto(list, entry.Timestamp);
                 entry.SequenceId = mid.Sequence;
@@ -142,12 +156,18 @@ public partial class FluxEngine : IDisposable
             foreach (var key in toRemove)
             {
                 _partitions.Remove(key);
+                _sealedPartitions.Remove(key);
+            }
+
+            if (toRemove.Count > 0)
+            {
+                _purgeCutoffKey = cutoffKey;
+
+                // 持久化清理记录并重写列式文件，回收封存块空间
+                PersistFluxPurge(cutoffKey);
+                RewriteColumnarFileNoLock(cutoffKey);
             }
         }
-
-        // 持久化清理记录
-        if (toRemove.Count > 0)
-            PersistFluxPurge(cutoffKey);
 
         return toRemove.Count;
     }
@@ -208,6 +228,7 @@ public partial class FluxEngine : IDisposable
         {
             _partitions.Clear();
             TruncateFluxLog();
+            ClearColumnarNoLock();
         }
     }
 
