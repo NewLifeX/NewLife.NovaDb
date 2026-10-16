@@ -416,12 +416,25 @@ public void PrefetchShards(String streamName, DateTime startTime, DateTime endTi
 }
 ```
 
-### 6.3 压缩
+### 6.3 列式封存与压缩（F13/F15）
 
-对历史分片启用压缩:
-- 冷分片（超过 N 天未访问）自动压缩
-- 压缩算法: LZ4、Snappy
-- 查询时解压（透明）
+分区滚动或显式封存时，已完成分区的条目按列组织写入 `flux.col`，并从行式日志 `flux.rlog` 中移除：
+
+- **列拆分**：时间戳列、序列号列、字段列（按「字段名 + 类型标签」，null 值单列）、标签列（`$tag:键名`）
+- **编码择优（F14）**：整数列在 Delta / DeltaDelta / RLE / 原始值中取最短；浮点列在 Gorilla XOR / RLE / 原始 8 字节中取最短；字符串列在字典 / 原始值中取最短；稀疏列用变长间隔索引记录存在位置
+- **二级压缩（F15）**：列负载超过 32 字节且确有收益时用纯托管 LZ4 压缩，无收益则存原样，压缩标识记入列头
+- **文件格式**：8 字节头（`NFCL` + 版本 + 保留），块为 `[负载长度 4B][负载][CRC32 4B]`；读取时忽略尾部不完整或校验失败的块
+- **兼容性**：不封存时行为与旧版本一致，旧 `flux.rlog` 可直接读取；封存分区若出现迟到写入会重回行式日志，读取时按（时间戳, 序号）去重
+- **空间回收**：TTL 清理会重写列式文件丢弃过期块
+- **压缩率报告（F19）**：`FluxEngine.GetCompressionStats()` 提供块数/条目数/行式等效体积/块体积/压缩率，SQL 侧经 `SELECT * FROM _sys.flux_compression` 查询
+
+### 6.4 滚动聚合与查询自动路由（F16）
+
+`ContinuousQueryManager` 在增量聚合（F10-F12）之上提供：
+
+- **滚动聚合注册**：`RegisterRollup(name, sourceTable, fieldName, granules, targetPrefix)`，一次维护多级统计表（目标表列 `bucket_start/cnt/sum_val/min_val/max_val`）
+- **历史回填**：`Backfill(name, start, end)` 按区间一次性聚合历史数据，不推进实时游标
+- **查询自动路由**：`QueryAggregate(sourceTable, start, end, bucketTicks, field, agg)` 命中「源表 + 字段 + 可整除粒度」时读取预聚合表并按需二次合并，未命中（表未生成、字段或粒度不匹配）回退原始扫描
 
 ## 7. 设计决策
 
@@ -447,6 +460,11 @@ public void PrefetchShards(String streamName, DateTime startTime, DateTime endTi
 ### D5: 可观测性优先
 - 系统表查询队列状态
 - 支持 SQL 诊断堆积、超时、重试等问题
+
+### D6: 行式热尾 + 列式封存
+- 写入始终走行式 AOF，保证追加性能；只有已封存分区才转列式，编码与压缩开销只发生一次
+- 封存块与 AOF 的重叠窗口用（时间戳, 序号）去重兜底，崩溃后仍可恢复且不产生重复
+- LZ4 采用纯托管实现，避免引入原生依赖影响 NativeAOT 与多 RID 兼容
 
 ## 8. 未来扩展
 

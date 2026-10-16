@@ -16,7 +16,7 @@ A medium-to-large hybrid database implemented in **C#**, running on the **.NET p
 - **Folder-as-Database**: Copy the folder to complete migration/backup, no dump/restore process needed. Each table has independent file groups (`.data`/`.idx`/`.wal`).
 - **Four-Engine Integration**:
   - **Nova Engine** (General Relational): SkipList index + MVCC transactions (Read Committed), supports CRUD, SQL queries, JOIN
-  - **Flux Engine** (Time-Series + MQ): Time-based sharding Append Only, supports TTL auto-cleanup, Redis Stream-style consumer groups + Pending + Ack
+  - **Flux Engine** (Time-Series + MQ): Time-based sharding Append Only, supports TTL auto-cleanup, Redis Stream-style consumer groups + Pending + Ack; columnar block sealing with type-aware encoding (Delta/DeltaDelta/XOR/RLE/dictionary) plus LZ4 block compression, rollup pre-aggregation with automatic aggregate query routing, SESSION/STATE window grouping, and compression-ratio reporting via `_sys.flux_compression`
   - **KV Mode** (Key-Value Store): Independent Bitcask engine (in-memory index + on-disk values), supports TTL, multi-table isolation
   - **ADO.NET Provider**: Auto-recognizes embedded/network mode, native integration with XCode ORM
 - **Dynamic Hot-Cold Index Separation**: Hot data fully loaded into physical memory (SkipList nodes), cold data unloaded to MMF with only sparse directory retained. 10 million row table querying only the latest 10,000 rows uses < 20MB memory.
@@ -455,6 +455,7 @@ NovaDb supports a **one-master, multiple-slave** architecture with asynchronous 
 | **v1.2** (Completed) | MQ blocking read, KV Add/Inc operations, P1-level SQL functions |
 | **v1.3** (Completed) | MQ delayed messages, dead letter queue |
 | **v2.0** (Completed) | GeoPoint geo-encoding + Vector type (AI vector search), GIS extension, full-text search (BM25), NovaVectorStore (IVectorStore, multi-collection), incremental materialized views, Binlog management, observability and management tools |
+| **v2.1** (Completed) | Time-series columnar sealing + block compression (numerical encoding + LZ4), rollup pre-aggregation with backfill and automatic query routing, SESSION/STATE_WINDOW grouping, compression-ratio reporting, NativeAOT support with multi-RID CI (win-x64/linux-x64/linux-arm64/loongarch64) |
 
 ## Positioning
 
