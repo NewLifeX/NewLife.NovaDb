@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Data;
 using System.Data.Common;
+using System.Linq;
 using NewLife.NovaDb.Client;
 using Xunit;
 
@@ -511,6 +512,71 @@ public class NovaDataReaderTests
 
         reader.SetColumns("X", "Y", "Z");
         Assert.Equal(3, reader.FieldCount);
+    }
+
+    #endregion
+
+    #region GetSchemaTable
+
+    [Fact(DisplayName = "Reader-GetSchemaTable按列返回架构信息")]
+    public void GetSchemaTable_ReturnsColumnMetadata()
+    {
+        var reader = CreateTestReader();
+
+        var table = reader.GetSchemaTable();
+
+        Assert.Equal(5, table.Rows.Count);
+        Assert.Equal(new[] { "Id", "Name", "Age", "Score", "Active" }, table.Rows.Cast<DataRow>().Select(r => r[SchemaTableColumn.ColumnName] as String));
+        Assert.Equal(new[] { 0, 1, 2, 3, 4 }, table.Rows.Cast<DataRow>().Select(r => Convert.ToInt32(r[SchemaTableColumn.ColumnOrdinal])));
+
+        // 列类型按首个非空值推断
+        var types = table.Rows.Cast<DataRow>().Select(r => r[SchemaTableColumn.DataType] as Type).ToArray();
+        Assert.Equal(new[] { typeof(Int32), typeof(String), typeof(Int32), typeof(Double), typeof(Boolean) }, types);
+
+        // 只读结果集，可空，基列名与列名一致
+        foreach (DataRow row in table.Rows)
+        {
+            Assert.True((Boolean)row[SchemaTableColumn.AllowDBNull]);
+            Assert.True((Boolean)row[SchemaTableOptionalColumn.IsReadOnly]);
+            Assert.False((Boolean)row[SchemaTableColumn.IsKey]);
+            Assert.Equal(row[SchemaTableColumn.ColumnName], row[SchemaTableColumn.BaseColumnName]);
+        }
+    }
+
+    [Fact(DisplayName = "Reader-GetSchemaTable全空列类型为Object")]
+    public void GetSchemaTable_AllNullColumn_UsesObject()
+    {
+        var reader = new NovaDataReader();
+        reader.SetColumns("A");
+        reader.AddRow([null]);
+        reader.AddRow([null]);
+
+        var table = reader.GetSchemaTable();
+
+        var row = Assert.Single(table.Rows.Cast<DataRow>());
+        Assert.Equal(typeof(Object), row[SchemaTableColumn.DataType]);
+        Assert.Equal(-1, Convert.ToInt32(row[SchemaTableColumn.ColumnSize]));
+    }
+
+    [Fact(DisplayName = "Reader-GetSchemaTable空结果集仍返回列架构")]
+    public void GetSchemaTable_NoRows_ReturnsColumns()
+    {
+        var reader = new NovaDataReader();
+        reader.SetColumns("Id", "Name");
+
+        var table = reader.GetSchemaTable();
+
+        Assert.Equal(2, table.Rows.Count);
+        Assert.All(table.Rows.Cast<DataRow>(), r => Assert.Equal(typeof(Object), r[SchemaTableColumn.DataType]));
+    }
+
+    [Fact(DisplayName = "Reader-GetSchemaTable关闭后抛异常")]
+    public void GetSchemaTable_Closed_Throws()
+    {
+        var reader = CreateTestReader();
+        reader.Close();
+
+        Assert.Throws<InvalidOperationException>(() => reader.GetSchemaTable());
     }
 
     #endregion

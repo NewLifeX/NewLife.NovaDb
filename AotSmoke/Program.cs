@@ -80,6 +80,15 @@ Run("嵌入式 ADO.NET DDL/DML/分页查询", () =>
         if (reader.GetString(0) != "Dora") throw new Exception($"分页首行为 {reader.GetString(0)}，应为 Dora");
     }
 
+    // 架构表（ADO.NET GetSchemaTable）在 AOT 下可用，DataType 列为运行时类型元数据
+    cmd.CommandText = "SELECT id, name FROM smoke_users";
+    using (var reader = cmd.ExecuteReader())
+    {
+        var schema = reader.GetSchemaTable() ?? throw new Exception("架构表为 null");
+        if (schema.Rows.Count != 2) throw new Exception($"架构表行数为 {schema.Rows.Count}");
+        if (schema.Rows[0][System.Data.Common.SchemaTableColumn.ColumnName] as String != "id") throw new Exception("架构表首列名不符");
+    }
+
     cmd.CommandText = "SELECT COUNT(*) FROM smoke_users";
     if (Convert.ToInt32(cmd.ExecuteScalar()) != 5) throw new Exception("COUNT 不为 5");
 

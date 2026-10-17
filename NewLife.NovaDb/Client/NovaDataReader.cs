@@ -236,5 +236,69 @@ public class NovaDataReader : DbDataReader
     public override IEnumerator GetEnumerator() => new DbEnumerator(this);
 
     /// <summary>获取架构表</summary>
-    public override DataTable GetSchemaTable() => throw new NotImplementedException();
+    /// <remarks>
+    /// 按 ADO.NET 约定返回列的架构描述，供 <see cref="DbDataAdapter"/>、ORM 等按标准列名（ColumnName/ColumnOrdinal/DataType 等）读取。
+    /// NovaDb 结果集的列类型按首个非空值推断，未取到值时为 <see cref="Object"/>。
+    /// </remarks>
+    /// <returns>架构表，每个结果列一行</returns>
+    // DataType 列按 ADO.NET 约定存放运行时类型；不对类型成员做反射访问，裁剪器无法静态保证其成员可用
+    [UnconditionalSuppressMessage("Trimming", "IL2111", Justification = "架构表仅记录列的数据类型元数据，不对类型成员做反射访问")]
+    public override DataTable GetSchemaTable()
+    {
+        if (_isClosed) throw new InvalidOperationException("Reader is closed");
+
+        var table = new DataTable("SchemaTable");
+
+        var columnName = table.Columns.Add(SchemaTableColumn.ColumnName, typeof(String));
+        var columnOrdinal = table.Columns.Add(SchemaTableColumn.ColumnOrdinal, typeof(Int32));
+        var columnSize = table.Columns.Add(SchemaTableColumn.ColumnSize, typeof(Int32));
+        var numericPrecision = table.Columns.Add(SchemaTableColumn.NumericPrecision, typeof(Int16));
+        var numericScale = table.Columns.Add(SchemaTableColumn.NumericScale, typeof(Int16));
+        var dataType = table.Columns.Add(SchemaTableColumn.DataType, typeof(Type));
+        var isLong = table.Columns.Add(SchemaTableColumn.IsLong, typeof(Boolean));
+        var allowDBNull = table.Columns.Add(SchemaTableColumn.AllowDBNull, typeof(Boolean));
+        var isReadOnly = table.Columns.Add(SchemaTableOptionalColumn.IsReadOnly, typeof(Boolean));
+        var isRowVersion = table.Columns.Add(SchemaTableOptionalColumn.IsRowVersion, typeof(Boolean));
+        var isUnique = table.Columns.Add(SchemaTableColumn.IsUnique, typeof(Boolean));
+        var isKey = table.Columns.Add(SchemaTableColumn.IsKey, typeof(Boolean));
+        var isAutoIncrement = table.Columns.Add(SchemaTableOptionalColumn.IsAutoIncrement, typeof(Boolean));
+        var baseTableName = table.Columns.Add(SchemaTableColumn.BaseTableName, typeof(String));
+        var baseColumnName = table.Columns.Add(SchemaTableColumn.BaseColumnName, typeof(String));
+
+        for (var i = 0; i < _columnNames.Count; i++)
+        {
+            var row = table.NewRow();
+            row[columnName] = _columnNames[i];
+            row[columnOrdinal] = i;
+            row[columnSize] = -1;
+            row[numericPrecision] = DBNull.Value;
+            row[numericScale] = DBNull.Value;
+            row[dataType] = ResolveColumnType(i);
+            row[isLong] = false;
+            row[allowDBNull] = true;
+            row[isReadOnly] = true;
+            row[isRowVersion] = false;
+            row[isUnique] = false;
+            row[isKey] = false;
+            row[isAutoIncrement] = false;
+            row[baseTableName] = String.Empty;
+            row[baseColumnName] = _columnNames[i];
+            table.Rows.Add(row);
+        }
+
+        return table;
+    }
+
+    /// <summary>按首个非空值推断列类型，全部为空时返回 <see cref="Object"/></summary>
+    /// <param name="ordinal">列索引</param>
+    /// <returns>列类型</returns>
+    private Type ResolveColumnType(Int32 ordinal)
+    {
+        foreach (var row in _rows)
+        {
+            if (ordinal >= 0 && ordinal < row.Length && row[ordinal] != null) return row[ordinal]!.GetType();
+        }
+
+        return typeof(Object);
+    }
 }
