@@ -92,16 +92,17 @@ jobs:
         path: TestResults/*.trx
         if-no-files-found: ignore
 
-  # Linux LoongArch64（LA64，必选门禁）：GitHub 无 LA64 runner/runtime pack，
+  # Linux LoongArch64（LA64，QEMU）：GitHub 无 LA64 runner/runtime pack，
   # 采用 docker + QEMU 用户态仿真（loong64 binfmt）+ 龙芯 SDK 在 loong64 容器内跑 net10.0 全量单测。
   # 基础镜像 lcr.loongnix.cn/debian:14-slim 为 Debian unstable loong64 端口，自带 loader 与可用 apt；
   # 容器内补装 libicu/libssl，使全球化/加密用例与其它 Linux job 行为一致。
   # vstest 不可用（龙芯 SDK 版不认识 LoongArch64 架构、宿主版是 x64 R2R 无法加载），改自宿主 xunit 执行器。
-  # QEMU 下时长以实测为准，job 限时 300 分钟、容器内 timeout 兜底。
+  # 非阻塞门禁：QEMU 仿真与第三方龙芯 SDK 均不受本仓库控制，失败不阻断合入，仅作兼容性参考。
   loongarch64:
     name: test (linux-la64 qemu)
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    continue-on-error: true
 
     steps:
     - uses: actions/checkout@v4

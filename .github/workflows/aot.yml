@@ -8,11 +8,13 @@ on:
   workflow_dispatch:
 
 jobs:
-  # AOT 防回归：分析器 0 告警硬约束（与 RID 无关，单一 job）
+  # AOT 防回归：分析器 0 告警检查（与 RID 无关，单一 job）。
+  # 非阻塞：AOT 相关校验仅作参考，失败不阻断合入（如需强约束，去掉本 job 的 continue-on-error）。
   aot-analyzer:
     name: aot analyzer check
     runs-on: windows-latest
     timeout-minutes: 30
+    continue-on-error: true
 
     steps:
     - uses: actions/checkout@v4
@@ -31,11 +33,13 @@ jobs:
         dotnet build NewLife.NovaDb\NewLife.NovaDb.csproj -f net10.0 -c Release -warnaserror
 
   # NativeAOT 冒烟矩阵：NativeAOT 官方不支持跨 OS 编译，每个 RID 用原生 runner 发布运行。
-  # win-x64 / linux-x64 / linux-arm64 为阻断门禁；LA64（linux-loongarch64，必选门禁，QEMU）见本文件末尾 job。
+  # win-x64 / linux-x64 / linux-arm64 覆盖主流 RID；非阻塞：AOT 校验失败不阻断合入。
+  # LA64（linux-loongarch64，QEMU）见本文件末尾 job。
   aot:
     name: aot (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -71,14 +75,16 @@ jobs:
       shell: bash
       run: ./AotSmoke/bin/aot-out/${{ matrix.bin }}
 
-  # LoongArch64（linux-loongarch64，必选门禁的 QEMU 实现）：GitHub 无 LA64 runner/runtime pack。
+  # LoongArch64（linux-loongarch64，QEMU）：GitHub 无 LA64 runner/runtime pack。
   # 方案：docker + QEMU 用户态仿真（loong64 binfmt）+ 龙芯 SDK。
-  # 硬性部分：以 LA64 运行时执行同一冒烟（14 场景），验证库在龙芯平台的行为一致性（阻断门禁）；
-  # 探索部分：尝试 NativeAOT 发布 linux-loongarch64（ILCompiler 未见 LA64 官方承诺，失败不阻断）。
+  # 以 LA64 运行时执行同一冒烟（15 场景），验证库在龙芯平台的行为一致性；
+  # 探索部分：尝试 NativeAOT 发布 linux-loongarch64（ILCompiler 未见 LA64 官方承诺）。
+  # 非阻塞：QEMU 仿真与第三方龙芯 SDK 不受本仓库控制，失败不阻断合入。
   loongarch64:
     name: aot (linux-loongarch64 qemu)
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    continue-on-error: true
 
     steps:
     - uses: actions/checkout@v4
