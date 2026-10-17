@@ -261,6 +261,10 @@ public class NovaCacheNetworkIntegrationTests : IClassFixture<IntegrationServerF
     [Fact(DisplayName = "网络缓存-批量操作吞吐量超过100000ops")]
     public void TestBatchThroughputExceeds100K()
     {
+        // 仿真环境下（如 LA64 QEMU）指令吞吐只有真机的几十分之一，阈值断言无参考意义；
+        // 该断言由 win-x64/linux-x64/linux-arm64 真机作业覆盖，此处直接跳过
+        if (TestDataHelper.PerfTestsDisabled) return;
+
         using var cache = CreateNetworkCache();
 
         // 准备批量数据：每批 1000 条，每条 64 字节

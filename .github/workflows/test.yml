@@ -203,6 +203,7 @@ jobs:
       # DOTNET_EnableWriteXorExecute=0：QEMU 用户态对 W^X 双映射支持不完整，实测在表达式树动态方法
       # （NewLife.Reflection 成员访问器）上触发 AccessViolationException 并 core dump，关闭 W^X 规避；
       # DOTNET_TieredPGO=0：仿真环境下分层 PGO 插桩同样易产出异常代码，关闭后只用一次编译；
+      # NOVADB_SKIP_PERF=1：QEMU 单核仿真下吞吐量只有真机几十分之一，跳过性能类断言（真机作业仍校验）；
       # 自宿主执行器连同其依赖复制进测试输出目录，保证 AppContext.BaseDirectory 与 VSTest 一致；
       # QEMU 下核数少且慢，写入 xunit.runner.json 压并行到 2，降低动态方法并发生成与内存压力
       env:
@@ -219,6 +220,7 @@ jobs:
           -e DOTNET_EnableHWIntrinsic=0 \
           -e DOTNET_EnableWriteXorExecute=0 \
           -e DOTNET_TieredPGO=0 \
+          -e NOVADB_SKIP_PERF=1 \
           lcr.loongnix.cn/debian:14-slim \
           sh -c '
             set -e

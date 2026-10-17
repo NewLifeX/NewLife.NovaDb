@@ -11,4 +11,8 @@ internal static class TestDataHelper
     /// <param name="name">子目录名，如 RelationalDb、KvDb、QueueDb、FluxDb</param>
     /// <returns>数据目录完整路径（位于测试输出目录 TestData/net{主版本}/{name}）</returns>
     public static String GetPath(String name) => Path.Combine(AppContext.BaseDirectory, "TestData", $"net{Environment.Version.Major}", name);
+
+    /// <summary>是否跳过性能类断言。仿真环境（如 LA64 QEMU 用户态仿真）指令吞吐不具备参考意义</summary>
+    /// <remarks>由 CI 的 linux-la64（QEMU）作业设置环境变量 NOVADB_SKIP_PERF=1 启用；真机作业不受影响</remarks>
+    public static Boolean PerfTestsDisabled => Environment.GetEnvironmentVariable("NOVADB_SKIP_PERF") == "1";
 }
