@@ -200,8 +200,11 @@ jobs:
     - name: Unit Tests (net10.0) in loong64 Container
       # DOTNET_EnableHWIntrinsic=0：QEMU 用户态对 LASX/LSX 指令覆盖不全，JIT 动态桩实测触发
       # Illegal instruction（ExecutionEngineException），关闭硬件内建以强制基线指令；
+      # DOTNET_EnableWriteXorExecute=0：QEMU 用户态对 W^X 双映射支持不完整，实测在表达式树动态方法
+      # （NewLife.Reflection 成员访问器）上触发 AccessViolationException 并 core dump，关闭 W^X 规避；
+      # DOTNET_TieredPGO=0：仿真环境下分层 PGO 插桩同样易产出异常代码，关闭后只用一次编译；
       # 自宿主执行器连同其依赖复制进测试输出目录，保证 AppContext.BaseDirectory 与 VSTest 一致；
-      # QEMU 下核数少且慢，写入 xunit.runner.json 压并行到 4，避免过度订阅导致时序用例失真
+      # QEMU 下核数少且慢，写入 xunit.runner.json 压并行到 2，降低动态方法并发生成与内存压力
       env:
         DOTNET_CLI_TELEMETRY_OPTOUT: 1
       run: |
@@ -214,6 +217,8 @@ jobs:
           -e DOTNET_ROOT=/opt/dotnet \
           -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
           -e DOTNET_EnableHWIntrinsic=0 \
+          -e DOTNET_EnableWriteXorExecute=0 \
+          -e DOTNET_TieredPGO=0 \
           lcr.loongnix.cn/debian:14-slim \
           sh -c '
             set -e
@@ -222,6 +227,6 @@ jobs:
             /opt/dotnet/dotnet --info
             cd /src/Bin/UnitTest/net10.0
             cp /opt/selfhost/* .
-            printf "{ \"maxParallelThreads\": 4 }" > xunit.runner.json
+            printf "{ \"maxParallelThreads\": 2 }" > xunit.runner.json
             timeout 240m /opt/dotnet/dotnet ./xr.dll ./XUnitTest.dll
           '
