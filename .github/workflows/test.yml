@@ -15,9 +15,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Setup dotNET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         # 解决方案多目标 net45~net10，net45/net461 由 SDK 自动引用参考程序集包
         dotnet-version: |
@@ -74,9 +74,9 @@ jobs:
             dotnet: 10.x
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Setup dotNET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: ${{ matrix.dotnet }}
         cache: true
@@ -86,7 +86,7 @@ jobs:
       run: dotnet test XUnitTest/XUnitTest.csproj -f ${{ matrix.framework }} -c Release --blame-hang-timeout 15m --blame-hang-dump-type mini --logger "trx;LogFileName=${{ matrix.name }}.trx" --results-directory TestResults
     - name: Upload Test Results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: test-results-${{ matrix.name }}
         path: TestResults/*.trx
@@ -105,13 +105,13 @@ jobs:
     continue-on-error: true
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Setup dotNET (host, for restore)
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.x
     - name: Set up QEMU (loong64)
-      uses: docker/setup-qemu-action@v3
+      uses: docker/setup-qemu-action@v4
       with:
         platforms: loong64
     - name: Download Loongson .NET SDK (linux-loongarch64)
