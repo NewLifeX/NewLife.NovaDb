@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO;
+using NewLife;
 
 namespace NewLife.NovaDb.Core;
 
@@ -100,7 +101,7 @@ public static class Lz4Codec
         if (outputLength < 0) throw new ArgumentOutOfRangeException(nameof(outputLength));
         if (outputLength == 0)
         {
-            if (source.Length != 0) throw new InvalidDataException("LZ4 数据与原始长度不匹配");
+            if (source.Length != 0) throw new InvalidDataException(L.T("LZ4 data does not match the original length."));
             return [];
         }
 
@@ -118,7 +119,7 @@ public static class Lz4Codec
                 Int32 b;
                 do
                 {
-                    if (sp >= source.Length) throw new InvalidDataException("LZ4 字面量长度越界");
+                    if (sp >= source.Length) throw new InvalidDataException(L.T("LZ4 literal length is out of bounds."));
                     b = source[sp++];
                     literalLen += b;
                 }
@@ -127,7 +128,7 @@ public static class Lz4Codec
 
             if (literalLen > 0)
             {
-                if (sp + literalLen > source.Length || dp + literalLen > outputLength) throw new InvalidDataException("LZ4 字面量越界");
+                if (sp + literalLen > source.Length || dp + literalLen > outputLength) throw new InvalidDataException(L.T("LZ4 literal is out of bounds."));
                 source.Slice(sp, literalLen).CopyTo(dst.AsSpan(dp));
                 sp += literalLen;
                 dp += literalLen;

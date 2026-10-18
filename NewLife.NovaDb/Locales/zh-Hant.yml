@@ -1,0 +1,13 @@
+# 繁體中文譯文。鍵為英文源文，缺失時執行期回退英文。
+"The queue feature requires FluxEngine.": "隊列功能需要設置 FluxEngine"
+"NovaCacheProvider has not been initialized.": "NovaCacheProvider 未初始化"
+"The connection has not been set.": "連接未設置"
+"There are no commands to execute.": "沒有命令需要執行"
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "網絡模式下隊列功能尚在開發中，請使用嵌入模式或 ADO.NET SQL 操作"
+"Embedded mode requires a DataSource.": "嵌入模式需要指定 DataSource"
+"The connection string does not specify Server.": "連接字符串中未指定 Server"
+"The node role must be Master.": "節點角色必須為 Master"
+"Only a slave role can be registered.": "只能註冊從節點角色"
+"LZ4 data does not match the original length.": "LZ4 數據與原始長度不匹配"
+"LZ4 literal length is out of bounds.": "LZ4 字面量長度越界"
+"LZ4 literal is out of bounds.": "LZ4 字面量越界"

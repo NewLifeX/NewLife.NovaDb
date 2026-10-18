@@ -2,6 +2,7 @@
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.WAL;
 using NewLife.Remoting;
+using NewLife;
 
 namespace NewLife.NovaDb.Cluster;
 
@@ -88,7 +89,7 @@ public class ReplicationManager : IDisposable
         _walPath = walPath ?? throw new ArgumentNullException(nameof(walPath));
         if (masterInfo == null) throw new ArgumentNullException(nameof(masterInfo));
         if (masterInfo.Role != NodeRole.Master)
-            throw new NovaException(ErrorCode.NotMaster, "节点角色必须为 Master");
+            throw new NovaException(ErrorCode.NotMaster, L.T("The node role must be Master."));
 
         MasterInfo = masterInfo;
         MasterInfo.State = NodeState.Online;
@@ -101,7 +102,7 @@ public class ReplicationManager : IDisposable
     {
         if (slave == null) throw new ArgumentNullException(nameof(slave));
         if (slave.Role != NodeRole.Slave)
-            throw new NovaException(ErrorCode.ReplicationError, "只能注册从节点角色");
+            throw new NovaException(ErrorCode.ReplicationError, L.T("Only a slave role can be registered."));
 
         lock (_lock)
         {

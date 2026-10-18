@@ -1,6 +1,7 @@
 ﻿#if NET6_0_OR_GREATER
 using System.Data;
 using System.Data.Common;
+using NewLife;
 
 namespace NewLife.NovaDb.Client;
 
@@ -229,8 +230,8 @@ public class NovaBatch : DbBatch
     /// <summary>校验连接和命令有效性</summary>
     private void EnsureValid()
     {
-        if (_connection == null) throw new InvalidOperationException("连接未设置");
-        if (_commands.Count == 0) throw new InvalidOperationException("没有命令需要执行");
+        if (_connection == null) throw new InvalidOperationException(L.T("The connection has not been set."));
+        if (_commands.Count == 0) throw new InvalidOperationException(L.T("There are no commands to execute."));
     }
 
     /// <summary>将多条命令拼接为分号分隔的多语句 SQL</summary>

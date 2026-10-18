@@ -7,6 +7,7 @@ using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Engine.Flux;
 using NewLife.NovaDb.Engine.KV;
 using NewLife.NovaDb.Queues;
+using NewLife;
 
 namespace NewLife.NovaDb.Caching;
 
@@ -359,7 +360,7 @@ public class NovaCache : Cache
     public override IProducerConsumer<T> GetQueue<T>(String key)
     {
         if (_fluxEngine == null)
-            throw new NotSupportedException("队列功能需要设置 FluxEngine");
+            throw new NotSupportedException(L.T("The queue feature requires FluxEngine."));
 
         return new NovaQueue<T>(_fluxEngine, key);
     }

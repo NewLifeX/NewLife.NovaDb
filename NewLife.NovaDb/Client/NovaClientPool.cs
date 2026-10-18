@@ -2,6 +2,7 @@
 using System.Threading;
 using NewLife.Collections;
 using NewLife.Log;
+using NewLife;
 
 namespace NewLife.NovaDb.Client;
 
@@ -18,7 +19,7 @@ public class NovaClientPool : ObjectPool<NovaClient>
         var set = Setting ?? throw new ArgumentNullException(nameof(Setting));
         var server = set.Server;
         var port = set.Port;
-        if (String.IsNullOrEmpty(server)) throw new InvalidOperationException("连接字符串中未指定 Server");
+        if (String.IsNullOrEmpty(server)) throw new InvalidOperationException(L.T("The connection string does not specify Server."));
 
         // 传递默认数据库名，服务器据此进行多库路由
         return new NovaClient($"tcp://{server}:{port}") { Database = set.Database };

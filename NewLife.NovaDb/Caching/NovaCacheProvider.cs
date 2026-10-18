@@ -3,6 +3,7 @@ using NewLife.Caching;
 using NewLife.Collections;
 using NewLife.NovaDb.Client;
 using NewLife.NovaDb.Queues;
+using NewLife;
 
 namespace NewLife.NovaDb.Caching;
 
@@ -88,7 +89,7 @@ public class NovaCacheProvider : CacheProvider, IDisposable
             // 子缓存共享主客户端，不拥有生命周期（由本 Provider 统一管理）
             return new NovaCache(_client) { Name = tableName, OwnsClient = false };
 
-        throw new InvalidOperationException("NovaCacheProvider 未初始化");
+        throw new InvalidOperationException(L.T("NovaCacheProvider has not been initialized."));
     }
 
     /// <summary>获取队列</summary>

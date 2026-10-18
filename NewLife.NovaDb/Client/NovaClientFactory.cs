@@ -7,6 +7,7 @@ using NewLife.Log;
 using NewLife.NovaDb.Caching;
 using NewLife.NovaDb.Queues;
 using NewLife.NovaDb.Vector;
+using NewLife;
 
 namespace NewLife.NovaDb.Client;
 
@@ -173,7 +174,7 @@ public sealed class NovaClientFactory : DbProviderFactory
         else
         {
             // 网络模式下暂使用本地桥接，后续由服务端 MQ 协议支持
-            throw new NotSupportedException("网络模式下队列功能尚在开发中，请使用嵌入模式或 ADO.NET SQL 操作");
+            throw new NotSupportedException(L.T("The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations."));
         }
     }
 
@@ -214,7 +215,7 @@ public sealed class NovaClientFactory : DbProviderFactory
     {
         var dataSource = csb.DataSource;
         if (String.IsNullOrEmpty(dataSource))
-            throw new InvalidOperationException("嵌入模式需要指定 DataSource");
+            throw new InvalidOperationException(L.T("Embedded mode requires a DataSource."));
 
         // 标准化路径作为缓存键
         var fullPath = Path.GetFullPath(dataSource);
