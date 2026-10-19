@@ -12,8 +12,9 @@ public class NovaClientPool : ObjectPool<NovaClient>
     /// <summary>连接字符串设置</summary>
     public NovaConnectionStringBuilder? Setting { get; set; }
 
-    /// <summary>创建连接</summary>
-    /// <returns>新的 NovaClient 实例</returns>
+    /// <summary>创建并打开连接。连接失败时抛出异常，由基类释放槽位后向上传播；
+    /// 不能在 OnGet 中吞掉异常，否则基类会把失败项当作可回收项并无限重试</summary>
+    /// <returns>已连接的 NovaClient 实例</returns>
     protected override NovaClient OnCreate()
     {
         var set = Setting ?? throw new ArgumentNullException(nameof(Setting));
@@ -21,28 +22,30 @@ public class NovaClientPool : ObjectPool<NovaClient>
         var port = set.Port;
         if (String.IsNullOrEmpty(server)) throw new InvalidOperationException(L.T("The connection string does not specify Server."));
 
-        // 传递默认数据库名，服务器据此进行多库路由
-        return new NovaClient($"tcp://{server}:{port}") { Database = set.Database };
-    }
+        // 传递默认数据库名，服务器据此进行多库路由；连接超时按秒配置，客户端内部使用毫秒
+        var client = new NovaClient($"tcp://{server}:{port}")
+        {
+            Database = set.Database,
+            Timeout = set.ConnectionTimeout > 0 ? set.ConnectionTimeout * 1000 : 15_000,
+        };
 
-    /// <summary>借出时健康检查。新连接或空闲连接被取出时调用，确保连接可用</summary>
-    /// <param name="value">NovaClient 实例</param>
-    /// <returns>可用返回 true，不可用则基类自动销毁并重试</returns>
-    protected override Boolean OnGet(NovaClient value)
-    {
-        if (value.IsConnected) return true;
-
-        // 未连接（新创建或空闲断开），尝试打开
         try
         {
-            value.Open();
-            return true;
+            client.Open();
         }
         catch
         {
-            return false;
+            client.TryDispose();
+            throw;
         }
+
+        return client;
     }
+
+    /// <summary>借出时健康检查。仅保留健康连接，断开连接由基类销毁后重新创建</summary>
+    /// <param name="value">NovaClient 实例</param>
+    /// <returns>可用返回 true，不可用则基类自动销毁并重试</returns>
+    protected override Boolean OnGet(NovaClient value) => value.IsConnected;
 
     /// <summary>归还时校验。连接归还到池时调用，仅健康的连接才允许入池</summary>
     /// <param name="value">NovaClient 实例</param>

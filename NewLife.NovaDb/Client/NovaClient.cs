@@ -18,6 +18,9 @@ public class NovaClient : DisposeBase
     /// <summary>默认数据库名。随每个 RPC 请求传递给服务器，实现多库路由</summary>
     public String? Database { get; set; }
 
+    /// <summary>连接与请求超时（毫秒），默认15000ms。避免服务端不可达或协议不匹配时无限等待</summary>
+    public Int32 Timeout { get; set; } = 15_000;
+
     /// <summary>是否已连接</summary>
     public Boolean IsConnected => _client?.Active ?? false;
 
@@ -41,11 +44,20 @@ public class NovaClient : DisposeBase
     {
         if (_client != null && _client.Active) return;
 
-        var client = new ApiClient(ServerUri);
-        client.Open();
-        _client = client;
+        var client = new ApiClient(ServerUri) { Timeout = Timeout };
+        try
+        {
+            client.Open();
+            _client = client;
 
-        VerifyVersion();
+            VerifyVersion();
+        }
+        catch
+        {
+            _client = null;
+            client.TryDispose();
+            throw;
+        }
     }
 
     /// <summary>校验协议版本。连接时与服务端交换版本，跨主版本不兼容则拒绝</summary>

@@ -1,4 +1,10 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 using NewLife;
 using NewLife.Collections;
 using NewLife.NovaDb.Client;
@@ -9,6 +15,84 @@ namespace XUnitTest.Client;
 /// <summary>NovaDb 连接池单元测试</summary>
 public class NovaClientPoolTests
 {
+    /// <summary>启动只接受连接、不应答的 TCP 服务端，模拟连接到非 NovaDb 服务（如 MySQL）的场景</summary>
+    private static (TcpListener Listener, CancellationTokenSource Cts, List<TcpClient> Clients, Task AcceptTask) StartSilentServer()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+
+        var cts = new CancellationTokenSource();
+        var clients = new List<TcpClient>();
+        var acceptTask = Task.Run(async () =>
+        {
+            try
+            {
+                while (!cts.IsCancellationRequested)
+                {
+                    var client = await listener.AcceptTcpClientAsync(cts.Token).ConfigureAwait(false);
+                    lock (clients) clients.Add(client);
+                }
+            }
+            catch
+            {
+                // 监听停止或取消时结束
+            }
+        });
+
+        return (listener, cts, clients, acceptTask);
+    }
+
+    [Fact(DisplayName = "连接池-服务端不应答时有界失败且不无限重试")]
+    public void Get_SilentServer_ThrowsInsteadOfHanging()
+    {
+        var (listener, cts, clients, _) = StartSilentServer();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        try
+        {
+            var setting = new NovaConnectionStringBuilder($"Server=127.0.0.1;Port={port};ConnectionTimeout=1");
+            using var pool = new NovaClientPool { Setting = setting, Max = 2, WaitTimeout = TimeSpan.FromSeconds(10) };
+
+            var sw = Stopwatch.StartNew();
+            Assert.ThrowsAny<Exception>(() => pool.Get());
+            sw.Stop();
+
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(10), $"连接失败耗时过长：{sw.Elapsed}");
+        }
+        finally
+        {
+            cts.Cancel();
+            listener.Stop();
+            lock (clients)
+            {
+                foreach (var client in clients) client.Dispose();
+            }
+        }
+    }
+
+    [Fact(DisplayName = "连接-打开失败后状态回到Closed")]
+    public void Open_SilentServer_StateClosed()
+    {
+        var (listener, cts, clients, _) = StartSilentServer();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        try
+        {
+            using var conn = new NovaConnection($"Server=127.0.0.1;Port={port};ConnectionTimeout=1");
+            Assert.ThrowsAny<Exception>(() => conn.Open());
+            Assert.Equal(System.Data.ConnectionState.Closed, conn.State);
+        }
+        finally
+        {
+            cts.Cancel();
+            listener.Stop();
+            lock (clients)
+            {
+                foreach (var client in clients) client.Dispose();
+            }
+        }
+    }
+
     [Fact(DisplayName = "连接池-创建池实例")]
     public void CreatePool()
     {

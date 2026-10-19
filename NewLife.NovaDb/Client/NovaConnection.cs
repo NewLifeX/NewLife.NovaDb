@@ -84,37 +84,49 @@ public class NovaConnection : DbConnection
 
         _state = ConnectionState.Connecting;
 
-        if (IsEmbedded)
+        try
         {
-            var dataSource = Setting.DataSource;
-            if (!dataSource.IsNullOrEmpty())
+            if (IsEmbedded)
             {
-                // 共享 SqlEngine：同一进程内同一数据库路径只创建一次，避免连接关闭时丢失表元数据
-                var key = Path.GetFullPath(dataSource);
-                _sqlEngine = _sharedEngines.GetOrAdd(key, p =>
+                var dataSource = Setting.DataSource;
+                if (!dataSource.IsNullOrEmpty())
                 {
-                    var options = new DbOptions
+                    // 共享 SqlEngine：同一进程内同一数据库路径只创建一次，避免连接关闭时丢失表元数据
+                    var key = Path.GetFullPath(dataSource);
+                    _sqlEngine = _sharedEngines.GetOrAdd(key, p =>
                     {
-                        Path = p,
-                        WalMode = Setting.WalMode,
-                        ReadOnly = Setting.ReadOnly
-                    };
-                    return new SqlEngine(p, options);
-                });
+                        var options = new DbOptions
+                        {
+                            Path = p,
+                            WalMode = Setting.WalMode,
+                            ReadOnly = Setting.ReadOnly
+                        };
+                        return new SqlEngine(p, options);
+                    });
 
-                // 嵌入模式与消息队列共用 Flux 引擎，供 _sys.flux_compression 报告压缩率
-                _sqlEngine.FluxProvider = () => Factory.GetOrCreateEmbeddedDatabase(Setting).ExistingFluxEngine;
+                    // 嵌入模式与消息队列共用 Flux 引擎，供 _sys.flux_compression 报告压缩率
+                    _sqlEngine.FluxProvider = () => Factory.GetOrCreateEmbeddedDatabase(Setting).ExistingFluxEngine;
+                }
             }
-        }
-        else
-        {
-            // 从连接池获取客户端
-            var pool = Factory.PoolManager.GetPool(Setting);
-            _client = pool.Get();
-            _fromPool = true;
-        }
+            else
+            {
+                // 从连接池获取客户端
+                var pool = Factory.PoolManager.GetPool(Setting);
+                _client = pool.Get();
+                _fromPool = true;
+            }
 
-        _state = ConnectionState.Open;
+            _state = ConnectionState.Open;
+        }
+        catch
+        {
+            // 连接建立失败时恢复初始状态，避免后续误判为打开或连接中
+            _client = null;
+            _fromPool = false;
+            _sqlEngine = null;
+            _state = ConnectionState.Closed;
+            throw;
+        }
     }
 
     /// <summary>关闭连接</summary>
