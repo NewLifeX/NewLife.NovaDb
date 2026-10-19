@@ -1,0 +1,13 @@
+# Русский 词表（ru）。键为英文源文，与源码字符串逐字一致；缺少的键运行时回退英文。
+"The queue feature requires FluxEngine.": "Функция очереди требует FluxEngine."
+"NovaCacheProvider has not been initialized.": "NovaCacheProvider не инициализирован."
+"The connection has not been set.": "Соединение не задано."
+"There are no commands to execute.": "Нет команд для выполнения."
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "Функция очереди в сетевом режиме всё ещё в разработке; используйте встроенный режим или операции SQL через ADO.NET."
+"Embedded mode requires a DataSource.": "Встроенный режим требует DataSource."
+"The connection string does not specify Server.": "В строке подключения не указан Server."
+"The node role must be Master.": "Роль узла должна быть Master."
+"Only a slave role can be registered.": "Регистрировать можно только роль slave."
+"LZ4 data does not match the original length.": "Данные LZ4 не соответствуют исходной длине."
+"LZ4 literal length is out of bounds.": "Длина литерала LZ4 выходит за допустимые границы."
+"LZ4 literal is out of bounds.": "Литерал LZ4 выходит за допустимые границы."

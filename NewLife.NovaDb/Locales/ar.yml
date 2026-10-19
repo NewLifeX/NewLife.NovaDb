@@ -1,0 +1,13 @@
+# العربية 词表（ar）。键为英文源文，与源码字符串逐字一致；缺少的键运行时回退英文。
+"The queue feature requires FluxEngine.": "تتطلب ميزة قائمة الانتظار FluxEngine."
+"NovaCacheProvider has not been initialized.": "لم يتم تهيئة NovaCacheProvider."
+"The connection has not been set.": "لم يتم تعيين الاتصال."
+"There are no commands to execute.": "لا توجد أوامر لتنفيذها."
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "لا تزال ميزة قائمة الانتظار قيد التطوير في وضع الشبكة؛ استخدم الوضع المضمّن أو عمليات SQL عبر ADO.NET."
+"Embedded mode requires a DataSource.": "يتطلب الوضع المضمّن DataSource."
+"The connection string does not specify Server.": "لا تحدد سلسلة الاتصال Server."
+"The node role must be Master.": "يجب أن تكون دور العقدة Master."
+"Only a slave role can be registered.": "يمكن تسجيل دور slave فقط."
+"LZ4 data does not match the original length.": "لا تتطابق بيانات LZ4 مع الطول الأصلي."
+"LZ4 literal length is out of bounds.": "طول LZ4 literal خارج النطاق."
+"LZ4 literal is out of bounds.": "LZ4 literal خارج النطاق."

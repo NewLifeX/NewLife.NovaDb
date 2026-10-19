@@ -1,0 +1,13 @@
+# 한국어 词表（ko）。键为英文源文，与源码字符串逐字一致；缺少的键运行时回退英文。
+"The queue feature requires FluxEngine.": "큐 기능에는 FluxEngine이 필요합니다."
+"NovaCacheProvider has not been initialized.": "NovaCacheProvider가 초기화되지 않았습니다."
+"The connection has not been set.": "연결이 설정되지 않았습니다."
+"There are no commands to execute.": "실행할 명령이 없습니다."
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "네트워크 모드에서는 큐 기능이 아직 개발 중입니다. 포함 모드 또는 ADO.NET SQL 작업을 사용하세요."
+"Embedded mode requires a DataSource.": "포함 모드에는 DataSource가 필요합니다."
+"The connection string does not specify Server.": "연결 문자열에 Server가 지정되지 않았습니다."
+"The node role must be Master.": "노드 역할은 Master여야 합니다."
+"Only a slave role can be registered.": "slave 역할만 등록할 수 있습니다."
+"LZ4 data does not match the original length.": "LZ4 데이터가 원래 길이와 일치하지 않습니다."
+"LZ4 literal length is out of bounds.": "LZ4 리터럴 길이가 범위를 벗어났습니다."
+"LZ4 literal is out of bounds.": "LZ4 리터럴이 범위를 벗어났습니다."

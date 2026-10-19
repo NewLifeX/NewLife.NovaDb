@@ -1,0 +1,13 @@
+# Deutsch 词表（de）。键为英文源文，与源码字符串逐字一致；缺少的键运行时回退英文。
+"The queue feature requires FluxEngine.": "Die Warteschlangenfunktion erfordert FluxEngine."
+"NovaCacheProvider has not been initialized.": "NovaCacheProvider wurde nicht initialisiert."
+"The connection has not been set.": "Die Verbindung wurde nicht festgelegt."
+"There are no commands to execute.": "Es sind keine Befehle auszuführen."
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "Die Warteschlangenfunktion befindet sich im Netzwerkmodus noch in der Entwicklung; verwenden Sie den eingebetteten Modus oder ADO.NET-SQL-Vorgänge."
+"Embedded mode requires a DataSource.": "Der eingebettete Modus erfordert eine DataSource."
+"The connection string does not specify Server.": "Die Verbindungszeichenfolge gibt keinen Server an."
+"The node role must be Master.": "Die Knotenrolle muss Master sein."
+"Only a slave role can be registered.": "Nur eine Slave-Rolle kann registriert werden."
+"LZ4 data does not match the original length.": "Die LZ4-Daten stimmen nicht mit der ursprünglichen Länge überein."
+"LZ4 literal length is out of bounds.": "Die LZ4-Literal-Länge liegt außerhalb des gültigen Bereichs."
+"LZ4 literal is out of bounds.": "Das LZ4-Literal liegt außerhalb des gültigen Bereichs."

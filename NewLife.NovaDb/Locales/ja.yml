@@ -1,0 +1,13 @@
+# 日本語 词表（ja）。键为英文源文，与源码字符串逐字一致；缺少的键运行时回退英文。
+"The queue feature requires FluxEngine.": "キュー機能には FluxEngine が必要です。"
+"NovaCacheProvider has not been initialized.": "NovaCacheProvider が初期化されていません。"
+"The connection has not been set.": "接続が設定されていません。"
+"There are no commands to execute.": "実行するコマンドがありません。"
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "ネットワークモードではキュー機能はまだ開発中です。組み込みモードまたは ADO.NET SQL 操作を使用してください。"
+"Embedded mode requires a DataSource.": "組み込みモードには DataSource が必要です。"
+"The connection string does not specify Server.": "接続文字列に Server が指定されていません。"
+"The node role must be Master.": "ノードの役割は Master である必要があります。"
+"Only a slave role can be registered.": "登録できるのは slave ロールのみです。"
+"LZ4 data does not match the original length.": "LZ4 データが元の長さと一致しません。"
+"LZ4 literal length is out of bounds.": "LZ4 リテラルの長さが範囲外です。"
+"LZ4 literal is out of bounds.": "LZ4 リテラルが範囲外です。"

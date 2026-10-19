@@ -1,0 +1,13 @@
+# Español 词表（es）。键为英文源文，与源码字符串逐字一致；缺少的键运行时回退英文。
+"The queue feature requires FluxEngine.": "La función de cola requiere FluxEngine."
+"NovaCacheProvider has not been initialized.": "NovaCacheProvider no se ha inicializado."
+"The connection has not been set.": "La conexión no se ha establecido."
+"There are no commands to execute.": "No hay comandos para ejecutar."
+"The queue feature is still under development in network mode; use embedded mode or ADO.NET SQL operations.": "La función de cola aún está en desarrollo en modo de red; utilice el modo integrado o las operaciones SQL de ADO.NET."
+"Embedded mode requires a DataSource.": "El modo integrado requiere un DataSource."
+"The connection string does not specify Server.": "La cadena de conexión no especifica Server."
+"The node role must be Master.": "El rol del nodo debe ser Master."
+"Only a slave role can be registered.": "Solo se puede registrar un rol slave."
+"LZ4 data does not match the original length.": "Los datos LZ4 no coinciden con la longitud original."
+"LZ4 literal length is out of bounds.": "La longitud del literal LZ4 está fuera de los límites."
+"LZ4 literal is out of bounds.": "El literal LZ4 está fuera de los límites."
