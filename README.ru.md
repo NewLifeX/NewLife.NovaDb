@@ -11,8 +11,10 @@
 ![arch](https://img.shields.io/badge/arch-x64%20%7C%20arm64%20%7C%20loongarch64%20%7C%20riscv64%20%7C%20s390x-orange)
 [![contributors](https://img.shields.io/github/contributors/NewLifeX/NewLife.NovaDb?logo=github)](https://github.com/NewLifeX/NewLife.NovaDb/graphs/contributors)
 <!-- lang:start -->
-🌐 [中文](README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
+🌐 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
 <!-- lang:end -->
+
+> ⚠️ Этот перевод может отставать от последней версии; актуальным является [English README](README.md).
 
 Гибридная база данных среднего и большого размера, реализованная на **C#**, работающая на **платформе .NET** (поддержка .NET Framework 4.5 ~ .NET 10), поддерживающая двойной встроенный/серверный режим, интегрирующая реляционные, временные ряды, очереди сообщений и NoSQL (KV) возможности.
 

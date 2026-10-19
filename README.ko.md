@@ -11,8 +11,10 @@
 ![arch](https://img.shields.io/badge/arch-x64%20%7C%20arm64%20%7C%20loongarch64%20%7C%20riscv64%20%7C%20s390x-orange)
 [![contributors](https://img.shields.io/github/contributors/NewLifeX/NewLife.NovaDb?logo=github)](https://github.com/NewLifeX/NewLife.NovaDb/graphs/contributors)
 <!-- lang:start -->
-🌐 [中文](README.md) | [繁體中文](README.zh-TW.md) | [English](README.en.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
+🌐 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [العربية](README.ar.md)
 <!-- lang:end -->
+
+> ⚠️ 이 번역은 최신 버전보다 뒤처질 수 있으며, 기준은 [English README](README.md)입니다.
 
 **C#**로 구현되고 **.NET 플랫폼**(.NET Framework 4.5 ~ .NET 10 지원)에서 실행되는 중대형 하이브리드 데이터베이스로, 임베디드/서버 듀얼 모드를 지원하고 관계형, 시계열, 메시지 큐, NoSQL(KV) 기능을 통합합니다.
 
