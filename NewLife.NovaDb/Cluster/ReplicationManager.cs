@@ -109,7 +109,7 @@ public class ReplicationManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicationManager));
 
             if (_slaves.ContainsKey(slave.NodeId))
-                throw new NovaException(ErrorCode.ReplicationError, $"从节点 {slave.NodeId} 已注册");
+                throw new NovaException(ErrorCode.ReplicationError, "Slave node {0} is already registered.", slave.NodeId);
 
             slave.State = NodeState.Syncing;
             _slaves[slave.NodeId] = slave;
@@ -233,7 +233,7 @@ public class ReplicationManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicationManager));
 
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, "Slave node '{0}' not found", nodeId);
 
             var ackedLsn = _slavePositions[nodeId];
             var pending = new List<(WalRecord, Byte[]?)>();
@@ -263,7 +263,7 @@ public class ReplicationManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(ReplicationManager));
 
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, "Slave node '{0}' not found", nodeId);
 
             _slavePositions[nodeId] = lsn;
 
@@ -289,7 +289,7 @@ public class ReplicationManager : IDisposable
         lock (_lock)
         {
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, "Slave node '{0}' not found", nodeId);
 
             var ackedLsn = _slavePositions[nodeId];
             return _masterLsn - ackedLsn;
@@ -381,7 +381,7 @@ public class ReplicationManager : IDisposable
             }
             catch (Exception ex)
             {
-                Log?.Warn("复制推送到从节点 {0} 失败: {1}", kv.Key, ex.Message);
+                Log?.Warn("Failed to push replication to slave {0}: {1}", kv.Key, ex.Message);
 
                 // 标记从节点为离线
                 lock (_lock)
@@ -438,7 +438,7 @@ public class ReplicationManager : IDisposable
         lock (_lock)
         {
             if (!_slaves.ContainsKey(nodeId))
-                throw new NovaException(ErrorCode.NodeNotFound, $"从节点 {nodeId} 不存在");
+                throw new NovaException(ErrorCode.NodeNotFound, "Slave node '{0}' not found", nodeId);
         }
 
         // 从 Binlog 文件读取事件

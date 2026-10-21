@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using NewLife;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Utilities;
 
@@ -112,7 +113,7 @@ public class AuthManager
         lock (_lock)
         {
             if (_users.ContainsKey(userName))
-                throw new NovaException(ErrorCode.InvalidArgument, $"User '{userName}' already exists");
+                throw new NovaException(ErrorCode.InvalidArgument, "User '{0}' already exists", userName);
 
             _users[userName] = new UserInfo
             {
@@ -151,7 +152,7 @@ public class AuthManager
         lock (_lock)
         {
             if (!_users.TryGetValue(userName, out var user))
-                throw new NovaException(ErrorCode.AuthenticationFailed, $"User '{userName}' not found");
+                throw new NovaException(ErrorCode.AuthenticationFailed, "User '{0}' not found", userName);
 
             user.PasswordHash = HashPassword(newPassword);
         }
@@ -167,7 +168,7 @@ public class AuthManager
         lock (_lock)
         {
             if (!_users.TryGetValue(userName, out var user))
-                throw new NovaException(ErrorCode.AuthenticationFailed, $"User '{userName}' not found");
+                throw new NovaException(ErrorCode.AuthenticationFailed, "User '{0}' not found", userName);
 
             user.Role = role;
         }
@@ -184,7 +185,7 @@ public class AuthManager
         lock (_lock)
         {
             if (!_users.TryGetValue(userName, out var user))
-                throw new NovaException(ErrorCode.AuthenticationFailed, $"User '{userName}' not found");
+                throw new NovaException(ErrorCode.AuthenticationFailed, "User '{0}' not found", userName);
 
             if (!user.Permissions.Contains(permission, StringComparer.OrdinalIgnoreCase))
                 user.Permissions.Add(permission);
@@ -203,7 +204,7 @@ public class AuthManager
         lock (_lock)
         {
             if (!_users.TryGetValue(userName, out var user))
-                throw new NovaException(ErrorCode.AuthenticationFailed, $"User '{userName}' not found");
+                throw new NovaException(ErrorCode.AuthenticationFailed, "User '{0}' not found", userName);
 
             return user.Permissions.Remove(permission);
         }

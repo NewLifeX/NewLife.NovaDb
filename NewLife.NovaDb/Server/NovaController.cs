@@ -1,4 +1,5 @@
-﻿using NewLife.Log;
+﻿using NewLife;
+using NewLife.Log;
 using NewLife.NovaDb.Cluster;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
@@ -60,7 +61,7 @@ internal class NovaController : IApi
     /// <returns>受影响行数</returns>
     public Int32 Execute(String sql, String? txId = null, String? db = null)
     {
-        XTrace.WriteLine($"Nova.Execute[{db}]: {sql}");
+XTrace.WriteLine("Nova.Execute[{0}]: {1}", db, sql);
 
         try
         {
@@ -72,7 +73,7 @@ internal class NovaController : IApi
         }
         catch (Exception ex)
         {
-            XTrace.WriteLine($"Nova.Execute[{db}] error: {ex.Message}");
+            XTrace.WriteLine("Nova.Execute[{0}] error: {1}", db, ex.Message);
             throw;
         }
     }
@@ -84,7 +85,7 @@ internal class NovaController : IApi
     /// <returns>查询结果</returns>
     public Object? Query(String sql, String? txId = null, String? db = null)
     {
-        XTrace.WriteLine($"Nova.Query[{db}]: {sql}");
+XTrace.WriteLine("Nova.Query[{0}]: {1}", db, sql);
 
         try
         {
@@ -115,7 +116,7 @@ internal class NovaController : IApi
         }
         catch (Exception ex)
         {
-            XTrace.WriteLine($"Nova.Query[{db}] error: {ex.Message}");
+            XTrace.WriteLine("Nova.Query[{0}] error: {1}", db, ex.Message);
             throw;
         }
     }
@@ -137,7 +138,7 @@ internal class NovaController : IApi
             }
 
             // 事务不存在，返回明确错误
-            throw new NovaException(ErrorCode.TransactionError, $"Transaction '{txId}' not found");
+            throw new NovaException(ErrorCode.TransactionError, "Transaction '{0}' not found", txId);
         }
 
         return engine.Execute(sql);

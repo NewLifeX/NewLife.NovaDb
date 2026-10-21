@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
+using NewLife;
 using NewLife.Caching;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux;
@@ -154,7 +155,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
     public IEnumerable<T> Take(Int32 count = 1)
     {
         if (String.IsNullOrEmpty(Group))
-            throw new InvalidOperationException("需要先通过 SetGroup 设置消费组");
+            throw new InvalidOperationException(L.T("A consumer group must be set via SetGroup first."));
 
         var entries = ReadGroup(Group!, Consumer, count);
         return entries.Where(e => IsTopicMatch(e)).Select(e => ParseMessage(e)!);
@@ -189,7 +190,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
     public async Task<T?> TakeOneAsync(Int32 timeout, CancellationToken cancellationToken)
     {
         if (String.IsNullOrEmpty(Group))
-            throw new InvalidOperationException("需要先通过 SetGroup 设置消费组");
+            throw new InvalidOperationException(L.T("A consumer group must be set via SetGroup first."));
 
         var ts = timeout > 0 ? TimeSpan.FromSeconds(timeout) : TimeSpan.FromSeconds(BlockTime);
         var entries = await ReadGroupAsync(Group!, Consumer, 1, ts, cancellationToken).ConfigureAwait(false);
@@ -226,7 +227,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
         await Task.Yield();
 
         if (String.IsNullOrEmpty(Group))
-            throw new InvalidOperationException("需要先通过 SetGroup 设置消费组");
+            throw new InvalidOperationException(L.T("A consumer group must be set via SetGroup first."));
 
         var timeout = BlockTime;
 
@@ -328,7 +329,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, "Consumer group '{0}' not found", groupName);
 
             var allEntries = _engine.GetAllEntries();
             var result = new List<FluxEntry>();
@@ -393,7 +394,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, "Consumer group '{0}' not found", groupName);
 
             return group.Acknowledge(id);
         }
@@ -409,7 +410,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, "Consumer group '{0}' not found", groupName);
 
             return group.GetPendingEntries();
         }
@@ -528,7 +529,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, "Consumer group '{0}' not found", groupName);
 
             // 查找待确认条目中的投递次数
             var pendingEntries = group.GetPendingEntries();
@@ -654,7 +655,7 @@ public class NovaQueue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberType
         lock (_lock)
         {
             if (!_consumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, "Consumer group '{0}' not found", groupName);
 
             var pending = group.GetPendingEntries();
             toMove = pending.FindAll(p => p.DeliveryCount > MaxRetryCount || (now - p.DeliveredAt) > maxAge);

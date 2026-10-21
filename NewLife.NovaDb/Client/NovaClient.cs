@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using NewLife;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Server;
@@ -66,8 +67,8 @@ public class NovaClient : DisposeBase
         var serverVersion = _client!.InvokeAsync<Int32>("Nova/GetVersion").GetAwaiter().GetResult();
         if (serverVersion != NovaProtocol.ProtocolVersion)
             throw new NovaException(ErrorCode.ProtocolError,
-                $"Protocol version mismatch: server={serverVersion}, client={NovaProtocol.ProtocolVersion}. " +
-                "Please upgrade client or server to the same major version.");
+                "Protocol version mismatch: server={0}, client={1}. Please upgrade client or server to the same major version.",
+                serverVersion, NovaProtocol.ProtocolVersion);
     }
 
     /// <summary>关闭连接</summary>
@@ -165,7 +166,7 @@ public class NovaClient : DisposeBase
     private void EnsureOpen()
     {
         if (_client == null || !_client.Active)
-            throw new InvalidOperationException("Client is not connected. Call Open() first.");
+            throw new InvalidOperationException(L.T("Client is not connected. Call Open() first."));
     }
     #endregion
 

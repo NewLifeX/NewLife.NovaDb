@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Reflection;
 using System.Text;
+using NewLife;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Client;
@@ -286,7 +287,7 @@ internal class SchemaProvider(NovaConnection connection)
 
         var text = "NewLife.NovaDb.Client.ReservedWords.txt";
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(text) ??
-            throw new Exception($"Resource {text} not found in {Assembly.GetExecutingAssembly()}.");
+            throw new Exception(L.T("Resource {0} not found in {1}.", text, Assembly.GetExecutingAssembly()));
 
         using var streamReader = new StreamReader(stream);
         for (var line = streamReader.ReadLine(); line != null; line = streamReader.ReadLine())

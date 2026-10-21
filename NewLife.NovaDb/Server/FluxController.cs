@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using NewLife;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux;
 using NewLife.Remoting;
 
@@ -81,7 +82,7 @@ internal class FluxController : IApi
         lock (SyncRoot)
         {
             if (!ConsumerGroups.TryGetValue(groupName, out var group))
-                throw new NovaException(ErrorCode.ConsumerGroupNotFound, $"Consumer group '{groupName}' not found");
+                throw new NovaException(ErrorCode.ConsumerGroupNotFound, "Consumer group '{0}' not found", groupName);
 
             var allEntries = SharedEngine.GetAllEntries();
             var result = new List<FluxEntry>();

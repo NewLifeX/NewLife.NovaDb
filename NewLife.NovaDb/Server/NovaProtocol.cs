@@ -1,3 +1,4 @@
+using NewLife;
 using NewLife.Buffers;
 using NewLife.Data;
 
@@ -122,13 +123,13 @@ public class ProtocolHeader
     {
         if (data == null) throw new ArgumentNullException(nameof(data));
         if (data.Length < HeaderSize)
-            throw new ArgumentException($"Buffer must be at least {HeaderSize} bytes", nameof(data));
+            throw new ArgumentException(L.T("Buffer must be at least {0} bytes", HeaderSize), nameof(data));
 
         var reader = new SpanReader(data) { IsLittleEndian = false };
 
         var magic = reader.ReadUInt16();
         if (magic != Magic)
-            throw new InvalidOperationException($"Invalid magic number: 0x{magic:X4}, expected 0x{Magic:X4}");
+            throw new InvalidOperationException(L.T("Invalid magic number: 0x{0:X4}, expected 0x{1:X4}", magic, Magic));
 
         var header = new ProtocolHeader
         {
@@ -140,7 +141,7 @@ public class ProtocolHeader
         };
 
         if (header.PayloadLength < 0 || header.PayloadLength > MaxPayloadLength)
-            throw new InvalidOperationException($"Payload length {header.PayloadLength} exceeds maximum {MaxPayloadLength}");
+            throw new InvalidOperationException(L.T("Payload length {0} exceeds maximum {1}", header.PayloadLength, MaxPayloadLength));
 
         return header;
     }

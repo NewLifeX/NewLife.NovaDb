@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Data;
 using System.Data.Common;
+using NewLife;
 
 namespace NewLife.NovaDb.Client;
 
@@ -154,7 +155,7 @@ public class NovaParameterCollection : DbParameterCollection
     {
         var index = IndexOf(parameterName);
         if (index < 0)
-            throw new KeyNotFoundException($"Parameter '{parameterName}' not found");
+            throw new KeyNotFoundException(L.T("Parameter '{0}' not found", parameterName));
 
         return _parameters[index];
     }
@@ -171,7 +172,7 @@ public class NovaParameterCollection : DbParameterCollection
     {
         var index = IndexOf(parameterName);
         if (index < 0)
-            throw new KeyNotFoundException($"Parameter '{parameterName}' not found");
+            throw new KeyNotFoundException(L.T("Parameter '{0}' not found", parameterName));
 
         _parameters[index] = (NovaParameter)value;
     }

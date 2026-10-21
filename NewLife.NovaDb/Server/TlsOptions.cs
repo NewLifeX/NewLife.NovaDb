@@ -1,3 +1,5 @@
+using NewLife;
+
 namespace NewLife.NovaDb.Server;
 
 /// <summary>TLS/SSL 传输加密配置选项</summary>
@@ -39,6 +41,6 @@ public class TlsOptions
         if (!Enabled) return;
 
         if (String.IsNullOrEmpty(CertificatePath))
-            throw new InvalidOperationException("TLS is enabled but CertificatePath is not set");
+            throw new InvalidOperationException(L.T("TLS is enabled but CertificatePath is not set"));
     }
 }

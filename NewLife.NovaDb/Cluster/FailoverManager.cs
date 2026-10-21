@@ -1,3 +1,4 @@
+using NewLife;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Cluster;
@@ -53,16 +54,16 @@ public class FailoverManager
         {
             var slave = _replication.GetSlave(nodeId);
             if (slave == null)
-                throw new NovaException(ErrorCode.NodeNotFound, $"Slave node '{nodeId}' not found");
+                throw new NovaException(ErrorCode.NodeNotFound, "Slave node '{0}' not found", nodeId);
 
             if (slave.State == NodeState.Offline)
-                throw new NovaException(ErrorCode.ReplicationError, $"Cannot promote offline node '{nodeId}'");
+                throw new NovaException(ErrorCode.ReplicationError, "Cannot promote offline node '{0}'", nodeId);
 
             // 检查复制延迟
             var lag = _replication.GetReplicationLag(nodeId);
             if (lag > MaxAllowedLag)
                 throw new NovaException(ErrorCode.ReplicationLag,
-                    $"Replication lag ({lag}) exceeds max allowed ({MaxAllowedLag}). Force promote or wait for sync.");
+                    "Replication lag ({0}) exceeds max allowed ({1}). Force promote or wait for sync.", lag, MaxAllowedLag);
 
             // 提升从节点为新主节点
             var oldMaster = _replication.MasterInfo;
@@ -132,7 +133,7 @@ public class FailoverManager
         {
             var slaves = _replication.GetAllSlaves();
             if (slaves.Count == 0)
-                throw new NovaException(ErrorCode.ReplicationError, "No slave nodes available for failover");
+                throw new NovaException(ErrorCode.ReplicationError, L.T("No slave nodes available for failover"));
 
             // 选择 LSN 最大的从节点
             NodeInfo? best = null;
@@ -144,7 +145,7 @@ public class FailoverManager
             }
 
             if (best == null)
-                throw new NovaException(ErrorCode.ReplicationError, "No online slave nodes available for failover");
+                throw new NovaException(ErrorCode.ReplicationError, L.T("No online slave nodes available for failover"));
 
             return Promote(best.NodeId);
         }

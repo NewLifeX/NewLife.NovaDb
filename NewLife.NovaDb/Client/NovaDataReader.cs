@@ -2,6 +2,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using NewLife;
 
 namespace NewLife.NovaDb.Client;
 
@@ -87,7 +88,7 @@ public class NovaDataReader : DbDataReader
                 return i;
         }
 
-        throw new IndexOutOfRangeException($"Column '{name}' not found");
+        throw new IndexOutOfRangeException(L.T("Column '{0}' not found", name));
     }
 
     /// <summary>获取值</summary>
@@ -245,7 +246,7 @@ public class NovaDataReader : DbDataReader
     [UnconditionalSuppressMessage("Trimming", "IL2111", Justification = "架构表仅记录列的数据类型元数据，不对类型成员做反射访问")]
     public override DataTable GetSchemaTable()
     {
-        if (_isClosed) throw new InvalidOperationException("Reader is closed");
+        if (_isClosed) throw new InvalidOperationException(L.T("Reader is closed"));
 
         var table = new DataTable("SchemaTable");
 

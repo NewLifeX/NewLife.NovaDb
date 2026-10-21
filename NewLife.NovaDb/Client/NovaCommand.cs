@@ -1,5 +1,6 @@
 ﻿using System.Data;
 using System.Data.Common;
+using NewLife;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 
@@ -186,15 +187,15 @@ public class NovaCommand : DbCommand
                 return task.Result;
 
             _cts.Cancel();
-            throw new NovaException(ErrorCode.Timeout, $"Command execution timed out after {CommandTimeout} seconds");
+            throw new NovaException(ErrorCode.Timeout, "Command execution timed out after {0} seconds", CommandTimeout);
         }
         catch (AggregateException ex) when (ex.InnerException is OperationCanceledException)
         {
-            throw new NovaException(ErrorCode.Timeout, "Command execution was cancelled");
+            throw new NovaException(ErrorCode.Timeout, L.T("Command execution was cancelled"));
         }
         catch (OperationCanceledException)
         {
-            throw new NovaException(ErrorCode.Timeout, "Command execution was cancelled");
+            throw new NovaException(ErrorCode.Timeout, L.T("Command execution was cancelled"));
         }
         finally
         {
@@ -248,20 +249,20 @@ public class NovaCommand : DbCommand
         {
             case SqlStatementType.BeginTransaction:
                 if (conn.SessionTransaction != null)
-                    throw new NovaException(ErrorCode.TransactionError, "Transaction already in progress");
+                    throw new NovaException(ErrorCode.TransactionError, L.T("Transaction already in progress"));
                 conn.SessionTransaction = engine.TxManager.BeginTransaction();
                 break;
 
             case SqlStatementType.CommitTransaction:
                 var commitTx = conn.SessionTransaction
-                    ?? throw new NovaException(ErrorCode.TransactionError, "No active transaction to commit");
+                    ?? throw new NovaException(ErrorCode.TransactionError, L.T("No active transaction to commit"));
                 commitTx.Commit();
                 conn.SessionTransaction = null;
                 break;
 
             case SqlStatementType.RollbackTransaction:
                 var rollbackTx = conn.SessionTransaction
-                    ?? throw new NovaException(ErrorCode.TransactionError, "No active transaction to rollback");
+                    ?? throw new NovaException(ErrorCode.TransactionError, L.T("No active transaction to rollback"));
                 rollbackTx.Rollback();
                 conn.SessionTransaction = null;
                 break;

@@ -183,7 +183,7 @@ public class ReplicaClient : IDisposable
         }
         catch (Exception ex)
         {
-            Log?.Warn("从主节点拉取复制事件失败: {0}", ex.Message);
+            Log?.Warn("Failed to pull replication events from master: {0}", ex.Message);
 
             // 标记为断线，等待重连
             lock (_lock)
@@ -212,7 +212,7 @@ public class ReplicaClient : IDisposable
         }
         catch (Exception ex)
         {
-            Log?.Warn("复制心跳失败: {0}", ex.Message);
+            Log?.Warn("Replication heartbeat failed: {0}", ex.Message);
         }
     }
 
