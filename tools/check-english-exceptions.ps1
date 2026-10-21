@@ -1,0 +1,106 @@
+# 检查运行时消息（异常、日志、控制台、界面提示、埋点标签）是否全部为英文
+# 规则：调用点字符串中不得出现 CJK 字符；注释与特性参数中的中文不受限制。
+#
+# 用法：
+#   pwsh -File tools/check-english-exceptions.ps1                         # 扫描 NovaDb 库项目，失败退出码 1
+#   pwsh -File tools/check-english-exceptions.ps1 -Dir NewLife.NovaServer -List
+#   pwsh -File tools/check-english-exceptions.ps1 -Dir NewLife.NovaDb -Csv hits.csv
+param(
+    [String]$Root = (Split-Path -Parent $PSScriptRoot),
+    [String[]]$Dir = @("NewLife.NovaDb"),
+    [String[]]$Exclude = @(),
+    [String]$MessageCall = 'throw\b|new\s+\w*Exception\s*\(|: base\(|Console\.Write|MessageBox\.Show|AppendTag\(|NewError\(|NewSpan\(|Debug\.Fail\(|WriteLog\(|OnWrite\(|XTrace\.|Log\??\.(Write|Error|Info|Debug|Warn|Fatal)|(Info|Error|Warn|Debug|Fatal)Prefixed\(|WritePrefixed\(|L\.T(?:Log)?\(|Localization\.Translate|NovaException\(|msg = |Message = |desc = |AppendFormat\(|new\s*\(\s*"',
+    [Switch]$List,
+    [String]$Csv
+)
+
+$ErrorActionPreference = "Stop"
+
+# pwsh -File 会把 "A,B" 当成单个参数，这里统一拆成多个目录
+$Dir = @($Dir | ForEach-Object { $_ -split '[,;]' } | Where-Object { $_ })
+$dirs = @()
+foreach ($item in $Dir) {
+    $path = if ([IO.Path]::IsPathRooted($item)) { $item } else { Join-Path $Root $item }
+    if (Test-Path -LiteralPath $path) { $dirs += $path }
+}
+if ($dirs.Count -eq 0) { throw "未找到待检查目录：$($Dir -join ', ')" }
+
+$hits = @()
+
+foreach ($dir in $dirs) {
+    foreach ($file in Get-ChildItem $dir -Recurse -Filter *.cs) {
+        $rel = if ($file.FullName.StartsWith($Root, [StringComparison]::OrdinalIgnoreCase)) {
+            $file.FullName.Substring($Root.Length).TrimStart("\", "/")
+        }
+        else { $file.FullName }
+
+        if ($rel -match '\\(obj|bin)\\') { continue }
+        $excluded = $false
+        foreach ($pattern in $Exclude) {
+            if ($rel -like $pattern -or $file.FullName -like $pattern) { $excluded = $true; break }
+        }
+        if ($excluded) { continue }
+
+        $lines = Get-Content $file.FullName -Encoding UTF8
+        $inBlock = $false
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i].Trim()
+
+            if ($line -match "/\*") { $inBlock = $true }
+            if ($inBlock) {
+                if ($line -match "\*/") { $inBlock = $false }
+                continue
+            }
+            if ($line.StartsWith("//")) { continue }
+
+            # 去掉行尾注释，避免把注释里的中文算作运行时消息
+            $code = $line -replace "//.*$", ""
+            # 特性参数（Description/DisplayName/Obsolete/RequiresXxx/Justification 等）属元数据，不在本检查范围
+            if ($code -match "^\s*\[") { continue }
+            if ($code -match $MessageCall -and $code -match "[\u4e00-\u9fa5]") {
+                $hits += [pscustomobject]@{ File = $rel; Line = $i + 1; Text = $code }
+            }
+        }
+
+        # 跨行消息：throw/new 换行后出现中文
+        $raw = [IO.File]::ReadAllText($file.FullName)
+        $codeAll = [regex]::Replace($raw, '/\*.*?\*/', '', 'Singleline')
+        $codeAll = [regex]::Replace($codeAll, '(?m)^\s*//.*$', '')
+        foreach ($m in [regex]::Matches($codeAll, 'throw new [\w.<>]+\([^;]{0,600}?[\u4e00-\u9fa5]|new (?:Core\.)?NovaException\([^;]{0,600}?[\u4e00-\u9fa5]')) {
+            $lineNo = ($codeAll.Substring(0, $m.Index) -split "`n").Count
+            $exists = $false
+            foreach ($h in $hits) {
+                if ($h.File -eq $rel -and $h.Line -eq $lineNo) { $exists = $true; break }
+            }
+            if (!$exists) {
+                $text = ($codeAll.Substring($m.Index, [Math]::Min(160, $codeAll.Length - $m.Index)) -replace "\s+", " ")
+                $hits += [pscustomobject]@{ File = $rel; Line = $lineNo; Text = $text }
+            }
+        }
+    }
+}
+
+if ($Csv) {
+    $hits | Export-Csv -LiteralPath $Csv -NoTypeInformation -Encoding UTF8
+    Write-Host "已导出 $($hits.Count) 条中文运行时消息到 $Csv"
+    exit 0
+}
+
+if ($List) {
+    Write-Host "盘点模式：发现 $($hits.Count) 条中文运行时消息" -ForegroundColor Yellow
+    foreach ($hit in $hits) {
+        Write-Host ("  {0}:{1}: {2}" -f $hit.File, $hit.Line, $hit.Text)
+    }
+    exit 0
+}
+
+if ($hits.Count -gt 0) {
+    Write-Host "发现 $($hits.Count) 处中文运行时消息，请改为英文：" -ForegroundColor Red
+    foreach ($hit in $hits) {
+        Write-Host ("  {0}:{1}: {2}" -f $hit.File, $hit.Line, $hit.Text)
+    }
+    exit 1
+}
+
+Write-Host "OK: 未发现中文运行时消息。"
+exit 0

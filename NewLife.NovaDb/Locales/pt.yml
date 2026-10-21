@@ -11,3 +11,5 @@
 "LZ4 data does not match the original length.": "Os dados LZ4 não correspondem ao comprimento original."
 "LZ4 literal length is out of bounds.": "O comprimento do literal LZ4 está fora dos limites."
 "LZ4 literal is out of bounds.": "O literal LZ4 está fora dos limites."
+"NewLife.NovaDb Hybrid Database": "Banco de dados híbrido NewLife.NovaDb"
+"A medium-to-large hybrid database infrastructure implemented in C# for the .NET platform: dual embedded/network modes, integrating relational, time-series, message queue, and NoSQL (KV) engines; NativeAOT-ready, with built-in runtime localization.": "Infraestrutura de banco de dados híbrido de médio a grande porte implementada em C# para a plataforma .NET: modos duplos embutido/rede, integrando mecanismos relacional, de séries temporais, de filas de mensagens e NoSQL (KV); pronta para NativeAOT com localização de tempo de execução integrada."

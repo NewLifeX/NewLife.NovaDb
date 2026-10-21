@@ -11,3 +11,5 @@
 "LZ4 data does not match the original length.": "LZ4 數據與原始長度不匹配"
 "LZ4 literal length is out of bounds.": "LZ4 字面量長度越界"
 "LZ4 literal is out of bounds.": "LZ4 字面量越界"
+"NewLife.NovaDb Hybrid Database": "NewLife.NovaDb 混合資料庫"
+"A medium-to-large hybrid database infrastructure implemented in C# for the .NET platform: dual embedded/network modes, integrating relational, time-series, message queue, and NoSQL (KV) engines; NativeAOT-ready, with built-in runtime localization.": "以 C# 實作、運行於 .NET 平臺的中大型混合資料庫基礎設施：內嵌/服務雙模，融合關聯式、時序、訊息佇列與 NoSQL（KV）引擎；原生 AOT 就緒，內建執行階段多語言支援。"

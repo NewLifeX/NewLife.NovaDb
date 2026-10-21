@@ -11,3 +11,5 @@
 "LZ4 data does not match the original length.": "Данные LZ4 не соответствуют исходной длине."
 "LZ4 literal length is out of bounds.": "Длина литерала LZ4 выходит за допустимые границы."
 "LZ4 literal is out of bounds.": "Литерал LZ4 выходит за допустимые границы."
+"NewLife.NovaDb Hybrid Database": "Гибридная база данных NewLife.NovaDb"
+"A medium-to-large hybrid database infrastructure implemented in C# for the .NET platform: dual embedded/network modes, integrating relational, time-series, message queue, and NoSQL (KV) engines; NativeAOT-ready, with built-in runtime localization.": "Инфраструктура гибридной базы данных среднего и крупного масштаба, реализованная на C# для платформы .NET: двойной режим (встроенный/сетевой), объединяющий реляционный, временной ряд, очередь сообщений и NoSQL (KV) движки; готова к NativeAOT со встроенной локализацией времени выполнения."

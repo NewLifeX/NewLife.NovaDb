@@ -11,3 +11,5 @@
 "LZ4 data does not match the original length.": "LZ4 データが元の長さと一致しません。"
 "LZ4 literal length is out of bounds.": "LZ4 リテラルの長さが範囲外です。"
 "LZ4 literal is out of bounds.": "LZ4 リテラルが範囲外です。"
+"NewLife.NovaDb Hybrid Database": "NewLife.NovaDb ハイブリッドデータベース"
+"A medium-to-large hybrid database infrastructure implemented in C# for the .NET platform: dual embedded/network modes, integrating relational, time-series, message queue, and NoSQL (KV) engines; NativeAOT-ready, with built-in runtime localization.": "C# で実装された .NET プラットフォーム向けの中大規模ハイブリッドデータベース基盤：組み込み/ネットワークのデュアルモード、リレーショナル、時系列、メッセージキュー、NoSQL（KV）エンジンを統合；NativeAOT 対応、実行時多言語サポートを内蔵。"

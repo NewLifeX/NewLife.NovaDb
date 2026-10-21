@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>net45;net461;netstandard2.0;netstandard2.1;net8.0;net10.0</TargetFrameworks>
-    <AssemblyTitle>NewLife.NovaDb 混合数据库</AssemblyTitle>
-    <Description>以 C# 实现、运行于 .NET 平台的中大型混合数据库基础设施：嵌入/服务双模，融合关系型、时序、消息队列、NoSQL(KV) 能力；通过裁剪冷门特性提升读写性能。</Description>
+    <AssemblyTitle>NewLife.NovaDb Hybrid Database</AssemblyTitle>
+    <Description>A medium-to-large hybrid database infrastructure implemented in C# for the .NET platform: dual embedded/network modes, integrating relational, time-series, message queue, and NoSQL (KV) engines; NativeAOT-ready, with built-in runtime localization.</Description>
     <Company>新生命开发团队</Company>
     <Copyright>©2002-2026 新生命开发团队</Copyright>
     <VersionPrefix>1.0</VersionPrefix>
@@ -31,6 +31,7 @@
 
   <PropertyGroup>
     <PackageId>$(AssemblyName)</PackageId>
+    <PackageDescription>$(Description) 以 C# 实现、运行于 .NET 平台的中大型混合数据库基础设施：嵌入/服务双模，融合关系型、时序、消息队列、NoSQL(KV) 能力；原生 AOT 就绪，内置运行时多语言。</PackageDescription>
     <Authors>$(Company)</Authors>
     <PackageProjectUrl>https://git.newlifex.com/NewLife/NewLife.NovaDb</PackageProjectUrl>
     <PackageIcon>leaf.png</PackageIcon>
@@ -53,8 +54,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NewLife.Core" Version="12.0.2026.1019-beta1413" />
-    <PackageReference Include="NewLife.Remoting" Version="3.9.2026.1019-beta1013" />
+    <PackageReference Include="NewLife.Core" Version="12.0.2026.1021-beta0321" />
+    <PackageReference Include="NewLife.Remoting" Version="3.9.2026.1021-beta0410" />
   </ItemGroup>
 
   <ItemGroup>
