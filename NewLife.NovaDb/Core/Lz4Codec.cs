@@ -137,10 +137,10 @@ public static class Lz4Codec
             // 末尾字面量序列
             if (sp >= source.Length) break;
 
-            if (sp + 2 > source.Length) throw new InvalidDataException("LZ4 偏移量缺失");
+            if (sp + 2 > source.Length) throw new InvalidDataException(L.T("LZ4 offset is missing."));
             var offset = source[sp] | (source[sp + 1] << 8);
             sp += 2;
-            if (offset == 0 || offset > dp) throw new InvalidDataException("LZ4 匹配偏移量非法");
+            if (offset == 0 || offset > dp) throw new InvalidDataException(L.T("LZ4 match offset is invalid."));
 
             // 匹配长度
             var matchLen = token & 0x0F;
@@ -149,7 +149,7 @@ public static class Lz4Codec
                 Int32 b;
                 do
                 {
-                    if (sp >= source.Length) throw new InvalidDataException("LZ4 匹配长度越界");
+                    if (sp >= source.Length) throw new InvalidDataException(L.T("LZ4 match length is out of bounds."));
                     b = source[sp++];
                     matchLen += b;
                 }
@@ -157,7 +157,7 @@ public static class Lz4Codec
             }
 
             matchLen += MinMatchLength;
-            if (dp + matchLen > outputLength) throw new InvalidDataException("LZ4 匹配长度越界");
+            if (dp + matchLen > outputLength) throw new InvalidDataException(L.T("LZ4 match length is out of bounds."));
 
             var match = dp - offset;
             for (var k = 0; k < matchLen; k++)
@@ -166,7 +166,7 @@ public static class Lz4Codec
             }
         }
 
-        if (dp != outputLength) throw new InvalidDataException($"LZ4 解压长度不匹配：期望 {outputLength}，实际 {dp}");
+        if (dp != outputLength) throw new InvalidDataException(L.T("LZ4 decompressed length mismatch: expected {0}, actual {1}.", outputLength, dp));
 
         return dst;
     }

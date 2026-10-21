@@ -1,3 +1,5 @@
+using NewLife;
+
 namespace NewLife.NovaDb.Core;
 
 /// <summary>地理工具类。提供国内常用坐标系（WGS84 / GCJ-02 / BD-09）互转与 geohash 编码</summary>
@@ -261,7 +263,7 @@ public static class GeoHelper
         foreach (var c in geohash)
         {
             var cd = GeoHashBase32.IndexOf(c);
-            if (cd < 0) throw new FormatException($"Invalid geohash character: '{c}'");
+            if (cd < 0) throw new FormatException(L.T("Invalid geohash character: '{0}'", c));
 
             for (var mask = 16; mask != 0; mask >>= 1)
             {

@@ -125,7 +125,7 @@ public class CompressionCodec
         {
             CompressionAlgorithm.GZip => new GZipStream(output, Level, leaveOpen: true),
             CompressionAlgorithm.Deflate => new DeflateStream(output, Level, leaveOpen: true),
-            _ => throw new NotSupportedException($"Unsupported compression algorithm: {Algorithm}")
+            _ => throw new NotSupportedException(L.T("Unsupported compression algorithm: {0}", Algorithm))
         };
     }
 
@@ -136,7 +136,7 @@ public class CompressionCodec
         {
             CompressionAlgorithm.GZip => new GZipStream(input, CompressionMode.Decompress, leaveOpen: true),
             CompressionAlgorithm.Deflate => new DeflateStream(input, CompressionMode.Decompress, leaveOpen: true),
-            _ => throw new NotSupportedException($"Unsupported compression algorithm: {algo}")
+            _ => throw new NotSupportedException(L.T("Unsupported compression algorithm: {0}", algo))
         };
     }
 

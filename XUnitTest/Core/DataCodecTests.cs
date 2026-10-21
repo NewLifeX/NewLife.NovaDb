@@ -242,7 +242,7 @@ public class DataCodecTests
     {
         // 测试不支持的类型
         var ex = Assert.Throws<NotSupportedException>(() => _codec.Encode(123, (DataType)255));
-        Assert.Contains("Unsupported data type", ex.Message);
+        Assert.Contains("255", ex.Message);
     }
 
     [Fact(DisplayName = "测试不支持类型解码抛异常")]
@@ -250,14 +250,14 @@ public class DataCodecTests
     {
         var buffer = new Byte[4];
         var ex = Assert.Throws<NotSupportedException>(() => _codec.Decode(buffer, 0, (DataType)255));
-        Assert.Contains("Unsupported data type", ex.Message);
+        Assert.Contains("255", ex.Message);
     }
 
     [Fact(DisplayName = "测试不支持类型长度计算抛异常")]
     public void TestGetEncodedLengthUnsupportedType()
     {
         var ex = Assert.Throws<NotSupportedException>(() => _codec.GetEncodedLength(123, (DataType)255));
-        Assert.Contains("Unsupported data type", ex.Message);
+        Assert.Contains("255", ex.Message);
     }
 
     [Fact(DisplayName = "测试GeoPoint编解码")]

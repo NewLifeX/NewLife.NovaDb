@@ -1,6 +1,7 @@
 ﻿namespace NewLife.NovaDb.Core;
 
 /// <summary>NovaDb 异常基类</summary>
+/// <remarks>错误消息以英文原文为键，构造时按 <see cref="Localization.Culture"/> 翻译；缺少译文时回退英文。</remarks>
 public class NovaException : Exception
 {
     /// <summary>错误码</summary>
@@ -8,18 +9,37 @@ public class NovaException : Exception
 
     /// <summary>实例化</summary>
     /// <param name="code">错误码</param>
-    /// <param name="message">错误消息</param>
-    public NovaException(ErrorCode code, String message) : base(message)
+    /// <param name="message">错误消息模板（英文原文）</param>
+    public NovaException(ErrorCode code, String message) : base(L.T(message))
     {
         Code = code;
     }
 
     /// <summary>实例化</summary>
     /// <param name="code">错误码</param>
-    /// <param name="message">错误消息</param>
+    /// <param name="message">错误消息模板（英文原文）</param>
     /// <param name="innerException">内部异常</param>
     public NovaException(ErrorCode code, String message, Exception innerException)
-        : base(message, innerException)
+        : base(L.T(message), innerException)
+    {
+        Code = code;
+    }
+
+    /// <summary>实例化。消息模板先翻译再格式化，避免插值后无法查表</summary>
+    /// <param name="code">错误码</param>
+    /// <param name="message">错误消息模板（英文原文）</param>
+    /// <param name="args">格式化参数</param>
+    public NovaException(ErrorCode code, String message, params Object?[] args) : base(L.T(message, args))
+    {
+        Code = code;
+    }
+
+    /// <summary>实例化。消息模板先翻译再格式化，并保留内部异常</summary>
+    /// <param name="code">错误码</param>
+    /// <param name="message">错误消息模板（英文原文）</param>
+    /// <param name="innerException">内部异常</param>
+    /// <param name="args">格式化参数</param>
+    public NovaException(ErrorCode code, String message, Exception innerException, params Object?[] args) : base(L.T(message, args), innerException)
     {
         Code = code;
     }

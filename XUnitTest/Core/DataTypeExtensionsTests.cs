@@ -64,14 +64,14 @@ public class DataTypeExtensionsTests
     public void TestGetClrTypeUnsupported()
     {
         var ex = Assert.Throws<NotSupportedException>(() => ((DataType)255).GetClrType());
-        Assert.Contains("Unsupported data type", ex.Message);
+        Assert.Contains("255", ex.Message);
     }
 
     [Fact(DisplayName = "测试不支持CLR类型映射抛异常")]
     public void TestFromClrTypeUnsupported()
     {
         var ex = Assert.Throws<NotSupportedException>(() => DataTypeExtensions.FromClrType(typeof(Object)));
-        Assert.Contains("Unsupported CLR type", ex.Message);
+        Assert.Contains("System.Object", ex.Message);
     }
 
     [Fact(DisplayName = "测试DataType枚举值")]

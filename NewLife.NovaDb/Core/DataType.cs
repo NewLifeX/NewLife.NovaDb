@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using NewLife;
 
 namespace NewLife.NovaDb.Core;
 
@@ -57,7 +58,7 @@ public static class DataTypeExtensions
             DataType.Binary => typeof(Byte[]),
             DataType.GeoPoint => typeof(GeoPoint),
             DataType.Vector => typeof(Single[]),
-            _ => throw new NotSupportedException($"Unsupported data type: {dataType}")
+            _ => throw new NotSupportedException(L.T("Unsupported data type: {0}", dataType))
         };
     }
 
@@ -84,7 +85,7 @@ public static class DataTypeExtensions
         if (type == typeof(GeoPoint)) return DataType.GeoPoint;
         if (type == typeof(Single[])) return DataType.Vector;
 
-        throw new NotSupportedException($"Unsupported CLR type: {type.FullName}");
+        throw new NotSupportedException(L.T("Unsupported CLR type: {0}", type.FullName));
     }
 }
 
@@ -213,7 +214,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
 
         var parts = trimmed.Split(',');
         if (parts.Length != 2)
-            throw new FormatException($"Invalid GeoPoint format: '{s}', expected '(lat, lon)'");
+            throw InvalidGeoPoint(s);
 
         var lat = Double.Parse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
         var lon = Double.Parse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
@@ -239,7 +240,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             var start = IndexOfDoubleParenOpen(trimmed.AsSpan());
             var end = LastIndexOfDoubleParenClose(trimmed.AsSpan());
             if (start < 0 || end < 0 || end <= start + 1)
-                throw new FormatException($"Invalid POLYGON WKT format: '{wkt}'");
+                throw InvalidPolygonWkt(wkt);
 
             trimmed = trimmed.Substring(start + 2, end - start - 2);
         }
@@ -253,7 +254,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             var parts = pointString.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) continue;
             if (parts.Length < 2)
-                throw new FormatException($"Invalid coordinate in polygon: '{pointString}'");
+                throw InvalidCoordinate(pointString);
 
             // WKT 标准格式为 "经度 纬度"
             var lon = Double.Parse(parts[0].Trim());
@@ -336,7 +337,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             var start = IndexOfDoubleParenOpen(trimmed.AsSpan());
             var end = LastIndexOfDoubleParenClose(trimmed.AsSpan());
             if (start < 0 || end < 0 || end <= start + 1)
-                throw new FormatException($"Invalid POLYGON WKT format: '{wkt}'");
+                throw InvalidPolygonWkt(wkt);
 
             trimmed = trimmed.Substring(start + 2, end - start - 2);
         }
@@ -348,7 +349,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             var parts = pointString.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 0) continue;
             if (parts.Length < 2)
-                throw new FormatException($"Invalid coordinate in polygon: '{pointString}'");
+                throw InvalidCoordinate(pointString);
 
             // WKT 标准格式为 "经度 纬度"
             var lon = Double.Parse(parts[0].Trim());
@@ -372,7 +373,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
 
         var comma = span.IndexOf(',');
         if (comma < 0)
-            throw new FormatException($"Invalid GeoPoint format: '{span.ToString()}', expected '(lat, lon)'");
+            throw InvalidGeoPoint(span.ToString());
 
         var latSpan = span.Slice(0, comma).Trim();
         var lonSpan = span.Slice(comma + 1).Trim();
@@ -395,7 +396,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             var start = IndexOfDoubleParenOpen(s);
             var end = LastIndexOfDoubleParenClose(s);
             if (start < 0 || end < 0 || end <= start + 1)
-                throw new FormatException($"Invalid POLYGON WKT format: '{wkt.ToString()}'");
+                throw InvalidPolygonWkt(wkt.ToString());
 
             s = s.Slice(start + 2, end - (start + 2)).Trim();
         }
@@ -419,7 +420,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
 
             // "lon lat"（空格分隔，可能有多空格）
             var sp = item.IndexOf(' ');
-            if (sp < 0) throw new FormatException($"Invalid coordinate in polygon: '{item.ToString()}'");
+            if (sp < 0) throw InvalidCoordinate(item.ToString());
 
             // 找到第一个非空格分隔点
             var lonSpan = item.Slice(0, sp).Trim();
@@ -455,7 +456,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             var start = IndexOfDoubleParenOpen(s);
             var end = LastIndexOfDoubleParenClose(s);
             if (start < 0 || end < 0 || end <= start + 1)
-                throw new FormatException($"Invalid POLYGON WKT format: '{wkt.ToString()}'");
+                throw InvalidPolygonWkt(wkt.ToString());
 
             s = s.Slice(start + 2, end - (start + 2)).Trim();
         }
@@ -469,7 +470,7 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
             item = item.Trim();
             if (item.IsEmpty) continue;
             var sp = item.IndexOf(' ');
-            if (sp < 0) throw new FormatException($"Invalid coordinate in polygon: '{item.ToString()}'");
+            if (sp < 0) throw InvalidCoordinate(item.ToString());
             var lonSpan = item.Slice(0, sp).Trim();
             var rest = item.Slice(sp + 1).TrimStart();
             var sp2 = rest.IndexOf(' ');
@@ -544,4 +545,12 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
     /// <param name="right">右操作数</param>
     /// <returns>是否不等</returns>
     public static Boolean operator !=(GeoPoint left, GeoPoint right) => !left.Equals(right);
+
+    #region 辅助
+    private static FormatException InvalidGeoPoint(String value) => new(L.T("Invalid GeoPoint format: '{0}', expected '(lat, lon)'", value));
+
+    private static FormatException InvalidPolygonWkt(String value) => new(L.T("Invalid POLYGON WKT format: '{0}'", value));
+
+    private static FormatException InvalidCoordinate(String value) => new(L.T("Invalid coordinate in polygon: '{0}'", value));
+    #endregion
 }

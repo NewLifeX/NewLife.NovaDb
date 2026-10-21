@@ -14,7 +14,7 @@ param(
     [String[]]$AllowSameValue = @("NewLife.NovaDb"),
     [Switch]$SkipOrphan,
     [Switch]$SkipMessageCheck,
-    [String[]]$AllowMissingMessage = @()
+    [String[]]$AllowMissingMessage = @('[SlowQuery] {0}ms | rows={1} | {2}')
 )
 
 $ErrorActionPreference = "Stop"
