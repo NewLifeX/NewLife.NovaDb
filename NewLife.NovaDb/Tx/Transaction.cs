@@ -78,7 +78,7 @@ public class Transaction : IDisposable
                 throw new ObjectDisposedException(nameof(Transaction));
 
             if (_state != TransactionState.Active)
-                throw new NovaException(ErrorCode.TransactionError, $"Transaction {_txId} is not active (state: {_state})");
+                throw new NovaException(ErrorCode.TransactionError, "Transaction {0} is not active (state: {1})", _txId, _state);
 
             // 分配提交时间戳
             _commitTs = _manager.AllocateCommitTs();
@@ -115,7 +115,7 @@ public class Transaction : IDisposable
                 throw new ObjectDisposedException(nameof(Transaction));
 
             if (_state != TransactionState.Active)
-                throw new NovaException(ErrorCode.TransactionError, $"Transaction {_txId} is not active (state: {_state})");
+                throw new NovaException(ErrorCode.TransactionError, "Transaction {0} is not active (state: {1})", _txId, _state);
 
             // 执行所有回滚动作（倒序执行）
             for (var i = _rollbackActions.Count - 1; i >= 0; i--)
@@ -149,7 +149,7 @@ public class Transaction : IDisposable
         lock (_lock)
         {
             if (_state != TransactionState.Active)
-                throw new NovaException(ErrorCode.TransactionError, $"Cannot register commit action on non-active transaction {_txId}");
+                throw new NovaException(ErrorCode.TransactionError, "Cannot register commit action on non-active transaction {0}", _txId);
 
             _commitActions.Add(action);
         }
@@ -165,7 +165,7 @@ public class Transaction : IDisposable
         lock (_lock)
         {
             if (_state != TransactionState.Active)
-                throw new NovaException(ErrorCode.TransactionError, $"Cannot register rollback action on non-active transaction {_txId}");
+                throw new NovaException(ErrorCode.TransactionError, "Cannot register rollback action on non-active transaction {0}", _txId);
 
             _rollbackActions.Add(action);
         }
