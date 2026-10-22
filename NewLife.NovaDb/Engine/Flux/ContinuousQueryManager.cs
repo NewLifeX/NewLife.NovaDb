@@ -61,7 +61,7 @@ public class ContinuousQueryManager : IDisposable
         {
             if (_disposed) throw new ObjectDisposedException(nameof(ContinuousQueryManager));
             if (_queries.ContainsKey(definition.Name))
-                throw new NovaException(ErrorCode.InvalidArgument, $"Continuous query '{definition.Name}' already exists");
+                throw new NovaException(ErrorCode.InvalidArgument, "Continuous query '{0}' already exists", definition.Name);
 
             // 游标初始化为当前最大时间戳（注册前已有数据不重算，由应用决定是否回填）
             var now = DateTime.UtcNow.Ticks;
@@ -295,7 +295,7 @@ public class ContinuousQueryManager : IDisposable
             "min" => acc.Min,
             "max" => acc.Max,
             "count" => acc.Count,
-            _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown aggregation: {aggregation}")
+            _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown aggregation: {0}", aggregation)
         };
     }
 

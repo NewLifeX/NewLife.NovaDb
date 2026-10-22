@@ -2,6 +2,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
+using NewLife;
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
@@ -57,7 +58,7 @@ public partial class KvStore : IDisposable
     /// <param name="filePath">数据文件路径（.kvd 文件）</param>
     public KvStore(DbOptions? options, String filePath)
     {
-        if (String.IsNullOrEmpty(filePath)) throw new ArgumentException("文件路径不能为空", nameof(filePath));
+        if (String.IsNullOrEmpty(filePath)) throw new ArgumentException(L.T("File path cannot be empty"), nameof(filePath));
 
         _options = options;
         _defaultTtl = options?.DefaultKvTtl;
@@ -72,6 +73,12 @@ public partial class KvStore : IDisposable
     private void CheckDisposed()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(KvStore));
+    }
+
+    /// <summary>检查键是否为空</summary>
+    private static void CheckKey(String key)
+    {
+        if (String.IsNullOrEmpty(key)) throw new ArgumentException(L.T("Key cannot be empty"), nameof(key));
     }
 
     /// <summary>释放资源</summary>
@@ -110,7 +117,7 @@ public partial class KvStore : IDisposable
     /// <param name="ttl">过期时间，null 表示使用默认 TTL（无默认则永不过期）</param>
     public void Set(String key, ReadOnlySpan<Byte> value, TimeSpan? ttl = null)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         // 未显式指定 TTL 时使用默认 TTL；如果无默认 TTL 则永不过期
@@ -135,7 +142,7 @@ public partial class KvStore : IDisposable
     /// <returns>池化数据包，不存在或已过期返回 null。调用方用完后需 Dispose 归还到池中</returns>
     public IOwnerPacket? Get(String key)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -161,7 +168,7 @@ public partial class KvStore : IDisposable
     /// <returns>键存在且未过期返回 true</returns>
     public Boolean TryGet(String key, out IOwnerPacket? value)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -190,7 +197,7 @@ public partial class KvStore : IDisposable
     /// <returns>键存在且未过期并被删除返回 true，否则返回 false</returns>
     public Boolean Delete(String key)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -216,7 +223,7 @@ public partial class KvStore : IDisposable
     /// <returns>存在且未过期返回 true</returns>
     public Boolean Exists(String key)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         if (!_data.TryGetValue(key, out var index))
@@ -288,7 +295,7 @@ public partial class KvStore : IDisposable
     /// <returns>添加成功返回 true，key 已存在且未过期返回 false</returns>
     public Boolean Add(String key, ReadOnlySpan<Byte> value, TimeSpan ttl)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -339,7 +346,7 @@ public partial class KvStore : IDisposable
     /// <returns>旧值池化数据包，不存在返回 null。调用方用完后需 Dispose</returns>
     public IOwnerPacket? Replace(String key, ReadOnlySpan<Byte> value, TimeSpan? ttl = null)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -377,7 +384,7 @@ public partial class KvStore : IDisposable
     /// <returns>递增后的值</returns>
     public Int64 Inc(String key, Int64 delta = 1, TimeSpan? ttl = null)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -424,7 +431,7 @@ public partial class KvStore : IDisposable
     /// <returns>递增后的值</returns>
     public Double IncDouble(String key, Double delta, TimeSpan? ttl = null)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -556,7 +563,7 @@ public partial class KvStore : IDisposable
     /// <returns>过期时间。键不存在、已过期或永不过期返回 null</returns>
     public DateTime? GetExpiration(String key)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         if (!_data.TryGetValue(key, out var index))
@@ -581,7 +588,7 @@ public partial class KvStore : IDisposable
     /// <returns>键存在并更新成功返回 true</returns>
     public Boolean SetExpiration(String key, TimeSpan ttl)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         lock (_writeLock)
@@ -618,7 +625,7 @@ public partial class KvStore : IDisposable
     /// <returns>剩余 TTL。永不过期返回 TimeSpan.Zero；不存在或已过期返回负值</returns>
     public TimeSpan GetTtl(String key)
     {
-        if (String.IsNullOrEmpty(key)) throw new ArgumentException("键不能为空", nameof(key));
+        CheckKey(key);
         CheckDisposed();
 
         if (!_data.TryGetValue(key, out var index))

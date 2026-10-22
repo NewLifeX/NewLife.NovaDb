@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO;
 using System.Text;
+using NewLife;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine.Flux.Coding;
 using NewLife.NovaDb.Utilities;
@@ -593,7 +594,7 @@ internal static class FluxBlockCodec
         var payload = stored;
         if (compress == Compress_Lz4)
         {
-            if (!Lz4Codec.TryDecompress(stored, rawLength, out var raw)) throw new InvalidDataException("Flux 列负载解压失败");
+            if (!Lz4Codec.TryDecompress(stored, rawLength, out var raw)) throw new InvalidDataException(L.T("Failed to decompress the Flux column payload."));
             payload = raw;
         }
 

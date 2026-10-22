@@ -142,7 +142,7 @@ public partial class NovaTable : IDisposable
         if (row == null)
             throw new ArgumentNullException(nameof(row));
         if (row.Length != _schema.Columns.Count)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Row has {row.Length} columns, expected {_schema.Columns.Count}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Row has {0} columns, expected {1}", row.Length, _schema.Columns.Count);
 
         lock (_lock)
         {
@@ -174,7 +174,7 @@ public partial class NovaTable : IDisposable
                 foreach (var ver in versions!)
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
-                        throw new NovaException(ErrorCode.PrimaryKeyConflict, $"Primary key '{pkValue}' already exists");
+                        throw new NovaException(ErrorCode.PrimaryKeyConflict, "Primary key '{0}' already exists", pkValue);
                 }
             }
 
@@ -303,7 +303,7 @@ public partial class NovaTable : IDisposable
         if (newRow == null)
             throw new ArgumentNullException(nameof(newRow));
         if (newRow.Length != _schema.Columns.Count)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Row has {newRow.Length} columns, expected {_schema.Columns.Count}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Row has {0} columns, expected {1}", newRow.Length, _schema.Columns.Count);
 
         lock (_lock)
         {
@@ -590,7 +590,7 @@ public partial class NovaTable : IDisposable
         lock (_lock)
         {
             if (_secondaryIndexes.ContainsKey(indexDef.IndexName))
-                throw new NovaException(ErrorCode.InvalidArgument, $"Index '{indexDef.IndexName}' already exists");
+                throw new NovaException(ErrorCode.InvalidArgument, "Index '{0}' already exists", indexDef.IndexName);
 
             var idx = new SkipList<ComparableObject, List<ComparableObject>>();
             _secondaryIndexes[indexDef.IndexName] = idx;
@@ -623,7 +623,7 @@ public partial class NovaTable : IDisposable
                         }
                         else if (indexDef.IsUnique && pkList!.Count > 0)
                         {
-                            throw new NovaException(ErrorCode.UniqueConstraintViolation, $"Duplicate key in unique index '{indexDef.IndexName}'");
+                            throw new NovaException(ErrorCode.UniqueConstraintViolation, "Duplicate key in unique index '{0}'", indexDef.IndexName);
                         }
 
                         pkList!.Add(pk);
@@ -693,7 +693,7 @@ public partial class NovaTable : IDisposable
         lock (_lock)
         {
             if (_fullTextIndexes.ContainsKey(indexName))
-                throw new NovaException(ErrorCode.InvalidArgument, $"Full-text index '{indexName}' already exists");
+                throw new NovaException(ErrorCode.InvalidArgument, "Full-text index '{0}' already exists", indexName);
 
             var idx = new FullTextIndex(indexName, columns);
             _fullTextIndexes[indexName] = idx;
@@ -741,7 +741,7 @@ public partial class NovaTable : IDisposable
         lock (_lock)
         {
             if (!_fullTextIndexes.TryGetValue(indexName, out var idx))
-                throw new NovaException(ErrorCode.InvalidArgument, $"Full-text index '{indexName}' not found");
+                throw new NovaException(ErrorCode.InvalidArgument, "Full-text index '{0}' not found", indexName);
 
             var pkCol = _schema.GetPrimaryKeyColumn()!;
             var result = new List<(Object, Double)>();
@@ -848,7 +848,7 @@ public partial class NovaTable : IDisposable
                 foreach (var existingPk in pkList)
                 {
                     if (CompareKeys(existingPk, pk) != 0)
-                        throw new NovaException(ErrorCode.UniqueConstraintViolation, $"Duplicate key in unique index '{indexDef.IndexName}'");
+                        throw new NovaException(ErrorCode.UniqueConstraintViolation, "Duplicate key in unique index '{0}'", indexDef.IndexName);
                 }
             }
         }

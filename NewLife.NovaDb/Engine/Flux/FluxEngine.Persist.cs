@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Buffers.Binary;
 using System.Text;
+using NewLife;
 using NewLife.Buffers;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
@@ -107,7 +108,7 @@ public partial class FluxEngine
 #endif
         if (header[0] != FluxLogMagic[0] || header[1] != FluxLogMagic[1] ||
             header[2] != FluxLogMagic[2] || header[3] != FluxLogMagic[3])
-            throw new InvalidOperationException("Invalid Flux log file header");
+            throw new InvalidOperationException(L.T("Invalid Flux log file header"));
     }
 
     #endregion

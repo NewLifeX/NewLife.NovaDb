@@ -1,4 +1,6 @@
-﻿namespace NewLife.NovaDb.Engine.Flux;
+﻿using NewLife;
+
+namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>消息 ID，格式为 "timestamp-sequence"</summary>
 public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
@@ -49,7 +51,7 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
 
         var dashIndex = value.IndexOf('-');
         if (dashIndex < 0)
-            throw new FormatException($"Invalid MessageId format: '{value}'");
+            throw new FormatException(L.T("Invalid MessageId format: '{0}'", value));
 
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         var timestamp = Int64.Parse(value.AsSpan(0, dashIndex));

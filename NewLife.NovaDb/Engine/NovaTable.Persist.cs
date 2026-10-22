@@ -108,7 +108,7 @@ public partial class NovaTable
         // 校验魔数
         if (header[0] != RowLogMagic[0] || header[1] != RowLogMagic[1] ||
             header[2] != RowLogMagic[2] || header[3] != RowLogMagic[3])
-            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid row log file header for table '{_schema.TableName}'");
+            throw new NovaException(ErrorCode.FileCorrupted, "Invalid row log file header for table '{0}'", _schema.TableName);
     }
 
     #endregion

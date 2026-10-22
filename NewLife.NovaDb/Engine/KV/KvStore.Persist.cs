@@ -3,6 +3,7 @@ using System.IO.MemoryMappedFiles;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
+using NewLife;
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
@@ -124,7 +125,7 @@ public partial class KvStore
 
         var header = FileHeader.Read(buf);
         if (header.FileType != FileType.KvData)
-            throw new InvalidOperationException($"无效的 KV 数据文件类型: {header.FileType}, 路径: {_filePath}");
+            throw new InvalidOperationException(L.T("Invalid KV data file type: {0}, path: {1}", header.FileType, _filePath));
     }
 
     /// <summary>关闭数据文件，释放资源</summary>
@@ -304,7 +305,7 @@ public partial class KvStore
         _fileStream!.Position = index.ValueOffset;
         var bytesRead = _fileStream.Read(pk.Buffer, pk.Offset, index.ValueLength);
         if (bytesRead < index.ValueLength)
-            throw new InvalidOperationException("KV 数据文件损坏：无法读取完整值数据");
+            throw new InvalidOperationException(L.T("KV data file is corrupted: unable to read the complete value data."));
 
         return pk;
     }

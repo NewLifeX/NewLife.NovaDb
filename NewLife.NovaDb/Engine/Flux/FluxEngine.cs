@@ -276,7 +276,7 @@ public partial class FluxEngine : IDisposable
                 "min" => values.Min(),
                 "max" => values.Max(),
                 "count" => values.Count,
-                _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown aggregation: {aggregation}")
+                _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown aggregation: {0}", aggregation)
             };
 
             results.Add(new DownsampleResult(kvp.Key, aggValue));
@@ -299,9 +299,9 @@ public partial class FluxEngine : IDisposable
     /// <returns>滑动窗口结果列表，每个结果包含窗口起始时间和聚合值</returns>
     public List<DownsampleResult> SlidingWindow(Int64 startTicks, Int64 endTicks, Int64 windowTicks, Int64 stepTicks, String fieldName, String aggregation)
     {
-        if (windowTicks <= 0) throw new ArgumentException("Window size must be positive", nameof(windowTicks));
-        if (stepTicks <= 0) throw new ArgumentException("Step size must be positive", nameof(stepTicks));
-        if (stepTicks > windowTicks) throw new ArgumentException("Step size cannot exceed window size", nameof(stepTicks));
+        if (windowTicks <= 0) throw new ArgumentException(L.T("Window size must be positive"), nameof(windowTicks));
+        if (stepTicks <= 0) throw new ArgumentException(L.T("Step size must be positive"), nameof(stepTicks));
+        if (stepTicks > windowTicks) throw new ArgumentException(L.T("Step size cannot exceed window size"), nameof(stepTicks));
         if (endTicks <= startTicks) return [];
         if (fieldName == null) throw new ArgumentNullException(nameof(fieldName));
 
@@ -336,7 +336,7 @@ public partial class FluxEngine : IDisposable
                 "min" => values.Min(),
                 "max" => values.Max(),
                 "count" => values.Count,
-                _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown aggregation: {aggregation}")
+                _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown aggregation: {0}", aggregation)
             };
 
             results.Add(new DownsampleResult(ws, aggValue));

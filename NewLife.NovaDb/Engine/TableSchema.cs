@@ -111,7 +111,7 @@ public class TableSchema
             throw new ArgumentNullException(nameof(column));
 
         if (_columnIndexes.ContainsKey(column.Name))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{column.Name}' already exists");
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' already exists", column.Name);
 
         column.Ordinal = _columns.Count;
         _columns.Add(column);
@@ -133,11 +133,11 @@ public class TableSchema
         if (columnName == null) throw new ArgumentNullException(nameof(columnName));
 
         if (!_columnIndexes.TryGetValue(columnName, out var index))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found", columnName);
 
         var column = _columns[index];
         if (column.IsPrimaryKey)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Cannot drop primary key column '{columnName}'");
+            throw new NovaException(ErrorCode.InvalidArgument, "Cannot drop primary key column '{0}'", columnName);
 
         _columns.RemoveAt(index);
         _columnIndexes.Remove(columnName);
@@ -156,7 +156,7 @@ public class TableSchema
         if (columnName == null) throw new ArgumentNullException(nameof(columnName));
 
         if (!_columnIndexes.TryGetValue(columnName, out var index))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found", columnName);
 
         var column = _columns[index];
         column.DataType = newDataType;
@@ -190,7 +190,7 @@ public class TableSchema
             throw new ArgumentNullException(nameof(columnName));
 
         if (!_columnIndexes.TryGetValue(columnName, out var index))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{columnName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found", columnName);
 
         return index;
     }
@@ -232,13 +232,13 @@ public class TableSchema
         if (index == null) throw new ArgumentNullException(nameof(index));
 
         if (FindIndexByName(index.IndexName) != null)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Index '{index.IndexName}' already exists");
+            throw new NovaException(ErrorCode.InvalidArgument, "Index '{0}' already exists", index.IndexName);
 
         // 验证索引列是否都存在
         foreach (var col in index.Columns)
         {
             if (!_columnIndexes.ContainsKey(col))
-                throw new NovaException(ErrorCode.InvalidArgument, $"Column '{col}' not found in table '{TableName}'");
+                throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found in table '{1}'", col, TableName);
         }
 
         _indexes.Add(index);
@@ -252,7 +252,7 @@ public class TableSchema
 
         var idx = FindIndexByName(indexName);
         if (idx == null)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Index '{indexName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, "Index '{0}' not found", indexName);
 
         _indexes.Remove(idx);
     }

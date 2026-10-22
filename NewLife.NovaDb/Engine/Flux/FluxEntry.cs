@@ -1,4 +1,6 @@
-﻿namespace NewLife.NovaDb.Engine.Flux;
+﻿using NewLife;
+
+namespace NewLife.NovaDb.Engine.Flux;
 
 /// <summary>时序数据条目</summary>
 public class FluxEntry
@@ -28,7 +30,7 @@ public class FluxEntry
 
         var dashIndex = id.IndexOf('-');
         if (dashIndex < 0)
-            throw new FormatException($"Invalid message ID format: '{id}'");
+            throw new FormatException(L.T("Invalid message ID format: '{0}'", id));
 
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
         var timestamp = Int64.Parse(id.AsSpan(0, dashIndex));

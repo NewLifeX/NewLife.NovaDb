@@ -55,7 +55,7 @@ public class MaterializedViewManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(MaterializedViewManager));
 
             if (_views.ContainsKey(name))
-                throw new NovaException(ErrorCode.TableExists, $"Materialized view '{name}' already exists");
+                throw new NovaException(ErrorCode.TableExists, "Materialized view '{0}' already exists", name);
 
             var view = new MaterializedView
             {
@@ -84,7 +84,7 @@ public class MaterializedViewManager : IDisposable
             if (_disposed) throw new ObjectDisposedException(nameof(MaterializedViewManager));
 
             if (!_views.TryGetValue(name, out var view))
-                throw new NovaException(ErrorCode.TableNotFound, $"Materialized view '{name}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, "Materialized view '{0}' not found", name);
 
             RefreshInternal(view);
             return view;
@@ -129,7 +129,7 @@ public class MaterializedViewManager : IDisposable
         lock (_lock)
         {
             if (!_views.TryGetValue(name, out var view))
-                throw new NovaException(ErrorCode.TableNotFound, $"Materialized view '{name}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, "Materialized view '{0}' not found", name);
 
             return new SqlResult
             {
