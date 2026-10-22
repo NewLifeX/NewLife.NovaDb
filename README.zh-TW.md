@@ -546,10 +546,11 @@ NovaDb 支援**一主多從**架構，透過 Binlog 實現非同步資料同步�
 | 版本 | 計劃內容 |
 |------|----------|
 | **v1.0**（已完成） | 嵌入式+伺服器雙模、Nova/Flux/KV 引擎、SQL DDL/DML/SELECT/JOIN、交易/MVCC、WAL/恢復、冷熱分離、分片、MQ 消費組、ADO.NET Provider、叢集主從同步 |
-| **v1.1** | P0 級 SQL 函數（字串/數值/日期/轉換/條件約 30 個函數） |
-| **v1.2** | MQ 阻塞讀取、KV Add/Inc 操作、P1 級 SQL 函數 |
-| **v1.3** | MQ 延遲訊息、死信佇列 |
-| **v2.0**（已完成） | GeoPoint 地理編碼 + Vector 向量類型（AI 向量檢索）、GIS 地理擴充、全文檢索（BM25）、NovaVectorStore（IVectorStore 多集合）、增量物化視圖、Binlog 管理、可觀測性與管理工具 |
+| **v1.1**（已完成） | P0 級 SQL 函數（字串/數值/日期/轉換/條件約 30 個函數） |
+| **v1.2**（已完成） | MQ 阻塞讀取、KV Add/Inc 操作、P1 級 SQL 函數 |
+| **v1.3**（已完成） | MQ 延遲訊息、死信佇列 |
+| **v2.0**（已完成） | GeoPoint 地理編碼 + Vector 向量類型（AI 向量檢索）、GIS  地理擴充、全文檢索（BM25）、NovaVectorStore（IVectorStore 多集合）、增量物化視圖、Binlog 管理、可觀測性與管理工具 |
+| **v2.1**（已完成） | 時序列式封存 + 區塊壓縮（數值編碼 + LZ4）、Rollup 預聚合與回填及聚合查詢自動路由、SESSION/STATE_WINDOW 分組、壓縮比報表、NativeAOT 支援與多 RID CI（win-x64/linux-x64/linux-arm64/loongarch64） |
 
 ## 對比定位
 
