@@ -1,4 +1,4 @@
-# NewLife.NovaDb - قاعدة بيانات هجينة مضمّنة/شبكية
+# NewLife.NovaDb
 
 
 ![GitHub License](https://img.shields.io/github/license/NewLifeX/NewLife.NovaDb?logo=github)
@@ -16,30 +16,554 @@
 
 > ⚠️ قد تتأخر هذه الترجمة عن أحدث نسخة؛ المحتوى المعتمد هو [README الإنجليزي](README.md).
 
-NewLife.NovaDb قاعدة بيانات هجينة متوسطة إلى كبيرة بـ C#، تجمع محركات علائقية وسلاسل زمنية وطوابير رسائل وKV، مع وضعي التضمين والشبكة والنسخ المتماثل.
+قاعدة بيانات هجينة متوسطة إلى كبيرة الحجم، مُنفَّذة بلغة **C#**، تعمل على **منصة .NET** (تدعم .NET Framework 4.5 حتى .NET 10)، وتدعم الوضعين المضمَّن والشبكي، وتجمع بين القدرات العلائقية والسلاسل الزمنية وطوابير الرسائل وNoSQL (KV).
 
-## التثبيت
+## تقديم المنتج
 
-```bash
+`NewLife.NovaDb` (ويُختصر إلى `Nova`) هو البنية التحتية الأساسية لمنظومة NewLife، ومحرّك بيانات متكامل موجَّه لتطبيقات .NET. وبحذف كثير من الميزات النادرة (مثل الإجراءات المخزّنة والمُشغّلات ودوال النوافذ)، يحقّق أداءً أعلى في القراءة والكتابة وتكلفة تشغيل أقل؛ وحجم البيانات غير محدود منطقيًا (رهنًا بالقرص واستراتيجية التقسيم)، ويمكنه أن يحل محل SQLite/MySQL/Redis/TDengine في سيناريوهات محدّدة.
+
+### الخصائص الأساسية
+
+- **وضعا النشر**:
+  - **الوضع المضمَّن**: يعمل كمكتبة على غرار SQLite، وتُخزَّن البيانات في مجلدات محلية، بلا أي إعدادات
+  - **الوضع الشبكي**: عملية مستقلة + بروتوكول TCP، ووصول شبكي على غرار MySQL؛ ويدعم النشر العنقودي والنسخ من الرئيسي إلى التابع (رئيسي واحد وعدة تابعين)
+- **المجلد هو قاعدة البيانات**: يكفي نسخ المجلد لإتمام الترحيل/النسخ الاحتياطي، دون الحاجة إلى عمليات dump/restore. ولكل جدول مجموعة ملفات مستقلة (`.data`/`.idx`/`.wal`).
+- **تكامل أربعة محرّكات**:
+  - **Nova Engine** (علائقي عام): فهرس SkipList + معاملات MVCC (Read Committed)، ويدعم CRUD واستعلامات SQL وJOIN
+  - **Flux Engine** (سلاسل زمنية + MQ): تقسيم زمني بأسلوب Append Only، ويدعم التنظيف التلقائي بـ TTL، ومجموعات المستهلكين على نمط Redis Stream مع Pending وAck؛ وتخزين عمودي في كتل مغلقة بترميز واعٍ بالنوع (Delta/DeltaDelta/XOR/RLE/قاموس) مع ضغط كتل LZ4، وتجميع مسبق Rollup مع توجيه تلقائي لاستعلامات التجميع، وتجميع نوافذ SESSION/STATE، والإبلاغ عن نسبة الضغط عبر `_sys.flux_compression`
+  - **وضع KV** (مخزن مفتاح-قيمة): محرّك Bitcask مستقل (فهرس في الذاكرة + قيم على القرص)، ويدعم TTL وعزل الجداول المتعددة
+  - **موفّر ADO.NET**: يتعرّف تلقائيًا على الوضع المضمَّن/الشبكي، ويتكامل أصليًا مع ORM الخاص بـ XCode
+- **فصل ديناميكي للفهارس الساخنة والباردة**: تُحمَّل البيانات الساخنة كاملة في الذاكرة الفيزيائية (عُقد SkipList)، بينما تُفرَّغ البيانات الباردة إلى MMF ويُحتفظ بدليل متفرّق فقط. جدول بـ 10 ملايين صف، عند الاستعلام عن أحدث 10,000 صف فقط، يستهلك أقل من 20MB من الذاكرة.
+- **شيفرة مُدارة بالكامل**: لا تبعيات على مكوّنات أصلية (C#/.NET خالصة)، ما يسهّل النشر عبر المنصات وفي البيئات المقيّدة.
+
+### محرّكات التخزين
+
+| المحرّك | بنية البيانات | حالات الاستخدام |
+|--------|----------------|-----------|
+| **Nova Engine** | SkipList (فصل ساخن/بارد بين الذاكرة وMMF) | CRUD عام، جداول الإعدادات، طلبات الأعمال، بيانات المستخدمين |
+| **Flux Engine** | تقسيم زمني (Append Only) | مستشعرات إنترنت الأشياء، جمع السجلات، طوابير الرسائل الداخلية، سجلات التدقيق |
+| **وضع KV** | Bitcask (فهرس في الذاكرة + قيم على القرص) | الأقفال الموزّعة، التخزين المؤقت، تخزين الجلسات، العدّادات، مركز الإعدادات |
+
+### أنواع البيانات
+
+| الفئة | نوع SQL | مقابل C# | الوصف |
+|----------|----------|------------|-------------|
+| منطقي | `BOOL` | `Boolean` | بايت واحد |
+| صحيح | `INT` / `LONG` | `Int32` / `Int64` | 4/8 بايت |
+| عائم | `DOUBLE` | `Double` | 8 بايت |
+| عشري | `DECIMAL` | `Decimal` | 128 بت، دقة موحّدة |
+| نصي | `STRING(n)` / `STRING` | `String` | UTF-8، ويمكن تحديد الطول |
+| ثنائي | `BINARY(n)` / `BLOB` | `Byte[]` | يمكن تحديد الطول |
+| تاريخ ووقت | `DATETIME` | `DateTime` | دقة حتى Ticks (100 نانوثانية) |
+| نقطة جغرافية | `GEOPOINT` | بنية مخصّصة | إحداثيات خط العرض/الطول، مع استعلامات المسافة/المضلّع |
+| متجه | `VECTOR(n)` | `Single[]` | بحث متجهات الذكاء الاصطناعي، مع استعلامات KNN لأقرب جار |
+
+### قدرات SQL
+
+تم تنفيذ مجموعة فرعية قياسية من SQL، تغطي نحو 60% من سيناريوهات الأعمال الشائعة:
+
+| الميزة | الحالة | الوصف |
+|---------|--------|-------------|
+| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE، وALTER TABLE (ADD/MODIFY/DROP COLUMN، COMMENT)، مع IF NOT EXISTS وPRIMARY KEY وUNIQUE وENGINE |
+| DML | ✅ | INSERT (صفوف متعددة)، UPDATE، DELETE، UPSERT (ON DUPLICATE KEY UPDATE)، TRUNCATE TABLE |
+| الاستعلام | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
+| التجميع | ✅ | COUNT/SUM/AVG/MIN/MAX |
+| JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop)، ويدعم الأسماء المستعارة للجداول |
+| المعلَّمات | ✅ | عناصر بديلة `@param` |
+| المعاملات | ✅ | MVCC، Read Committed، COMMIT/ROLLBACK |
+| دوال SQL | ✅ | نصية/عددية/تاريخية/تحويلية/شرطية/تجزئة (أكثر من 60 دالة) |
+| الاستعلامات الفرعية | ✅ | استعلامات IN/EXISTS الفرعية |
+| البحث النصي الكامل | ✅ | فهرس نصي كامل بترجيح BM25، ونتائج Top-K لاسترجاع RAG الهجين |
+| متقدّم | ❌ | لا توجد طرق عرض/مُشغّلات/إجراءات مخزّنة/دوال نوافذ |
+
+---
+
+## دليل الاستخدام
+
+### التثبيت
+
+ثبّت حزمة NovaDb الأساسية عبر NuGet:
+
+```shell
 dotnet add package NewLife.NovaDb
 ```
 
-## البدء السريع
+### طرق الوصول
+
+يوفّر NovaDb طريقتين للوصول من جهة العميل تناسبان سيناريوهات مختلفة:
+
+| طريقة الوصول | المحرّك المستهدف | الوصف |
+|--------------|---------------|-------------|
+| **ADO.NET + SQL** | Nova (علائقي)، Flux (سلاسل زمنية) | `DbConnection`/`DbCommand`/`DbDataReader` قياسية، ومتوافقة مع جميع مكتبات ORM |
+| **NovaClient** | MQ (طابور رسائل)، KV (مخزن مفتاح-قيمة) | عميل RPC يوفّر واجهات نشر الرسائل واستهلاكها والاعتراف بها، وواجهات قراءة/كتابة KV |
+
+---
+
+### 1. قاعدة البيانات العلائقية (ADO.NET + SQL)
+
+يُوصَل إلى المحرّك العلائقي (Nova Engine) عبر واجهة ADO.NET القياسية. ووجود `Data Source` في سلسلة الاتصال يعني الوضع المضمَّن، ووجود `Server` يعني الوضع الشبكي.
+
+#### 1.1 الوضع المضمَّن (بدء سريع في 5 دقائق)
+
+لا يحتاج الوضع المضمَّن إلى خدمة مستقلة، وهو مثالي لتطبيقات سطح المكتب وأجهزة إنترنت الأشياء واختبارات الوحدة.
 
 ```csharp
-using var conn = new NovaConnection("Data Source=data;Mode=Embedded");
+using NewLife.NovaDb.Client;
+
+// إنشاء الاتصال (الوضع المضمَّن، والمجلد هو قاعدة البيانات)
+using var conn = new NovaConnection { ConnectionString = "Data Source=./mydb" };
 conn.Open();
+
+// إنشاء الجدول
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"CREATE TABLE IF NOT EXISTS users (
+    id   INT PRIMARY KEY AUTO_INCREMENT,
+    name STRING(50) NOT NULL,
+    age  INT DEFAULT 0,
+    created DATETIME
+)";
+cmd.ExecuteNonQuery();
+
+// إدراج بيانات
+cmd.CommandText = "INSERT INTO users (name, age, created) VALUES ('Alice', 25, NOW())";
+cmd.ExecuteNonQuery();
+
+// إدراج دفعة من الصفوف
+cmd.CommandText = @"INSERT INTO users (name, age) VALUES
+    ('Bob', 30),
+    ('Charlie', 28)";
+cmd.ExecuteNonQuery();
+
+// الاستعلام عن البيانات
+cmd.CommandText = "SELECT * FROM users WHERE age >= 25 ORDER BY age";
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"id={reader["id"]}, name={reader["name"]}, age={reader["age"]}");
+}
 ```
 
-## الميزات الرئيسية
+#### 1.2 الوضع الشبكي
 
-- تغطية واسعة لإصدارات البروتوكولات والصيغ الشائعة
-- إنتاجية عالية وزمن استجابة منخفض، مُثبت على نطاق الإنتاج
-- تنفيذ مُدار بالكامل دون تبعيات أصلية
+يوفّر الوضع الشبكي وصولًا عن بُعد عبر TCP، ويدعم عدة اتصالات عميل متزامنة. وكل قاعدة بيانات محدّدة في سلسلة الاتصال (`Database=mydb`) تُقابل مجلد محرّك مستقلًا داخل مجلد بيانات الخادم، ما يتيح توجيه قواعد بيانات متعددة على خادم واحد.
 
-## التوثيق
+**تشغيل الخادم:**
 
-> 📖 التوثيق الكامل (بالصينية): [مستندات المستودع](Doc)
+```csharp
+using NewLife.NovaDb.Server;
+
+var svr = new NovaServer(3306) { DbPath = "./data" };
+svr.Start();
+Console.ReadLine();
+svr.Stop("Manual shutdown");
+```
+
+**اتصال عميل ADO.NET (واجهة برمجية مطابقة للوضع المضمَّن):**
+
+```csharp
+using var conn = new NovaConnection
+{
+    ConnectionString = "Server=127.0.0.1;Port=3306;Database=mydb"
+};
+conn.Open();
+
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT * FROM users WHERE age > 20";
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"name={reader["name"]}");
+}
+```
+
+#### 1.3 الاستعلامات ذات المعلَّمات
+
+تمنع الاستعلامات ذات المعلَّمات حقن SQL باستخدام معلَّمات مسماة `@name`:
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT * FROM users WHERE age > @minAge AND name LIKE @pattern";
+cmd.Parameters.Add(new NovaParameter("@minAge", 18));
+cmd.Parameters.Add(new NovaParameter("@pattern", "A%"));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"{reader["name"]}, {reader["age"]}");
+}
+```
+
+#### 1.4 استعلامات التجميع والقيم المفردة
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT COUNT(*) FROM users";
+var count = Convert.ToInt32(cmd.ExecuteScalar());
+Console.WriteLine($"Total users: {count}");
+
+cmd.CommandText = "SELECT AVG(age) FROM users WHERE age > 0";
+var avgAge = Convert.ToDouble(cmd.ExecuteScalar());
+Console.WriteLine($"Average age: {avgAge:F1}");
+```
+
+#### 1.5 المعاملات
+
+ينفّذ NovaDb عزل المعاملات اعتمادًا على MVCC، وبمستوى عزل افتراضي هو Read Committed:
+
+```csharp
+using var conn = new NovaConnection { ConnectionString = "Data Source=./mydb" };
+conn.Open();
+
+using var tx = conn.BeginTransaction();
+try
+{
+    using var cmd = conn.CreateCommand();
+    cmd.Transaction = tx;
+
+    // خصم من المخزون
+    cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
+    var affected = cmd.ExecuteNonQuery();
+    if (affected == 0) throw new InvalidOperationException("Insufficient stock");
+
+    // إنشاء الطلب
+    cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
+    cmd.ExecuteNonQuery();
+
+    tx.Commit();
+}
+catch
+{
+    tx.Rollback();
+    throw;
+}
+```
+
+#### 1.6 استعلامات JOIN
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    SELECT o.id, u.name, o.total
+    FROM orders o
+    INNER JOIN users u ON o.user_id = u.id
+    WHERE o.total > @minTotal
+    ORDER BY o.total DESC
+    LIMIT 10";
+cmd.Parameters.Add(new NovaParameter("@minTotal", 100));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"Order {reader["id"]}: {reader["name"]} - ${reader["total"]}");
+}
+```
+
+#### 1.7 عمليات DDL
+
+```sql
+-- إنشاء/حذف قاعدة البيانات
+CREATE DATABASE shop;
+DROP DATABASE shop;
+
+-- تعديل بنية الجدول
+ALTER TABLE products ADD COLUMN category STRING;
+ALTER TABLE products MODIFY COLUMN name STRING(200);
+ALTER TABLE products DROP COLUMN category;
+
+-- إدارة الفهارس
+CREATE INDEX idx_name ON users (name);
+CREATE UNIQUE INDEX idx_email ON users (email);
+DROP INDEX idx_name ON users;
+```
+
+#### 1.8 UPSERT
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    INSERT INTO products (id, name, price) VALUES (1, 'Laptop', 5499.00)
+    ON DUPLICATE KEY UPDATE price = 5499.00";
+cmd.ExecuteNonQuery();
+```
+
+#### 1.9 مرجع سلسلة الاتصال
+
+| المعلَّمة | مثال | الوصف |
+|-----------|---------|-------------|
+| `Data Source` | `Data Source=./mydb` | الوضع المضمَّن، مسار مجلد قاعدة البيانات |
+| `Server` | `Server=127.0.0.1` | الوضع الشبكي، عنوان الخادم |
+| `Port` | `Port=3306` | منفذ الخادم (الافتراضي 3306) |
+| `Database` | `Database=mydb` | اسم قاعدة البيانات |
+| `WalMode` | `WalMode=Full` | وضع WAL (Full/Normal/None) |
+| `ReadOnly` | `ReadOnly=true` | وضع القراءة فقط |
+
+---
+
+### 2. قاعدة بيانات السلاسل الزمنية (ADO.NET + SQL)
+
+يُوصَل إلى محرّك السلاسل الزمنية (Flux Engine) أيضًا عبر ADO.NET + SQL. حدّد `ENGINE=FLUX` عند إنشاء الجداول.
+
+#### 2.1 إنشاء جدول سلاسل زمنية
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"CREATE TABLE IF NOT EXISTS metrics (
+    timestamp DATETIME,
+    device_id STRING(50),
+    temperature DOUBLE,
+    humidity DOUBLE
+) ENGINE=FLUX";
+cmd.ExecuteNonQuery();
+```
+
+#### 2.2 كتابة بيانات السلاسل الزمنية
+
+```csharp
+// إدراج سجل واحد
+cmd.CommandText = @"INSERT INTO metrics (timestamp, device_id, temperature, humidity)
+    VALUES (NOW(), 'sensor-001', 23.5, 65.0)";
+cmd.ExecuteNonQuery();
+
+// إدراج دفعة من الصفوف
+cmd.CommandText = @"INSERT INTO metrics (timestamp, device_id, temperature, humidity) VALUES
+    ('2025-07-01 10:00:00', 'sensor-001', 22.1, 60.0),
+    ('2025-07-01 10:01:00', 'sensor-001', 22.3, 61.0),
+    ('2025-07-01 10:02:00', 'sensor-002', 25.0, 55.0)";
+cmd.ExecuteNonQuery();
+```
+
+#### 2.3 الاستعلام عن نطاق زمني
+
+```csharp
+cmd.CommandText = @"SELECT device_id, temperature, humidity, timestamp
+    FROM metrics
+    WHERE timestamp >= @start AND timestamp < @end
+    ORDER BY timestamp DESC";
+cmd.Parameters.Add(new NovaParameter("@start", DateTime.Now.AddHours(-1)));
+cmd.Parameters.Add(new NovaParameter("@end", DateTime.Now));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"[{reader["timestamp"]}] {reader["device_id"]}: " +
+        $"temp={reader["temperature"]}°C, humidity={reader["humidity"]}%");
+}
+```
+
+#### 2.4 تحليل التجميع
+
+```csharp
+// متوسط درجة الحرارة لكل جهاز
+cmd.CommandText = @"SELECT device_id, COUNT(*) AS cnt, AVG(temperature) AS avg_temp,
+        MIN(temperature) AS min_temp, MAX(temperature) AS max_temp
+    FROM metrics
+    WHERE timestamp >= @start
+    GROUP BY device_id";
+cmd.Parameters.Add(new NovaParameter("@start", DateTime.Now.AddDays(-1)));
+
+using var reader = cmd.ExecuteReader();
+while (reader.Read())
+{
+    Console.WriteLine($"{reader["device_id"]}: avg={reader["avg_temp"]:F1}°C, " +
+        $"min={reader["min_temp"]}°C, max={reader["max_temp"]}°C, count={reader["cnt"]}");
+}
+```
+
+#### 2.5 سياسة الاحتفاظ بالبيانات
+
+تدعم جداول السلاسل الزمنية التنظيف التلقائي للشرائح المنتهية صلاحيتها اعتمادًا على TTL، مع الاحتفاظ بالبيانات حسب الزمن أو السعة:
+
+```csharp
+// تكوين معلَّمات السلاسل الزمنية عبر DbOptions
+var options = new DbOptions
+{
+    FluxPartitionHours = 1,        // قسم واحد كل ساعة
+    FluxDefaultTtlSeconds = 86400, // الاحتفاظ بالبيانات لمدة 24 ساعة
+};
+```
+
+---
+
+### 3. طابور الرسائل (NovaClient)
+
+ينفّذ NovaDb طابور رسائل على نمط Redis Stream اعتمادًا على محرّك السلاسل الزمنية Flux. ويُوصَل إلى طابور الرسائل عبر واجهة RPC الخاصة بـ `NovaClient`.
+
+#### 3.1 الاتصال بالخادم
+
+```csharp
+using NewLife.NovaDb.Client;
+
+using var client = new NovaClient("tcp://127.0.0.1:3306");
+client.Open();
+```
+
+#### 3.2 نشر الرسائل
+
+```csharp
+// تنفيذ SQL عبر RPC لإدراج رسالة في جدول Flux
+var affected = await client.ExecuteAsync(
+    "INSERT INTO order_events (timestamp, orderId, action, amount) " +
+    "VALUES (NOW(), 10001, 'created', 299.00)");
+Console.WriteLine($"Message published, affected rows: {affected}");
+```
+
+#### 3.3 استهلاك الرسائل
+
+```csharp
+// قراءة الرسائل (حسب النطاق الزمني)
+var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
+    "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
+    new { since = DateTime.Now.AddMinutes(-5) });
+```
+
+#### 3.4 نبض الحياة (Heartbeat)
+
+```csharp
+var serverTime = await client.PingAsync();
+Console.WriteLine($"Server connected: {serverTime}");
+Console.WriteLine($"Is connected: {client.IsConnected}");
+```
+
+#### 3.5 الخصائص الأساسية لطابور الرسائل
+
+- **معرّف الرسالة**: طابع زمني + رقم تسلسلي (يتزايد تلقائيًا داخل الميلي ثانية نفسها)، وترتيب عالمي
+- **مجموعة المستهلكين**: `Topic/Stream` + `ConsumerGroup` + `Consumer` + `Pending`
+- **الموثوقية**: تسليم مرة على الأقل (At-Least-Once)، فتُدرج الرسالة في Pending بعد القراءة، ثم تُؤكَّد بـ Ack بعد نجاح معالجة العمل
+- **الاحتفاظ بالبيانات**: يدعم TTL (يحذف الشرائح القديمة تلقائيًا حسب الزمن/حجم الملف)
+- **الرسائل المؤجّلة**: تحديد مدة التأخير أو وقت التسليم الدقيق
+- **طابور الرسائل الميتة**: تدخل الرسالة DLQ تلقائيًا بعد تجاوز الحد الأقصى لعدد المحاولات
+
+---
+
+### 4. مخزن المفتاح-قيمة KV (NovaClient)
+
+يُوصَل إلى تخزين KV عبر `NovaClient`. حدّد `ENGINE=KV` عند إنشاء الجداول. ولجداول KV مخطط ثابت هو `Key + Value + TTL`.
+
+#### 4.1 إنشاء جدول KV
+
+```csharp
+using var client = new NovaClient("tcp://127.0.0.1:3306");
+client.Open();
+
+// إنشاء جدول KV (TTL الافتراضي 7200 ثانية = ساعتان)
+await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
+    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+) ENGINE=KV DEFAULT_TTL=7200");
+```
+
+#### 4.2 قراءة/كتابة البيانات
+
+```csharp
+// كتابة (بدلالات UPSERT)
+await client.ExecuteAsync(
+    "INSERT INTO session_cache (Key, Value, TTL) VALUES ('session:1001', 'user-data', " +
+    "DATEADD(NOW(), 30, 'MINUTE')) ON DUPLICATE KEY UPDATE Value = 'user-data'");
+
+// قراءة
+var result = await client.QueryAsync<IDictionary<String, Object>[]>(
+    "SELECT Value FROM session_cache WHERE Key = 'session:1001' " +
+    "AND (TTL IS NULL OR TTL > NOW())");
+
+// حذف
+await client.ExecuteAsync("DELETE FROM session_cache WHERE Key = 'session:1001'");
+```
+
+#### 4.3 الزيادة الذرّية (العدّاد)
+
+```csharp
+await client.ExecuteAsync(
+    "INSERT INTO counters (Key, Value) VALUES ('page:views', 1) " +
+    "ON DUPLICATE KEY UPDATE Value = Value + 1");
+```
+
+#### 4.4 القفل الموزّع
+
+```csharp
+// محاولة الحصول على القفل (لا ينجح الإدراج إلا عندما لا يكون المفتاح موجودًا)
+var locked = await client.ExecuteAsync(
+    "INSERT INTO dist_lock (Key, Value, TTL) VALUES ('lock:order:123', 'worker-1', " +
+    "DATEADD(NOW(), 30, 'SECOND'))");
+
+if (locked > 0)
+{
+    try
+    {
+        // تم الحصول على القفل، نفّذ منطق العمل
+    }
+    finally
+    {
+        await client.ExecuteAsync("DELETE FROM dist_lock WHERE Key = 'lock:order:123'");
+    }
+}
+```
+
+#### 4.5 نظرة عامة على قدرات KV
+
+| العملية | الوصف |
+|-----------|-------------|
+| `Get` | قراءة القيمة مع فحص TTL كسول |
+| `Set` | تعيين القيمة مع TTL اختياري |
+| `Add` | الإضافة فقط عندما لا يكون المفتاح موجودًا (قفل موزّع) |
+| `Delete` | حذف المفتاح |
+| `Inc` | زيادة/إنقاص ذرّي (عدّاد) |
+| `TTL` | يصبح المفتاح غير مرئي عند انتهاء صلاحيته، مع تنظيف دوري في الخلفية |
+
+---
+
+## أمان البيانات وأوضاع WAL
+
+يوفّر NovaDb ثلاث استراتيجيات لاستمرارية WAL:
+
+| الوضع | الوصف | حالات الاستخدام |
+|------|-------------|-----------|
+| `FULL` | كتابة متزامنة على القرص، مع تفريغ فوري عند كل تأكيد | سيناريوهات مالية/تداول، أعلى مستوى لأمان البيانات |
+| `NORMAL` | تفريغ غير متزامن كل ثانية (افتراضي) | معظم سيناريوهات الأعمال، يوازن بين الأداء والأمان |
+| `NONE` | غير متزامن بالكامل، بلا تفريغ استباقي | بيانات مؤقتة/تخزين مؤقت، أعلى إنتاجية |
+
+> اختيار أي وضع غير الوضع المتزامن (`FULL`) يعني قبول احتمال فقدان البيانات في سيناريوهات الانهيار أو انقطاع الطاقة.
+
+## النشر العنقودي
+
+يدعم NovaDb بنية **رئيسي واحد وعدة تابعين**، مع نسخ غير متزامن للبيانات عبر Binlog:
+
+```
+┌──────────┐    Binlog Sync    ┌──────────┐
+│  Master   │ ──────────────→  │  Slave 1  │
+│  (R/W)    │                  │  (R/O)    │
+└──────────┘                  └──────────┘
+      │         Binlog Sync    ┌──────────┐
+      └──────────────────────→ │  Slave 2  │
+                               │  (R/O)    │
+                               └──────────┘
+```
+
+- تتولى العقدة الرئيسية جميع عمليات الكتابة، بينما تقدّم العقد التابعة استعلامات للقراءة فقط
+- نسخ غير متزامن عبر Binlog مع دعم استئناف النسخ من نقطة الانقطاع
+- تتحمّل طبقة التطبيق مسؤولية فصل القراءة عن الكتابة
+
+## خريطة الطريق
+
+| الإصدار | الميزات المخطَّطة |
+|---------|------------------|
+| **v1.0** (مكتمل) | الوضع المزدوج المضمَّن + الخادم، محرّكات Nova/Flux/KV، SQL DDL/DML/SELECT/JOIN، المعاملات/MVCC، WAL/الاستعادة، الفصل الساخن/البارد، التقسيم، مجموعات مستهلكي MQ، موفّر ADO.NET، المزامنة العنقودية رئيسي-تابع |
+| **v1.1** (مكتمل) | دوال SQL من المستوى P0 (نصية/عددية/تاريخية/تحويلية/شرطية، نحو 30 دالة) |
+| **v1.2** (مكتمل) | القراءة الحاجزة في MQ، عمليات Add/Inc في KV، دوال SQL من المستوى P1 |
+| **v1.3** (مكتمل) | الرسائل المؤجّلة في MQ، طابور الرسائل الميتة |
+| **v2.0** (مكتمل) | ترميز GeoPoint الجغرافي + نوع Vector (بحث متجهات الذكاء الاصطناعي)، امتداد GIS، البحث النصي الكامل (BM25)، NovaVectorStore (IVectorStore، متعدد المجموعات)، طرق عرض مادّية تزايدية، إدارة Binlog، أدوات الرصد والإدارة |
+| **v2.1** (مكتمل) | تخزين عمودي في كتل مغلقة للسلاسل الزمنية + ضغط الكتل (ترميز رقمي + LZ4)، تجميع مسبق Rollup مع إعادة التعبئة والتوجيه التلقائي للاستعلامات، تجميع SESSION/STATE_WINDOW، الإبلاغ عن نسبة الضغط، دعم NativeAOT مع CI متعدد المعرّفات (win-x64/linux-x64/linux-arm64/loongarch64) |
+
+## التموضع
+
+لا يسعى NovaDb إلى مطابقة معيار SQL92 بالكامل، بل يغطي 80% من مجموعة الأعمال الشائعة الاستخدام، مقابل القدرات التالية المتميّزة:
+
+| التمايز | الوصف |
+|-----------------|-------------|
+| **مُدار بالكامل بـ .NET** | لا تبعيات أصلية، والنشر بنسخ الملفات (xcopy)، وبلا أي كلفة تسلسل داخل العملية نفسها مع تطبيقات .NET |
+| **وضع مزدوج: مضمَّن + خادم** | التضمين للتطوير والتنقيح على غرار SQLite، والخدمة المستقلة للإنتاج على غرار MySQL، بنفس واجهة البرمجة |
+| **المجلد هو قاعدة البيانات** | نسخ المجلد يكفي لإتمام الترحيل/النسخ الاحتياطي، دون حاجة إلى dump/restore |
+| **فصل الفهارس الساخنة والباردة** | جدول بـ 10 ملايين صف عند الاستعلام عن النقاط الساخنة فقط يستهلك أقل من 20MB من الذاكرة، مع تفريغ البيانات الباردة تلقائيًا إلى MMF |
+| **تكامل أربعة محرّكات** | مكوّن واحد يغطّي سيناريوهات SQLite + TDengine + Redis الشائعة، ويقلّل عدد مكوّنات التشغيل |
+| **تكامل أصلي مع NewLife** | تكييف مباشر مع ORM الخاص بـ XCode + ADO.NET، دون حاجة إلى برامج تشغيل من طرف ثالث |
 
 ## خريطة المنظومة
 
@@ -107,9 +631,3 @@ NewLife منظومة متعدّدة الطبقات من مشاريع مفتوح�
 ![智能大石头](https://newlifex.com/stone.jpg)
 
 </details>
-
-## الترخيص
-
-MIT License © 2002-2026 فريق NewLife
-
-[GitHub](https://github.com/NewLifeX/NewLife.NovaDb) | [Website](https://newlifex.com)
