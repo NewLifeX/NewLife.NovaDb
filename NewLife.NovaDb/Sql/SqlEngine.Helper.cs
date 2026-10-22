@@ -32,7 +32,7 @@ partial class SqlEngine
 
             case ParameterExpression param:
                 if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
-                    throw new NovaException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
+                    throw new NovaException(ErrorCode.InvalidArgument, "Parameter '{0}' not found", param.ParameterName);
                 return paramValue;
 
             case BinaryExpression binary:
@@ -69,7 +69,7 @@ partial class SqlEngine
                     BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
                     BinaryOperator.Modulo => ArithmeticOp(left, right, (a, b) => b != 0 ? a % b : throw new DivideByZeroException()),
                     BinaryOperator.Like => EvaluateLike(left, right),
-                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
+                    _ => throw new NovaException(ErrorCode.NotSupported, "Unsupported operator: {0}", binary.Operator)
                 };
 
             case UnaryExpression unary:
@@ -78,7 +78,7 @@ partial class SqlEngine
                 {
                     "NOT" => !(Convert.ToBoolean(operand)),
                     "-" => ArithmeticNegate(operand),
-                    _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
+                    _ => throw new NovaException(ErrorCode.NotSupported, "Unsupported unary operator: {0}", unary.Operator)
                 };
 
             case IsNullExpression isNull:
@@ -86,7 +86,7 @@ partial class SqlEngine
                 return isNull.IsNot ? val != null : val == null;
 
             default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type in JOIN: {expr.ExprType}");
+                throw new NovaException(ErrorCode.NotSupported, "Unsupported expression type in JOIN: {0}", expr.ExprType);
         }
     }
 
@@ -102,7 +102,7 @@ partial class SqlEngine
                     String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
                     return i;
             }
-            throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.TablePrefix}.{colRef.ColumnName}' not found");
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}.{1}' not found", colRef.TablePrefix, colRef.ColumnName);
         }
 
         // 无表前缀：按列名匹配（如有歧义取第一个）
@@ -111,7 +111,7 @@ partial class SqlEngine
             if (String.Equals(columns[i].Column, colRef.ColumnName, StringComparison.OrdinalIgnoreCase))
                 return i;
         }
-        throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' not found");
+        throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found", colRef.ColumnName);
     }
 
     /// <summary>构建 JOIN 查询的结果投影</summary>
@@ -173,7 +173,7 @@ partial class SqlEngine
     {
         using var _ = _metaLock.AcquireRead();
         if (!_tables.TryGetValue(tableName, out var table))
-            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
         return table;
     }
 
@@ -181,7 +181,7 @@ partial class SqlEngine
     private NovaTable GetTableInternal(String tableName)
     {
         if (!_tables.TryGetValue(tableName, out var table))
-            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
         return table;
     }
 
@@ -189,7 +189,7 @@ partial class SqlEngine
     {
         using var _ = _metaLock.AcquireRead();
         if (!_schemas.TryGetValue(tableName, out var schema))
-            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
         return schema;
     }
 
@@ -217,7 +217,7 @@ partial class SqlEngine
             "DATETIME" or "TIMESTAMP" or "DATE" or "TIME" or "YEAR" => DataType.DateTime,
             "GEOPOINT" => DataType.GeoPoint,
             "VECTOR" => DataType.Vector,
-            _ => throw new NovaException(ErrorCode.SyntaxError, $"Unknown data type: {typeName}")
+            _ => throw new NovaException(ErrorCode.SyntaxError, "Unknown data type: {0}", typeName)
         };
     }
 
@@ -274,7 +274,7 @@ partial class SqlEngine
     private static Double CosineSimilarity(Single[] a, Single[] b)
     {
         if (a.Length != b.Length)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Vector dimensions mismatch: {a.Length} vs {b.Length}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Vector dimensions mismatch: {0} vs {1}", a.Length, b.Length);
 
         Double dot = 0, normA = 0, normB = 0;
         for (var i = 0; i < a.Length; i++)
@@ -295,7 +295,7 @@ partial class SqlEngine
     private static Double EuclideanDistance(Single[] a, Single[] b)
     {
         if (a.Length != b.Length)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Vector dimensions mismatch: {a.Length} vs {b.Length}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Vector dimensions mismatch: {0} vs {1}", a.Length, b.Length);
 
         Double sum = 0;
         for (var i = 0; i < a.Length; i++)
@@ -314,7 +314,7 @@ partial class SqlEngine
     private static Double DotProduct(Single[] a, Single[] b)
     {
         if (a.Length != b.Length)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Vector dimensions mismatch: {a.Length} vs {b.Length}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Vector dimensions mismatch: {0} vs {1}", a.Length, b.Length);
 
         Double sum = 0;
         for (var i = 0; i < a.Length; i++)
@@ -369,7 +369,7 @@ partial class SqlEngine
             }
         }
         if (vectorColIdx < 0)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Table '{tableName}' has no Vector column");
+            throw new NovaException(ErrorCode.InvalidArgument, "Table '{0}' has no Vector column", tableName);
 
         // 获取主键列索引
         var pkIdx = targetSchema.PrimaryKeyIndex ?? 0;
@@ -389,7 +389,7 @@ partial class SqlEngine
                 "cosine" => CosineSimilarity(queryVec, vec),
                 "euclidean" => -EuclideanDistance(queryVec, vec), // 取负使得距离越小排名越高
                 "dot_product" or "dot" => DotProduct(queryVec, vec),
-                _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown metric: {metric}")
+                _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown metric: {0}", metric)
             };
 
             scored.Add((r[pkIdx], score));

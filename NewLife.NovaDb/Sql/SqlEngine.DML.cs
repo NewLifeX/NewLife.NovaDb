@@ -35,7 +35,7 @@ partial class SqlEngine
                 // 按列序号填充
                 if (values.Count != schema.Columns.Count)
                     throw new NovaException(ErrorCode.InvalidArgument,
-                        $"INSERT values count ({values.Count}) does not match column count ({schema.Columns.Count})");
+                        "INSERT values count ({0}) does not match column count ({1})", values.Count, schema.Columns.Count);
 
                 for (var i = 0; i < values.Count; i++)
                 {
@@ -118,7 +118,7 @@ partial class SqlEngine
             {
                 if (values.Count != schema.Columns.Count)
                     throw new NovaException(ErrorCode.InvalidArgument,
-                        $"REPLACE values count ({values.Count}) does not match column count ({schema.Columns.Count})");
+                        "REPLACE values count ({0}) does not match column count ({1})", values.Count, schema.Columns.Count);
 
                 for (var i = 0; i < values.Count; i++)
                 {
@@ -319,7 +319,7 @@ partial class SqlEngine
             {
                 if (values.Count != schema.Columns.Count)
                     throw new NovaException(ErrorCode.InvalidArgument,
-                        $"INSERT values count ({values.Count}) does not match column count ({schema.Columns.Count})");
+                        "INSERT values count ({0}) does not match column count ({1})", values.Count, schema.Columns.Count);
 
                 for (var i = 0; i < values.Count; i++)
                 {
@@ -393,7 +393,7 @@ partial class SqlEngine
             {
                 if (values.Count != schema.Columns.Count)
                     throw new NovaException(ErrorCode.InvalidArgument,
-                        $"MERGE values count ({values.Count}) does not match column count ({schema.Columns.Count})");
+                        "MERGE values count ({0}) does not match column count ({1})", values.Count, schema.Columns.Count);
 
                 for (var i = 0; i < values.Count; i++)
                 {

@@ -339,11 +339,11 @@ public class SqlParser
     {
         var dot = fileName.LastIndexOf('.');
         if (dot < 0 || dot >= fileName.Length - 1)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Invalid binlog file name: {fileName}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Invalid binlog file name: {0}", fileName);
 
         var idxStr = fileName.Substring(dot + 1);
         if (!Int32.TryParse(idxStr, out var index))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Invalid binlog file index: {idxStr}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Invalid binlog file index: {0}", idxStr);
 
         return index;
     }

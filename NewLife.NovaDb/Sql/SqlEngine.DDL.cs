@@ -15,7 +15,7 @@ partial class SqlEngine
             if (_schemas.ContainsKey(stmt.TableName))
             {
                 if (stmt.IfNotExists) return new SqlResult { AffectedRows = 0 };
-                throw new NovaException(ErrorCode.TableExists, $"Table '{stmt.TableName}' already exists");
+                throw new NovaException(ErrorCode.TableExists, "Table '{0}' already exists", stmt.TableName);
             }
 
             var schema = new TableSchema(stmt.TableName);
@@ -59,7 +59,7 @@ partial class SqlEngine
             if (!_schemas.ContainsKey(stmt.TableName))
             {
                 if (stmt.IfExists) return new SqlResult { AffectedRows = 0 };
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", stmt.TableName);
             }
 
             if (_tables.TryGetValue(stmt.TableName, out var table))
@@ -93,13 +93,13 @@ partial class SqlEngine
         using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.TryGetValue(stmt.TableName, out var schema))
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", stmt.TableName);
 
             // 验证索引列存在
             foreach (var col in stmt.Columns)
             {
                 if (!schema.HasColumn(col))
-                    throw new NovaException(ErrorCode.InvalidArgument, $"Column '{col}' not found in table '{stmt.TableName}'");
+                    throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found in table '{1}'", col, stmt.TableName);
             }
 
             // 创建索引定义并注册到 Schema
@@ -135,7 +135,7 @@ partial class SqlEngine
         using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.TryGetValue(stmt.TableName, out var schema))
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", stmt.TableName);
 
             // 从 Schema 移除索引定义
             schema.RemoveIndex(stmt.IndexName);
@@ -158,7 +158,7 @@ partial class SqlEngine
         if (Directory.Exists(dbPath))
         {
             if (stmt.IfNotExists) return new SqlResult { AffectedRows = 0 };
-            throw new NovaException(ErrorCode.DatabaseExists, $"Database '{stmt.DatabaseName}' already exists");
+            throw new NovaException(ErrorCode.DatabaseExists, "Database '{0}' already exists", stmt.DatabaseName);
         }
 
         Directory.CreateDirectory(dbPath);
@@ -172,7 +172,7 @@ partial class SqlEngine
         if (!Directory.Exists(dbPath))
         {
             if (stmt.IfExists) return new SqlResult { AffectedRows = 0 };
-            throw new NovaException(ErrorCode.DatabaseNotFound, $"Database '{stmt.DatabaseName}' not found");
+            throw new NovaException(ErrorCode.DatabaseNotFound, "Database '{0}' not found", stmt.DatabaseName);
         }
 
         Directory.Delete(dbPath, recursive: true);
@@ -184,7 +184,7 @@ partial class SqlEngine
         using var _ = _metaLock.AcquireWrite();
         {
             if (!_schemas.TryGetValue(stmt.TableName, out var schema))
-                throw new NovaException(ErrorCode.TableNotFound, $"Table '{stmt.TableName}' not found");
+                throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", stmt.TableName);
 
             switch (stmt.Action)
             {
@@ -227,7 +227,7 @@ partial class SqlEngine
                     }
 
                 default:
-                    throw new NovaException(ErrorCode.NotSupported, $"Unsupported ALTER TABLE action: {stmt.Action}");
+                    throw new NovaException(ErrorCode.NotSupported, "Unsupported ALTER TABLE action: {0}", stmt.Action);
             }
 
             // 表结构变更，持久化更新

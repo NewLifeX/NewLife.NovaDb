@@ -98,7 +98,7 @@ partial class SqlEngine
             "version" => BuildSysVersionData(),
             "binlog" => BuildSysBinlogData(),
             "flux_compression" => BuildSysFluxCompressionData(),
-            _ => throw new NovaException(ErrorCode.TableNotFound, $"System table '{stmt.TableName}' not found")
+            _ => throw new NovaException(ErrorCode.TableNotFound, "System table '{0}' not found", stmt.TableName)
         };
 
         // WHERE 过滤
@@ -361,7 +361,7 @@ partial class SqlEngine
             "columns" => BuildInformationSchemaColumns(),
             "statistics" => BuildInformationSchemaStatistics(),
             "tables" => BuildInformationSchemaTables(),
-            _ => throw new NovaException(ErrorCode.TableNotFound, $"System view '{stmt.TableName}' not found")
+            _ => throw new NovaException(ErrorCode.TableNotFound, "System view '{0}' not found", stmt.TableName)
         };
 
         if (stmt.Where != null)

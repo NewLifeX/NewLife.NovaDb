@@ -22,7 +22,7 @@ public partial class SqlEngine
             ShowType.Variables => ExecuteShowVariables(show),
             ShowType.Binlogs => ExecuteShowBinlogs(show),
             ShowType.BinlogStatus => ExecuteShowBinlogStatus(show),
-            _ => throw new NotSupportedException($"Unsupported SHOW type: {show.ShowType}")
+            _ => throw new NotSupportedException(L.T("Unsupported SHOW type: {0}", show.ShowType))
         };
     }
 

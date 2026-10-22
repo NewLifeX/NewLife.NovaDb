@@ -102,7 +102,7 @@ public partial class SqlEngine : IDisposable
     {
         using var _ = _metaLock.AcquireRead();
         if (!_tables.TryGetValue(tableName, out var table))
-            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
 
         table.CreateFullTextIndex(indexName, columns);
     }
@@ -114,7 +114,7 @@ public partial class SqlEngine : IDisposable
     {
         using var _ = _metaLock.AcquireRead();
         if (!_tables.TryGetValue(tableName, out var table))
-            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
 
         table.DropFullTextIndex(indexName);
     }
@@ -130,7 +130,7 @@ public partial class SqlEngine : IDisposable
     {
         using var _ = _metaLock.AcquireRead();
         if (!_tables.TryGetValue(tableName, out var table))
-            throw new NovaException(ErrorCode.TableNotFound, $"Table '{tableName}' not found");
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
 
         return table.SearchFullText(indexName, query, topK);
     }
@@ -316,7 +316,7 @@ public partial class SqlEngine : IDisposable
             var dumpPath = Path.Combine(Path.GetTempPath(), $"novadb_sql_dump_{Guid.NewGuid():N}.txt");
             File.WriteAllText(dumpPath, sql);
             System.Diagnostics.Debug.WriteLine($"SQL dumped to {dumpPath}");
-            return new NovaException(ErrorCode.SyntaxError, $"{ex.Message} (sql dumped to {dumpPath})", ex);
+            return new NovaException(ErrorCode.SyntaxError, "{0} (sql dumped to {1})", ex, ex.Message, dumpPath);
         }
 
         return ex as NovaException ?? new NovaException(ErrorCode.SyntaxError, ex.Message, ex);
@@ -341,7 +341,7 @@ public partial class SqlEngine : IDisposable
             {
                 SqlStatementType.PurgeBinlogs => ExecutePurgeBinlogs(binlogStmt),
                 SqlStatementType.FlushBinlogs => ExecuteFlushBinlogs(),
-                _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported binlog statement: {binlogStmt.StatementType}")
+                _ => throw new NovaException(ErrorCode.NotSupported, "Unsupported binlog statement: {0}", binlogStmt.StatementType)
             };
         }
 
@@ -381,7 +381,7 @@ public partial class SqlEngine : IDisposable
             // SHOW 命令
             ShowStatement show => ExecuteShow(show),
 
-            _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported statement type: {stmt.StatementType}")
+            _ => throw new NovaException(ErrorCode.NotSupported, "Unsupported statement type: {0}", stmt.StatementType)
         };
     }
 
@@ -417,7 +417,7 @@ public partial class SqlEngine : IDisposable
                 break;
 
             default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported transaction statement: {stmt.StatementType}");
+                throw new NovaException(ErrorCode.NotSupported, "Unsupported transaction statement: {0}", stmt.StatementType);
         }
 
         return new SqlResult { AffectedRows = 0 };

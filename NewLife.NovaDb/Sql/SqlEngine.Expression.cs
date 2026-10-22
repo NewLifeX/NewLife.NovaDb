@@ -25,13 +25,13 @@ partial class SqlEngine
 
             case ColumnRefExpression colRef:
                 if (row == null || schema == null)
-                    throw new NovaException(ErrorCode.InvalidArgument, $"Column '{colRef.ColumnName}' cannot be evaluated without a row context");
+                    throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' cannot be evaluated without a row context", colRef.ColumnName);
                 var idx = schema.GetColumnIndex(colRef.ColumnName);
                 return row[idx];
 
             case ParameterExpression param:
                 if (parameters == null || !parameters.TryGetValue(param.ParameterName, out var paramValue))
-                    throw new NovaException(ErrorCode.InvalidArgument, $"Parameter '{param.ParameterName}' not found");
+                    throw new NovaException(ErrorCode.InvalidArgument, "Parameter '{0}' not found", param.ParameterName);
                 return paramValue;
 
             case BinaryExpression binary:
@@ -42,7 +42,7 @@ partial class SqlEngine
 
             case FunctionExpression func when func.IsAggregate:
                 // 单行上下文中不应出现聚合函数
-                throw new NovaException(ErrorCode.SyntaxError, $"Aggregate function {func.FunctionName} not allowed in this context");
+                throw new NovaException(ErrorCode.SyntaxError, "Aggregate function {0} not allowed in this context", func.FunctionName);
 
             case FunctionExpression func when !func.IsAggregate:
                 return EvaluateScalarFunction(func, row, schema, parameters);
@@ -61,7 +61,7 @@ partial class SqlEngine
                 return EvaluateInExpression(inExpr, row, schema, parameters);
 
             default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported expression type: {expr.ExprType}");
+                throw new NovaException(ErrorCode.NotSupported, "Unsupported expression type: {0}", expr.ExprType);
         }
     }
 
@@ -109,7 +109,7 @@ partial class SqlEngine
             BinaryOperator.Divide => ArithmeticOp(left, right, (a, b) => b != 0 ? a / b : throw new DivideByZeroException()),
             BinaryOperator.Modulo => ArithmeticOp(left, right, (a, b) => b != 0 ? a % b : throw new DivideByZeroException()),
             BinaryOperator.Like => EvaluateLike(left, right),
-            _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported operator: {binary.Operator}")
+            _ => throw new NovaException(ErrorCode.NotSupported, "Unsupported operator: {0}", binary.Operator)
         };
     }
 
@@ -121,7 +121,7 @@ partial class SqlEngine
         {
             "NOT" => !(Convert.ToBoolean(operand)),
             "-" => ArithmeticNegate(operand),
-            _ => throw new NovaException(ErrorCode.NotSupported, $"Unsupported unary operator: {unary.Operator}")
+            _ => throw new NovaException(ErrorCode.NotSupported, "Unsupported unary operator: {0}", unary.Operator)
         };
     }
 
@@ -264,7 +264,7 @@ partial class SqlEngine
                 return Convert.ToDouble(spreadMax) - Convert.ToDouble(spreadMin);
 
             default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported aggregate function: {func.FunctionName}");
+                throw new NovaException(ErrorCode.NotSupported, "Unsupported aggregate function: {0}", func.FunctionName);
         }
     }
 
@@ -318,7 +318,7 @@ partial class SqlEngine
             // 窗口分组函数仅支持在 GROUP BY 中使用（F17）
             case "SESSION_WINDOW":
             case "STATE_WINDOW":
-                throw new NovaException(ErrorCode.InvalidArgument, $"{func.FunctionName} is only supported in GROUP BY");
+                throw new NovaException(ErrorCode.InvalidArgument, "{0} is only supported in GROUP BY", func.FunctionName);
 
             // 字符串函数
             case "CONCAT":
@@ -500,7 +500,7 @@ partial class SqlEngine
                     "HOUR" => daDate.AddHours(daAmount),
                     "MINUTE" => daDate.AddMinutes(daAmount),
                     "SECOND" => daDate.AddSeconds(daAmount),
-                    _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown DATEADD interval: {daInterval}")
+                    _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown DATEADD interval: {0}", daInterval)
                 };
 
             case "DATEPART":
@@ -519,7 +519,7 @@ partial class SqlEngine
                     "QUARTER" => (dpDate.Month - 1) / 3 + 1,
                     "WEEK" => System.Globalization.CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
                         dpDate, System.Globalization.CalendarWeekRule.FirstDay, DayOfWeek.Sunday),
-                    _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown DATEPART part: {dpPart}")
+                    _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown DATEPART part: {0}", dpPart)
                 };
 
             case "WEEKDAY" or "DAYOFWEEK":
@@ -573,7 +573,7 @@ partial class SqlEngine
                     "HOUR" => (Int64)tdDiff.TotalHours,
                     "MINUTE" => (Int64)tdDiff.TotalMinutes,
                     "SECOND" => (Int64)tdDiff.TotalSeconds,
-                    _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIMESTAMPDIFF unit: {tdUnit}")
+                    _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown TIMESTAMPDIFF unit: {0}", tdUnit)
                 };
 
             case "TIMESTAMPADD":
@@ -589,7 +589,7 @@ partial class SqlEngine
                     "HOUR" => taDate.AddHours(taAmount),
                     "MINUTE" => taDate.AddMinutes(taAmount),
                     "SECOND" => taDate.AddSeconds(taAmount),
-                    _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIMESTAMPADD unit: {taUnit}")
+                    _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown TIMESTAMPADD unit: {0}", taUnit)
                 };
 
             case "TIME_BUCKET":
@@ -758,7 +758,7 @@ partial class SqlEngine
                 return EvaluateVectorNearest(func, row, schema, parameters);
 
             default:
-                throw new NovaException(ErrorCode.NotSupported, $"Unsupported function: {func.FunctionName}");
+                throw new NovaException(ErrorCode.NotSupported, "Unsupported function: {0}", func.FunctionName);
         }
     }
 
@@ -794,7 +794,7 @@ partial class SqlEngine
             case "baidu":
                 return GeoHelper.GeoCrs.BD09;
             default:
-                throw new NovaException(ErrorCode.InvalidArgument, $"Unknown coordinate system: {name}");
+                throw new NovaException(ErrorCode.InvalidArgument, "Unknown coordinate system: {0}", name);
         }
     }
 
@@ -841,7 +841,7 @@ partial class SqlEngine
             "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" or "CHAR" => Convert.ToString(value),
             "BOOL" or "BOOLEAN" => Convert.ToBoolean(value),
             "DATETIME" or "TIMESTAMP" or "DATE" => Convert.ToDateTime(value),
-            _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown CAST target type: {typeName}")
+            _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown CAST target type: {0}", typeName)
         };
     }
 
@@ -891,10 +891,10 @@ partial class SqlEngine
     {
         // 解析桶大小，格式如 "1 hour", "5 minute", "1 day"
         var parts = bucket.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2) throw new NovaException(ErrorCode.InvalidArgument, $"Invalid TIME_BUCKET format: {bucket}");
+        if (parts.Length < 2) throw new NovaException(ErrorCode.InvalidArgument, "Invalid TIME_BUCKET format: {0}", bucket);
 
         var amount = Convert.ToInt32(parts[0]);
-        if (amount <= 0) throw new NovaException(ErrorCode.InvalidArgument, $"TIME_BUCKET amount must be positive: {amount}");
+        if (amount <= 0) throw new NovaException(ErrorCode.InvalidArgument, "TIME_BUCKET amount must be positive: {0}", amount);
 
         var unit = parts[1].TrimEnd('s').ToLower();
         return unit switch
@@ -905,7 +905,7 @@ partial class SqlEngine
             "day" => new DateTime(dt.Year, dt.Month, Math.Min((dt.Day - 1) / amount * amount + 1, DateTime.DaysInMonth(dt.Year, dt.Month))),
             "month" => new DateTime(dt.Year, (dt.Month - 1) / amount * amount + 1, 1),
             "year" => new DateTime(dt.Year / amount * amount == 0 ? 1 : dt.Year / amount * amount, 1, 1),
-            _ => throw new NovaException(ErrorCode.InvalidArgument, $"Unknown TIME_BUCKET unit: {unit}")
+            _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown TIME_BUCKET unit: {0}", unit)
         };
     }
 

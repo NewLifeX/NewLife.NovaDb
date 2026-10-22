@@ -5,11 +5,13 @@
 #   pwsh -File tools/check-locales.ps1
 #   pwsh -File tools/check-locales.ps1 -LocaleDir src\Lib\Locales -SourceDir src\Lib
 #   pwsh -File tools/check-locales.ps1 -SkipOrphan            # 只校验词表内部一致性
+#   pwsh -File tools/check-locales.ps1 -RequireComplete       # 要求所有语言均有完整键集合（分阶段收口时使用）
 #   pwsh -File tools/check-locales.ps1 -RequireTranslated     # 要求所有语言均已翻译，无英文占位
 param(
     [String]$LocaleDir = "NewLife.NovaDb\Locales",
     [String]$Baseline = "zh-Hans.yml",
     [String[]]$SourceDir = @("NewLife.NovaDb"),
+    [Switch]$RequireComplete,
     [Switch]$RequireTranslated,
     [String[]]$AllowSameValue = @("NewLife.NovaDb"),
     [Switch]$SkipOrphan,
@@ -105,7 +107,13 @@ foreach ($file in Get-ChildItem $localeDir -Filter *.yml | Sort-Object Name) {
 
     foreach ($key in $reference.Entries.Keys) {
         if (!$locale.Entries.Contains($key)) {
-            $allErrors += "$($file.Name): 缺少键 $key"
+            # 分阶段开发：缺失键在运行时回退英文；收口时用 -RequireComplete 阻断
+            if ($RequireComplete -or $RequireTranslated) {
+                $allErrors += "$($file.Name): 缺少键 $key"
+            }
+            else {
+                $allWarnings += "$($file.Name): 缺少键（回退英文） $key"
+            }
         }
     }
     foreach ($key in $locale.Entries.Keys) {

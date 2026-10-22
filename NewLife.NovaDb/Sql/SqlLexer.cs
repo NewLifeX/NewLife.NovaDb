@@ -230,7 +230,7 @@ public class SqlLexer
             _pos++;
         }
 
-        throw new NovaException(ErrorCode.SyntaxError, $"Unterminated string literal at position {start}");
+        throw new NovaException(ErrorCode.SyntaxError, "Unterminated string literal at position {0}", start);
     }
 
     private SqlToken ReadParameter()
@@ -270,7 +270,7 @@ public class SqlLexer
             _pos++;
         }
 
-        throw new NovaException(ErrorCode.SyntaxError, $"Unterminated quoted identifier at position {start}");
+        throw new NovaException(ErrorCode.SyntaxError, "Unterminated quoted identifier at position {0}", start);
     }
 
     private SqlToken ReadOperatorOrPunctuation()
@@ -331,6 +331,6 @@ public class SqlLexer
                 break;
         }
 
-        throw new NovaException(ErrorCode.SyntaxError, $"Unexpected character '{ch}' at position {start}");
+        throw new NovaException(ErrorCode.SyntaxError, "Unexpected character '{0}' at position {1}", ch, start);
     }
 }
