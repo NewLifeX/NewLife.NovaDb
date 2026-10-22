@@ -14,6 +14,7 @@ param(
     [Switch]$RequireComplete,
     [Switch]$RequireTranslated,
     [Switch]$Coverage,
+    [String[]]$Language = @(),
     [String[]]$AllowSameValue = @("NewLife.NovaDb"),
     [Switch]$SkipOrphan,
     [Switch]$SkipMessageCheck,
@@ -101,7 +102,10 @@ $reference = Read-Locale $referencePath
 $allErrors = @($reference.Errors | ForEach-Object { "$($Baseline): $_" })
 $allWarnings = @()
 
-foreach ($file in Get-ChildItem $localeDir -Filter *.yml | Sort-Object Name) {
+$localeFiles = @(Get-ChildItem $localeDir -Filter *.yml | Sort-Object Name)
+if ($Language.Count -gt 0) { $localeFiles = @($localeFiles | Where-Object { $Language -contains $_.BaseName }) }
+
+foreach ($file in $localeFiles) {
     if ($file.Name -eq $Baseline) { continue }
     $locale = Read-Locale $file.FullName
     foreach ($e in $locale.Errors) { $allErrors += "$($file.Name): $e" }
@@ -214,7 +218,7 @@ if (!$SkipMessageCheck) {
 }
 
 if ($Coverage) {
-    $rows = foreach ($file in Get-ChildItem $localeDir -Filter *.yml | Sort-Object Name) {
+    $rows = foreach ($file in $localeFiles) {
         $loc = Read-Locale $file.FullName
         $translated = 0
         $untranslated = 0
