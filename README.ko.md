@@ -30,7 +30,7 @@
 - **폴더=데이터베이스**: 폴더를 복사하여 마이그레이션/백업 완료, dump/restore 프로세스 불필요. 각 테이블은 독립적인 파일 그룹(`.data`/`.idx`/`.wal`)을 가집니다.
 - **4개 엔진 통합**:
   - **Nova Engine**(범용 관계형): SkipList 인덱스 + MVCC 트랜잭션(Read Committed), CRUD, SQL 쿼리, JOIN 지원
-  - **Flux Engine**(시계열 + MQ): 시간 기반 샤딩 Append Only, TTL 자동 정리, Redis Stream 스타일 소비자 그룹 + Pending + Ack 지원
+  - **Flux Engine**(시계열 + MQ): 시간 기반 샤딩 Append Only, TTL 자동 정리, Redis Stream 스타일 소비자 그룹 + Pending + Ack 지원. 타입 인식 인코딩(Delta/DeltaDelta/XOR/RLE/딕셔너리)과 LZ4 블록 압축을 적용한 컬럼형 블록 밀봉, 자동 집계 쿼리 라우팅을 갖춘 롤업 사전 집계, SESSION/STATE 윈도우 그룹화, `_sys.flux_compression`을 통한 압축률 보고 지원
   - **KV 모드**(키-값 저장소): 독립적인 Bitcask 엔진(메모리 인덱스 + 디스크 값), TTL, 다중 테이블 격리 지원
   - **ADO.NET Provider**: 임베디드/서버 모드 자동 인식, XCode ORM과 네이티브 통합
 - **동적 핫-콜드 인덱스 분리**: 핫 데이터는 물리 메모리에 완전히 로드(SkipList 노드), 콜드 데이터는 MMF로 언로드되어 희소 디렉토리만 유지. 1000만 행 테이블에서 최신 1만 행만 쿼리할 때 메모리 사용량 < 20MB.
@@ -55,8 +55,8 @@
 | String | `STRING(n)` / `STRING` | `String` | UTF-8, 길이 지정 가능 |
 | Binary | `BINARY(n)` / `BLOB` | `Byte[]` | 길이 지정 가능 |
 | DateTime | `DATETIME` | `DateTime` | Ticks(100나노초) 정밀도 |
-| GeoPoint | `GEOPOINT` | 사용자 정의 구조 | 위도/경도 좌표(계획 중) |
-| Vector | `VECTOR(n)` | `Single[]` | AI 벡터 검색(계획 중) |
+| GeoPoint | `GEOPOINT` | 사용자 정의 구조 | 위도/경도 좌표, 거리/다각형 쿼리 지원 |
+| Vector | `VECTOR(n)` | `Single[]` | AI 벡터 검색, KNN 최근접 이웃 쿼리 지원 |
 
 ### SQL 기능
 
@@ -145,7 +145,7 @@ while (reader.Read())
 
 #### 1.2 서버 모드
 
-서버 모드는 TCP를 통한 원격 액세스를 제공하며, 다수의 동시 클라이언트 연결을 지원합니다.
+서버 모드는 TCP를 통한 원격 액세스를 제공하며, 다수의 동시 클라이언트 연결을 지원합니다. 연결 문자열의 각 데이터베이스(`Database=mydb`)는 서버 데이터 폴더 아래의 독립 엔진 디렉토리에 매핑되어, 단일 서버에서 다중 데이터베이스 라우팅이 가능합니다.
 
 **서버 시작:**
 
@@ -193,7 +193,20 @@ while (reader.Read())
 }
 ```
 
-#### 1.4 트랜잭션
+#### 1.4 집계 및 스칼라 쿼리
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT COUNT(*) FROM users";
+var count = Convert.ToInt32(cmd.ExecuteScalar());
+Console.WriteLine($"Total users: {count}");
+
+cmd.CommandText = "SELECT AVG(age) FROM users WHERE age > 0";
+var avgAge = Convert.ToDouble(cmd.ExecuteScalar());
+Console.WriteLine($"Average age: {avgAge:F1}");
+```
+
+#### 1.5 트랜잭션
 
 NovaDb는 MVCC 기반 트랜잭션 격리를 구현하며, 기본 격리 수준은 Read Committed입니다:
 
@@ -207,10 +220,12 @@ try
     using var cmd = conn.CreateCommand();
     cmd.Transaction = tx;
 
+    // 재고 차감
     cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
     var affected = cmd.ExecuteNonQuery();
     if (affected == 0) throw new InvalidOperationException("Insufficient stock");
 
+    // 주문 생성
     cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
     cmd.ExecuteNonQuery();
 
@@ -223,7 +238,7 @@ catch
 }
 ```
 
-#### 1.5 JOIN 쿼리
+#### 1.6 JOIN 쿼리
 
 ```csharp
 using var cmd = conn.CreateCommand();
@@ -243,7 +258,35 @@ while (reader.Read())
 }
 ```
 
-#### 1.6 연결 문자열 참조
+#### 1.7 DDL 작업
+
+```sql
+-- 데이터베이스 생성/삭제
+CREATE DATABASE shop;
+DROP DATABASE shop;
+
+-- 테이블 구조 변경
+ALTER TABLE products ADD COLUMN category STRING;
+ALTER TABLE products MODIFY COLUMN name STRING(200);
+ALTER TABLE products DROP COLUMN category;
+
+-- 인덱스 관리
+CREATE INDEX idx_name ON users (name);
+CREATE UNIQUE INDEX idx_email ON users (email);
+DROP INDEX idx_name ON users;
+```
+
+#### 1.8 UPSERT
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    INSERT INTO products (id, name, price) VALUES (1, 'Laptop', 5499.00)
+    ON DUPLICATE KEY UPDATE price = 5499.00";
+cmd.ExecuteNonQuery();
+```
+
+#### 1.9 연결 문자열 참조
 
 | 매개변수 | 예시 | 설명 |
 |---------|------|------|
@@ -310,6 +353,7 @@ while (reader.Read())
 #### 2.4 집계 분석
 
 ```csharp
+// 디바이스별 평균 온도
 cmd.CommandText = @"SELECT device_id, COUNT(*) AS cnt, AVG(temperature) AS avg_temp,
         MIN(temperature) AS min_temp, MAX(temperature) AS max_temp
     FROM metrics
@@ -323,6 +367,19 @@ while (reader.Read())
     Console.WriteLine($"{reader["device_id"]}: avg={reader["avg_temp"]:F1}°C, " +
         $"min={reader["min_temp"]}°C, max={reader["max_temp"]}°C, count={reader["cnt"]}");
 }
+```
+
+#### 2.5 데이터 보존 정책
+
+시계열 테이블은 TTL 기반으로 만료된 샤드를 자동 정리하며, 시간 또는 용량을 기준으로 데이터를 보존합니다:
+
+```csharp
+// DbOptions를 통해 시계열 매개변수 구성
+var options = new DbOptions
+{
+    FluxPartitionHours = 1,        // 1시간당 하나의 파티션
+    FluxDefaultTtlSeconds = 86400, // 데이터 24시간 보존
+};
 ```
 
 ---
@@ -343,6 +400,7 @@ client.Open();
 #### 3.2 메시지 발행
 
 ```csharp
+// RPC를 통해 SQL을 실행하여 Flux 테이블에 메시지 삽입
 var affected = await client.ExecuteAsync(
     "INSERT INTO order_events (timestamp, orderId, action, amount) " +
     "VALUES (NOW(), 10001, 'created', 299.00)");
@@ -352,6 +410,7 @@ Console.WriteLine($"Message published, affected rows: {affected}");
 #### 3.3 메시지 소비
 
 ```csharp
+// 메시지 읽기 (시간 범위 기준)
 var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
     "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
     new { since = DateTime.Now.AddMinutes(-5) });
@@ -386,6 +445,7 @@ KV 저장소는 `NovaClient`를 통해 액세스합니다. 테이블 생성 시 
 using var client = new NovaClient("tcp://127.0.0.1:3306");
 client.Open();
 
+// KV 테이블 생성 (기본 TTL 7200초 = 2시간)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
     Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
@@ -416,7 +476,28 @@ await client.ExecuteAsync(
     "ON DUPLICATE KEY UPDATE Value = Value + 1");
 ```
 
-#### 4.4 KV 기능 개요
+#### 4.4 분산 락
+
+```csharp
+// 락 획득 시도 (키가 존재하지 않을 때만 삽입 성공)
+var locked = await client.ExecuteAsync(
+    "INSERT INTO dist_lock (Key, Value, TTL) VALUES ('lock:order:123', 'worker-1', " +
+    "DATEADD(NOW(), 30, 'SECOND'))");
+
+if (locked > 0)
+{
+    try
+    {
+        // 락 획득 성공, 비즈니스 로직 실행
+    }
+    finally
+    {
+        await client.ExecuteAsync("DELETE FROM dist_lock WHERE Key = 'lock:order:123'");
+    }
+}
+```
+
+#### 4.5 KV 기능 개요
 
 | 작업 | 설명 |
 |------|------|
@@ -465,10 +546,11 @@ NovaDb는 Binlog를 통한 비동기 데이터 복제를 지원하는 **1개 마
 | 버전 | 계획 기능 |
 |------|----------|
 | **v1.0**(완료) | 임베디드+서버 듀얼 모드, Nova/Flux/KV 엔진, SQL DDL/DML/SELECT/JOIN, 트랜잭션/MVCC, WAL/복구, 핫-콜드 분리, 샤딩, MQ 소비자 그룹, ADO.NET Provider, 클러스터 마스터-슬레이브 동기화 |
-| **v1.1** | P0 레벨 SQL 함수(문자열/숫자/날짜/변환/조건 ~30개 함수) |
-| **v1.2** | MQ 블로킹 읽기, KV Add/Inc 작업, P1 레벨 SQL 함수 |
-| **v1.3** | MQ 지연 메시지, 데드 레터 큐 |
-| **v2.0** (완료) | GeoPoint 지오코딩 + Vector 타입(AI 벡터 검색), GIS 확장, 전문 검색(BM25), NovaVectorStore(IVectorStore, 다중 컬렉션), 증분 구체화 뷰, Binlog 관리, 관찰성 및 관리 도구 |
+| **v1.1**(완료) | P0 레벨 SQL 함수(문자열/숫자/날짜/변환/조건 ~30개 함수) |
+| **v1.2**(완료) | MQ 블로킹 읽기, KV Add/Inc 작업, P1 레벨 SQL 함수 |
+| **v1.3**(완료) | MQ 지연 메시지, 데드 레터 큐 |
+| **v2.0**(완료) | GeoPoint 지오코딩 + Vector 타입(AI 벡터 검색), GIS 확장, 전문 검색(BM25), NovaVectorStore(IVectorStore, 다중 컬렉션), 증분 구체화 뷰, Binlog 관리, 관찰성 및 관리 도구 |
+| **v2.1**(완료) | 시계열 컬럼형 밀봉 + 블록 압축(수치 인코딩 + LZ4), 백필과 자동 쿼리 라우팅을 포함한 롤업 사전 집계, SESSION/STATE_WINDOW 그룹화, 압축률 보고, 다중 RID CI(win-x64/linux-x64/linux-arm64/loongarch64)를 지원하는 NativeAOT |
 
 ## 포지셔닝
 

@@ -30,7 +30,7 @@
 - **フォルダ＝データベース**: フォルダをコピーして移行/バックアップを完了、dump/restore プロセス不要。各テーブルには独立したファイルグループ（`.data`/`.idx`/`.wal`）があります。
 - **4エンジン統合**:
   - **Nova Engine**（汎用リレーショナル）: SkipList インデックス + MVCC トランザクション（Read Committed）、CRUD、SQL クエリ、JOIN をサポート
-  - **Flux Engine**（時系列 + MQ）: 時間ベースのシャーディング Append Only、TTL 自動クリーンアップ、Redis Stream スタイルのコンシューマグループ + Pending + Ack をサポート
+  - **Flux Engine**（時系列 + MQ）: 時間ベースのシャーディング Append Only、TTL 自動クリーンアップ、Redis Stream スタイルのコンシューマグループ + Pending + Ack をサポート。カラムナーブロック封止と型別エンコーディング（Delta/DeltaDelta/XOR/RLE/辞書）、LZ4 ブロック圧縮、自動集計クエリルーティング付きのロールアップ事前集計、SESSION/STATE ウィンドウグループ化、`_sys.flux_compression` による圧縮率レポート
   - **KV モード**（キーバリューストア）: 独立した Bitcask エンジン（メモリ内インデックス + ディスク上の値）、TTL、マルチテーブル分離をサポート
   - **ADO.NET Provider**: 組み込み/サーバーモードを自動認識、XCode ORM とのネイティブ統合
 - **動的ホットコールドインデックス分離**: ホットデータは物理メモリに完全にロード（SkipList ノード）、コールドデータは MMF にアンロードされ、スパースディレクトリのみが保持されます。1000万行のテーブルで最新の1万行のみをクエリする場合、メモリ使用量 < 20MB。
@@ -55,8 +55,8 @@
 | String | `STRING(n)` / `STRING` | `String` | UTF-8、長さ指定可能 |
 | Binary | `BINARY(n)` / `BLOB` | `Byte[]` | 長さ指定可能 |
 | DateTime | `DATETIME` | `DateTime` | Ticks（100ナノ秒）の精度 |
-| GeoPoint | `GEOPOINT` | カスタム構造 | 緯度/経度座標（予定） |
-| Vector | `VECTOR(n)` | `Single[]` | AIベクトル検索（予定） |
+| GeoPoint | `GEOPOINT` | カスタム構造 | 緯度/経度座標、距離/ポリゴンクエリに対応 |
+| Vector | `VECTOR(n)` | `Single[]` | AI ベクトル検索、KNN 近傍クエリに対応 |
 
 ### SQL 機能
 
@@ -145,7 +145,7 @@ while (reader.Read())
 
 #### 1.2 サーバーモード
 
-サーバーモードは TCP 経由でリモートアクセスを提供し、複数の同時クライアント接続をサポートします。
+サーバーモードは TCP 経由でリモートアクセスを提供し、複数の同時クライアント接続をサポートします。接続文字列の各データベース（`Database=mydb`）は、サーバーのデータフォルダ配下の独立したエンジンディレクトリにマッピングされ、1 台のサーバー上でマルチデータベースルーティングを実現します。
 
 **サーバーの起動:**
 
@@ -193,7 +193,20 @@ while (reader.Read())
 }
 ```
 
-#### 1.4 トランザクション
+#### 1.4 集計とスカラー取得
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT COUNT(*) FROM users";
+var count = Convert.ToInt32(cmd.ExecuteScalar());
+Console.WriteLine($"Total users: {count}");
+
+cmd.CommandText = "SELECT AVG(age) FROM users WHERE age > 0";
+var avgAge = Convert.ToDouble(cmd.ExecuteScalar());
+Console.WriteLine($"Average age: {avgAge:F1}");
+```
+
+#### 1.5 トランザクション
 
 NovaDb は MVCC ベースのトランザクション分離を実装しており、デフォルトの分離レベルは Read Committed です:
 
@@ -207,10 +220,12 @@ try
     using var cmd = conn.CreateCommand();
     cmd.Transaction = tx;
 
+    // 在庫を減算
     cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
     var affected = cmd.ExecuteNonQuery();
     if (affected == 0) throw new InvalidOperationException("Insufficient stock");
 
+    // 注文を作成
     cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
     cmd.ExecuteNonQuery();
 
@@ -223,7 +238,7 @@ catch
 }
 ```
 
-#### 1.5 JOIN クエリ
+#### 1.6 JOIN クエリ
 
 ```csharp
 using var cmd = conn.CreateCommand();
@@ -243,7 +258,35 @@ while (reader.Read())
 }
 ```
 
-#### 1.6 接続文字列リファレンス
+#### 1.7 DDL 操作
+
+```sql
+-- データベースの作成/削除
+CREATE DATABASE shop;
+DROP DATABASE shop;
+
+-- テーブル構造の変更
+ALTER TABLE products ADD COLUMN category STRING;
+ALTER TABLE products MODIFY COLUMN name STRING(200);
+ALTER TABLE products DROP COLUMN category;
+
+-- インデックス管理
+CREATE INDEX idx_name ON users (name);
+CREATE UNIQUE INDEX idx_email ON users (email);
+DROP INDEX idx_name ON users;
+```
+
+#### 1.8 UPSERT
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    INSERT INTO products (id, name, price) VALUES (1, 'Laptop', 5499.00)
+    ON DUPLICATE KEY UPDATE price = 5499.00";
+cmd.ExecuteNonQuery();
+```
+
+#### 1.9 接続文字列リファレンス
 
 | パラメータ | 例 | 説明 |
 |-----------|-----|------|
@@ -310,6 +353,7 @@ while (reader.Read())
 #### 2.4 集計分析
 
 ```csharp
+// デバイスごとの平均気温
 cmd.CommandText = @"SELECT device_id, COUNT(*) AS cnt, AVG(temperature) AS avg_temp,
         MIN(temperature) AS min_temp, MAX(temperature) AS max_temp
     FROM metrics
@@ -323,6 +367,19 @@ while (reader.Read())
     Console.WriteLine($"{reader["device_id"]}: avg={reader["avg_temp"]:F1}°C, " +
         $"min={reader["min_temp"]}°C, max={reader["max_temp"]}°C, count={reader["cnt"]}");
 }
+```
+
+#### 2.5 データ保持ポリシー
+
+時系列テーブルは TTL による期限切れシャードの自動クリーンアップをサポートし、時間または容量に基づいてデータを保持します:
+
+```csharp
+// DbOptions 経由で時系列パラメータを設定
+var options = new DbOptions
+{
+    FluxPartitionHours = 1,        // 1 時間ごとに 1 パーティション
+    FluxDefaultTtlSeconds = 86400, // データを 24 時間保持
+};
 ```
 
 ---
@@ -343,6 +400,7 @@ client.Open();
 #### 3.2 メッセージの発行
 
 ```csharp
+// RPC 経由で SQL を実行し、Flux テーブルにメッセージを挿入
 var affected = await client.ExecuteAsync(
     "INSERT INTO order_events (timestamp, orderId, action, amount) " +
     "VALUES (NOW(), 10001, 'created', 299.00)");
@@ -352,6 +410,7 @@ Console.WriteLine($"Message published, affected rows: {affected}");
 #### 3.3 メッセージの消費
 
 ```csharp
+// メッセージを読み取る（時間範囲指定）
 var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
     "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
     new { since = DateTime.Now.AddMinutes(-5) });
@@ -386,6 +445,7 @@ KV ストレージは `NovaClient` を通じてアクセスします。テーブ
 using var client = new NovaClient("tcp://127.0.0.1:3306");
 client.Open();
 
+// KV テーブルを作成（デフォルト TTL 7200 秒 = 2 時間）
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
     Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
@@ -416,7 +476,28 @@ await client.ExecuteAsync(
     "ON DUPLICATE KEY UPDATE Value = Value + 1");
 ```
 
-#### 4.4 KV 機能概要
+#### 4.4 分散ロック
+
+```csharp
+// ロックの取得を試みる（キーが存在しない場合のみ挿入が成功）
+var locked = await client.ExecuteAsync(
+    "INSERT INTO dist_lock (Key, Value, TTL) VALUES ('lock:order:123', 'worker-1', " +
+    "DATEADD(NOW(), 30, 'SECOND'))");
+
+if (locked > 0)
+{
+    try
+    {
+        // ロック取得済み、ビジネスロジックを実行
+    }
+    finally
+    {
+        await client.ExecuteAsync("DELETE FROM dist_lock WHERE Key = 'lock:order:123'");
+    }
+}
+```
+
+#### 4.5 KV 機能概要
 
 | 操作 | 説明 |
 |------|------|
@@ -465,10 +546,11 @@ NovaDb は Binlog による非同期データレプリケーションを使用�
 | バージョン | 予定機能 |
 |-----------|---------|
 | **v1.0**（完了） | 組み込み+サーバーデュアルモード、Nova/Flux/KV エンジン、SQL DDL/DML/SELECT/JOIN、トランザクション/MVCC、WAL/リカバリ、ホットコールド分離、シャーディング、MQ コンシューマグループ、ADO.NET Provider、クラスターマスタースレーブ同期 |
-| **v1.1** | P0 レベル SQL 関数（文字列/数値/日付/変換/条件 ~30 関数） |
-| **v1.2** | MQ ブロッキング読み取り、KV Add/Inc 操作、P1 レベル SQL 関数 |
-| **v1.3** | MQ 遅延メッセージ、デッドレターキュー |
-| **v2.0** (完了) | GeoPoint ジオコーディング + Vector 型（AI ベクトル検索）、GIS 拡張、全文検索（BM25）、NovaVectorStore（IVectorStore、マルチコレクション）、インクリメンタルマテリアライズドビュー、Binlog 管理、可観測性と管理ツール |
+| **v1.1**（完了） | P0 レベル SQL 関数（文字列/数値/日付/変換/条件 ~30 関数） |
+| **v1.2**（完了） | MQ ブロッキング読み取り、KV Add/Inc 操作、P1 レベル SQL 関数 |
+| **v1.3**（完了） | MQ 遅延メッセージ、デッドレターキュー |
+| **v2.0**（完了） | GeoPoint ジオコーディング + Vector 型（AI ベクトル検索）、GIS 拡張、全文検索（BM25）、NovaVectorStore（IVectorStore、マルチコレクション）、インクリメンタルマテリアライズドビュー、Binlog 管理、可観測性と管理ツール |
+| **v2.1**（完了） | 時系列のカラムナーブロック封止 + ブロック圧縮（数値エンコーディング + LZ4）、バックフィルと自動クエリルーティング付きのロールアップ事前集計、SESSION/STATE_WINDOW グループ化、圧縮率レポート、マルチ RID CI（win-x64/linux-x64/linux-arm64/loongarch64）による NativeAOT サポート |
 
 ## ポジショニング
 
