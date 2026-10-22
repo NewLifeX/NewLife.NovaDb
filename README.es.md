@@ -30,7 +30,7 @@ Una base de datos híbrida de tamaño mediano a grande implementada en **C#**, e
 - **Carpeta como base de datos**: Copie la carpeta para completar la migración/copia de seguridad, no se necesita proceso dump/restore. Cada tabla tiene grupos de archivos independientes (`.data`/`.idx`/`.wal`).
 - **Integración de cuatro motores**:
   - **Nova Engine** (relacional general): Índice SkipList + transacciones MVCC (Read Committed), admite CRUD, consultas SQL, JOIN
-  - **Flux Engine** (series temporales + MQ): Particionamiento basado en tiempo Append Only, admite limpieza automática TTL, grupos de consumidores estilo Redis Stream + Pending + Ack
+  - **Flux Engine** (series temporales + MQ): Particionamiento basado en tiempo Append Only, admite limpieza automática TTL, grupos de consumidores estilo Redis Stream + Pending + Ack; sellado de bloques columnares con codificación según el tipo (Delta/DeltaDelta/XOR/RLE/diccionario) y compresión de bloques LZ4, pre-agregación rollup con enrutamiento automático de consultas agregadas, agrupación por ventanas SESSION/STATE y reporte del ratio de compresión mediante `_sys.flux_compression`
   - **Modo KV** (almacén de clave-valor): Motor Bitcask independiente (índice en memoria + valores en disco), admite TTL, aislamiento multi-tabla
   - **ADO.NET Provider**: Reconoce automáticamente el modo integrado/servidor, integración nativa con XCode ORM
 - **Separación dinámica de índices calientes-fríos**: Los datos calientes se cargan completamente en la memoria física (nodos SkipList), los datos fríos se descargan a MMF con solo directorio disperso retenido. Tabla de 10 millones de filas consultando solo las últimas 10,000 filas usa < 20 MB de memoria.
@@ -55,8 +55,8 @@ Una base de datos híbrida de tamaño mediano a grande implementada en **C#**, e
 | String | `STRING(n)` / `STRING` | `String` | UTF-8, la longitud se puede especificar |
 | Binary | `BINARY(n)` / `BLOB` | `Byte[]` | La longitud se puede especificar |
 | DateTime | `DATETIME` | `DateTime` | Precisión hasta Ticks (100 nanosegundos) |
-| GeoPoint | `GEOPOINT` | Estructura personalizada | Coordenadas latitud/longitud (planificado) |
-| Vector | `VECTOR(n)` | `Single[]` | Búsqueda de vectores AI (planificado) |
+| GeoPoint | `GEOPOINT` | Estructura personalizada | Coordenadas latitud/longitud, con consultas de distancia/polígono |
+| Vector | `VECTOR(n)` | `Single[]` | Búsqueda de vectores AI, con consultas KNN de vecino más cercano |
 
 ### Capacidades SQL
 
@@ -145,7 +145,7 @@ while (reader.Read())
 
 #### 1.2 Modo servidor
 
-El modo servidor proporciona acceso remoto a través de TCP, admitiendo múltiples conexiones de clientes concurrentes.
+El modo servidor proporciona acceso remoto a través de TCP, admitiendo múltiples conexiones de clientes concurrentes. Cada base de datos de la cadena de conexión (`Database=mydb`) se asigna a un directorio de motor independiente dentro de la carpeta de datos del servidor, lo que permite el enrutamiento de múltiples bases de datos en un solo servidor.
 
 **Iniciar el servidor:**
 
@@ -193,7 +193,20 @@ while (reader.Read())
 }
 ```
 
-#### 1.4 Transacciones
+#### 1.4 Agregación y consultas escalares
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT COUNT(*) FROM users";
+var count = Convert.ToInt32(cmd.ExecuteScalar());
+Console.WriteLine($"Total users: {count}");
+
+cmd.CommandText = "SELECT AVG(age) FROM users WHERE age > 0";
+var avgAge = Convert.ToDouble(cmd.ExecuteScalar());
+Console.WriteLine($"Average age: {avgAge:F1}");
+```
+
+#### 1.5 Transacciones
 
 NovaDb implementa el aislamiento de transacciones basado en MVCC con un nivel de aislamiento predeterminado de Read Committed:
 
@@ -207,10 +220,12 @@ try
     using var cmd = conn.CreateCommand();
     cmd.Transaction = tx;
 
+    // Descontar stock
     cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
     var affected = cmd.ExecuteNonQuery();
     if (affected == 0) throw new InvalidOperationException("Insufficient stock");
 
+    // Crear pedido
     cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
     cmd.ExecuteNonQuery();
 
@@ -223,7 +238,7 @@ catch
 }
 ```
 
-#### 1.5 Consultas JOIN
+#### 1.6 Consultas JOIN
 
 ```csharp
 using var cmd = conn.CreateCommand();
@@ -243,7 +258,35 @@ while (reader.Read())
 }
 ```
 
-#### 1.6 Referencia de cadena de conexión
+#### 1.7 Operaciones DDL
+
+```sql
+-- Crear/eliminar base de datos
+CREATE DATABASE shop;
+DROP DATABASE shop;
+
+-- Modificar la estructura de la tabla
+ALTER TABLE products ADD COLUMN category STRING;
+ALTER TABLE products MODIFY COLUMN name STRING(200);
+ALTER TABLE products DROP COLUMN category;
+
+-- Gestión de índices
+CREATE INDEX idx_name ON users (name);
+CREATE UNIQUE INDEX idx_email ON users (email);
+DROP INDEX idx_name ON users;
+```
+
+#### 1.8 UPSERT
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    INSERT INTO products (id, name, price) VALUES (1, 'Laptop', 5499.00)
+    ON DUPLICATE KEY UPDATE price = 5499.00";
+cmd.ExecuteNonQuery();
+```
+
+#### 1.9 Referencia de cadena de conexión
 
 | Parámetro | Ejemplo | Descripción |
 |-----------|---------|-------------|
@@ -310,6 +353,7 @@ while (reader.Read())
 #### 2.4 Análisis de agregación
 
 ```csharp
+// Temperatura promedio por dispositivo
 cmd.CommandText = @"SELECT device_id, COUNT(*) AS cnt, AVG(temperature) AS avg_temp,
         MIN(temperature) AS min_temp, MAX(temperature) AS max_temp
     FROM metrics
@@ -323,6 +367,19 @@ while (reader.Read())
     Console.WriteLine($"{reader["device_id"]}: avg={reader["avg_temp"]:F1}°C, " +
         $"min={reader["min_temp"]}°C, max={reader["max_temp"]}°C, count={reader["cnt"]}");
 }
+```
+
+#### 2.5 Política de retención de datos
+
+Las tablas de series temporales admiten la limpieza automática de fragmentos expirados basada en TTL, reteniendo los datos por tiempo o por capacidad:
+
+```csharp
+// Configurar los parámetros de series temporales mediante DbOptions
+var options = new DbOptions
+{
+    FluxPartitionHours = 1,        // Una partición por hora
+    FluxDefaultTtlSeconds = 86400, // Retener los datos durante 24 horas
+};
 ```
 
 ---
@@ -343,6 +400,7 @@ client.Open();
 #### 3.2 Publicar mensajes
 
 ```csharp
+// Ejecutar SQL por RPC para insertar un mensaje en la tabla Flux
 var affected = await client.ExecuteAsync(
     "INSERT INTO order_events (timestamp, orderId, action, amount) " +
     "VALUES (NOW(), 10001, 'created', 299.00)");
@@ -352,6 +410,7 @@ Console.WriteLine($"Message published, affected rows: {affected}");
 #### 3.3 Consumir mensajes
 
 ```csharp
+// Leer mensajes (por rango de tiempo)
 var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
     "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
     new { since = DateTime.Now.AddMinutes(-5) });
@@ -386,6 +445,7 @@ El almacenamiento KV se accede a través de `NovaClient`. Especifique `ENGINE=KV
 using var client = new NovaClient("tcp://127.0.0.1:3306");
 client.Open();
 
+// Crear una tabla KV (TTL predeterminado 7200 segundos = 2 horas)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
     Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
@@ -416,7 +476,28 @@ await client.ExecuteAsync(
     "ON DUPLICATE KEY UPDATE Value = Value + 1");
 ```
 
-#### 4.4 Resumen de capacidades KV
+#### 4.4 Bloqueo distribuido
+
+```csharp
+// Intentar adquirir el bloqueo (la inserción solo tiene éxito cuando la clave no existe)
+var locked = await client.ExecuteAsync(
+    "INSERT INTO dist_lock (Key, Value, TTL) VALUES ('lock:order:123', 'worker-1', " +
+    "DATEADD(NOW(), 30, 'SECOND'))");
+
+if (locked > 0)
+{
+    try
+    {
+        // Bloqueo adquirido, ejecutar la lógica de negocio
+    }
+    finally
+    {
+        await client.ExecuteAsync("DELETE FROM dist_lock WHERE Key = 'lock:order:123'");
+    }
+}
+```
+
+#### 4.5 Resumen de capacidades KV
 
 | Operación | Descripción |
 |-----------|-------------|
@@ -465,10 +546,11 @@ NovaDb admite una arquitectura de **un maestro, múltiples esclavos** con replic
 | Versión | Características planificadas |
 |---------|------------------------------|
 | **v1.0** (Completado) | Modo dual integrado+servidor, motores Nova/Flux/KV, SQL DDL/DML/SELECT/JOIN, transacciones/MVCC, WAL/recuperación, separación caliente-frío, particionamiento, grupos de consumidores MQ, ADO.NET Provider, sincronización maestro-esclavo de clúster |
-| **v1.1** | Funciones SQL de nivel P0 (cadena/numérica/fecha/conversión/condicional ~30 funciones) |
-| **v1.2** | Lectura bloqueante MQ, operaciones KV Add/Inc, funciones SQL de nivel P1 |
-| **v1.3** | Mensajes retrasados MQ, cola de mensajes no entregados |
+| **v1.1** (Completado) | Funciones SQL de nivel P0 (cadena/numérica/fecha/conversión/condicional ~30 funciones) |
+| **v1.2** (Completado) | Lectura bloqueante MQ, operaciones KV Add/Inc, funciones SQL de nivel P1 |
+| **v1.3** (Completado) | Mensajes retrasados MQ, cola de mensajes no entregados |
 | **v2.0** (Completado) | Geocodificación GeoPoint + tipo Vector (búsqueda de vectores AI), extensión GIS, búsqueda de texto completo (BM25), NovaVectorStore (IVectorStore, multi-colección), vistas materializadas incrementales, gestión de Binlog, observabilidad y herramientas de gestión |
+| **v2.1** (Completado) | Sellado columnar de series temporales + compresión de bloques (codificación numérica + LZ4), pre-agregación rollup con relleno histórico y enrutamiento automático de consultas, agrupación SESSION/STATE_WINDOW, reporte del ratio de compresión, soporte NativeAOT con CI multi-RID (win-x64/linux-x64/linux-arm64/loongarch64) |
 
 ## Posicionamiento
 
