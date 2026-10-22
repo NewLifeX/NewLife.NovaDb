@@ -258,3 +258,6 @@ jobs:
     - name: Check README languages
       shell: pwsh
       run: pwsh -File ./tools/sync-readme-languages.ps1 -Check
+    - name: Check README structure
+      shell: pwsh
+      run: pwsh -File ./tools/check-readme-structure.ps1

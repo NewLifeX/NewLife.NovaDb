@@ -31,3 +31,6 @@ jobs:
     - name: Check README language switcher
       shell: pwsh
       run: pwsh -NoProfile -File ./tools/sync-readme-languages.ps1 -Check
+    - name: Check README structure
+      shell: pwsh
+      run: pwsh -NoProfile -File ./tools/check-readme-structure.ps1
