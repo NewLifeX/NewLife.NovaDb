@@ -208,3 +208,8 @@
 "Unexpected character '{0}' at position {1}": "位置 {1} 處出現意外字元「{0}」"
 "Invalid binlog file name: {0}": "Binlog 檔名無效：{0}"
 "Invalid binlog file index: {0}": "Binlog 檔案索引無效：{0}"
+"Collection name cannot be empty": "集合名稱不能為空"
+"Invalid table name '{0}'; only letters, digits, and underscores are allowed": "非法的資料表名稱「{0}」；僅允許字母、數字與底線"
+"Vector record ID cannot be empty": "向量記錄 ID 不能為空"
+"Invalid Binlog file header": "Binlog 檔頭無效"
+"WAL not opened": "WAL 未開啟"

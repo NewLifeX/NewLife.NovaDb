@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.Buffers.Binary;
 using System.Text;
+using NewLife;
 using NewLife.Buffers;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
@@ -197,7 +198,7 @@ public class BinlogWriter : IDisposable
 #endif
         if (header[0] != BinlogMagic[0] || header[1] != BinlogMagic[1] ||
             header[2] != BinlogMagic[2] || header[3] != BinlogMagic[3])
-            throw new InvalidOperationException("Invalid Binlog file header");
+            throw new InvalidOperationException(L.T("Invalid Binlog file header"));
     }
 
     /// <summary>检查是否需要轮转文件</summary>

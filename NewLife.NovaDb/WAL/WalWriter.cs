@@ -1,4 +1,5 @@
-﻿using NewLife.Buffers;
+﻿using NewLife;
+using NewLife.Buffers;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.WAL;
@@ -81,7 +82,7 @@ public class WalWriter : IDisposable
                 throw new ObjectDisposedException(nameof(WalWriter));
 
             if (_fileStream == null)
-                throw new InvalidOperationException("WAL not opened");
+                throw new InvalidOperationException(L.T("WAL not opened"));
 
             // 分配 LSN
             record.Lsn = _nextLsn++;
@@ -143,7 +144,7 @@ public class WalWriter : IDisposable
                 throw new ObjectDisposedException(nameof(WalWriter));
 
             if (_fileStream == null)
-                throw new InvalidOperationException("WAL not opened");
+                throw new InvalidOperationException(L.T("WAL not opened"));
 
             // 关闭当前文件
             _fileStream.Dispose();

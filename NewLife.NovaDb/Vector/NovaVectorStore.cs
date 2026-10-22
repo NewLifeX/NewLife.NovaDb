@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using NewLife;
 using NewLife.Data;
 using NewLife.NovaDb.Client;
 using NewLife.Serialization;
@@ -98,13 +99,13 @@ public class NovaVectorStoreCollection : IVectorStoreCollection
         _tableName = name;
 
         if (_tableName.Length == 0)
-            throw new ArgumentException("集合名称不能为空", nameof(name));
+            throw new ArgumentException(L.T("Collection name cannot be empty"), nameof(name));
 
         // 表名必须是合法标识符，防止 SQL 注入
         foreach (var ch in _tableName)
         {
             if (!Char.IsLetterOrDigit(ch) && ch != '_')
-                throw new ArgumentException($"非法的表名 '{_tableName}'，仅允许字母、数字、下划线", nameof(name));
+                throw new ArgumentException(L.T("Invalid table name '{0}'; only letters, digits, and underscores are allowed", _tableName), nameof(name));
         }
     }
     #endregion
@@ -116,7 +117,7 @@ public class NovaVectorStoreCollection : IVectorStoreCollection
     public Task UpsertAsync(VectorRecord record, CancellationToken cancellationToken = default)
     {
         if (record == null) throw new ArgumentNullException(nameof(record));
-        if (String.IsNullOrEmpty(record.Id)) throw new ArgumentException("向量记录 Id 不能为空", nameof(record));
+        if (String.IsNullOrEmpty(record.Id)) throw new ArgumentException(L.T("Vector record ID cannot be empty"), nameof(record));
 
         EnsureTable();
 
