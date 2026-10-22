@@ -16,10 +16,10 @@ public class BackupManager
         if (backupPath == null) throw new ArgumentNullException(nameof(backupPath));
 
         if (!Directory.Exists(sourcePath))
-            throw new NovaException(ErrorCode.DatabaseNotFound, $"Source directory '{sourcePath}' not found");
+            throw new NovaException(ErrorCode.DatabaseNotFound, "Source directory '{0}' not found", sourcePath);
 
         if (Directory.Exists(backupPath))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Backup directory '{backupPath}' already exists");
+            throw new NovaException(ErrorCode.InvalidArgument, "Backup directory '{0}' already exists", backupPath);
 
         Directory.CreateDirectory(backupPath);
 
@@ -76,10 +76,10 @@ public class BackupManager
         if (restorePath == null) throw new ArgumentNullException(nameof(restorePath));
 
         if (!Directory.Exists(backupPath))
-            throw new NovaException(ErrorCode.DatabaseNotFound, $"Backup directory '{backupPath}' not found");
+            throw new NovaException(ErrorCode.DatabaseNotFound, "Backup directory '{0}' not found", backupPath);
 
         if (Directory.Exists(restorePath))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Restore directory '{restorePath}' already exists");
+            throw new NovaException(ErrorCode.InvalidArgument, "Restore directory '{0}' already exists", restorePath);
 
         // 验证备份完整性
         VerifyBackup(backupPath);
@@ -127,7 +127,7 @@ public class BackupManager
     {
         if (backupPath == null) throw new ArgumentNullException(nameof(backupPath));
         if (!Directory.Exists(backupPath))
-            throw new NovaException(ErrorCode.DatabaseNotFound, $"Backup directory '{backupPath}' not found");
+            throw new NovaException(ErrorCode.DatabaseNotFound, "Backup directory '{0}' not found", backupPath);
 
         // 检查是否有数据文件
         var dataFiles = Directory.GetFiles(backupPath, "*.data");

@@ -1,4 +1,5 @@
 ﻿using System.IO.MemoryMappedFiles;
+using NewLife;
 using NewLife.Data;
 using NewLife.NovaDb.Core;
 using NewLife.Security;
@@ -58,7 +59,7 @@ public class MmfPager : IDisposable
         _filePath = filePath ?? throw new ArgumentNullException(nameof(filePath));
 
         if (pageSize <= 0)
-            throw new ArgumentOutOfRangeException(nameof(pageSize), "Page size must be positive");
+            throw new ArgumentOutOfRangeException(nameof(pageSize), L.T("Page size must be positive"));
 
         _pageSize = pageSize;
         _enableChecksum = enableChecksum;
@@ -93,12 +94,12 @@ public class MmfPager : IDisposable
                 var headerBytes = new Byte[FileHeader.HeaderSize];
                 var bytesRead = _fileStream.Read(headerBytes, 0, FileHeader.HeaderSize);
                 if (bytesRead < FileHeader.HeaderSize)
-                    throw new NovaException(ErrorCode.FileCorrupted, $"File too short, cannot read header: {_filePath}");
+                    throw new NovaException(ErrorCode.FileCorrupted, "File too short, cannot read header: {0}", _filePath);
 
                 var fileHeader = FileHeader.Read(new ArrayPacket(headerBytes));
 
                 if (fileHeader.PageSize != _pageSize)
-                    throw new NovaException(ErrorCode.IncompatibleFileFormat, $"Page size mismatch: file={fileHeader.PageSize}, expected={_pageSize}");
+                    throw new NovaException(ErrorCode.IncompatibleFileFormat, "Page size mismatch: file={0}, expected={1}", fileHeader.PageSize, _pageSize);
             }
 
             // 创建内存映射文件（leaveOpen=true，不让 MMF 关闭 FileStream）
@@ -130,12 +131,12 @@ public class MmfPager : IDisposable
                 throw new ObjectDisposedException(nameof(MmfPager));
 
             if (_fileStream == null)
-                throw new InvalidOperationException("Pager not opened");
+                throw new InvalidOperationException(L.T("Pager not opened"));
 
             // 偏移 = FileHeader(32B) + PageId * PageSize
             var offset = FileHeader.HeaderSize + (Int64)(pageId * (UInt64)_pageSize);
             if (offset + _pageSize > _fileStream.Length)
-                throw new ArgumentOutOfRangeException(nameof(pageId), $"Page {pageId} is out of range");
+                throw new ArgumentOutOfRangeException(nameof(pageId), L.T("Page {0} is out of range", pageId));
 
             var buffer = new Byte[_pageSize];
 
@@ -150,7 +151,7 @@ public class MmfPager : IDisposable
                 _fileStream.Seek(offset, SeekOrigin.Begin);
                 var bytesRead = _fileStream.Read(buffer, 0, _pageSize);
                 if (bytesRead != _pageSize)
-                    throw new IOException($"Failed to read complete page: expected {_pageSize}, got {bytesRead}");
+                    throw new IOException(L.T("Failed to read complete page: expected {0}, got {1}", _pageSize, bytesRead));
             }
 
             // 校验和验证
@@ -161,7 +162,7 @@ public class MmfPager : IDisposable
                 {
                     var computedChecksum = ComputeChecksum(buffer, PageHeader.HeaderSize, pageHeader.DataLength);
                     if (pageHeader.Checksum != computedChecksum)
-                        throw new NovaException(ErrorCode.ChecksumFailed, $"Checksum mismatch for page {pageId}");
+                        throw new NovaException(ErrorCode.ChecksumFailed, "Checksum mismatch for page {0}", pageId);
                 }
             }
 
@@ -181,7 +182,7 @@ public class MmfPager : IDisposable
             throw new ArgumentNullException(nameof(data));
 
         if (data.Length != _pageSize)
-            throw new ArgumentException($"Page data must be exactly {_pageSize} bytes, got {data.Length}", nameof(data));
+            throw new ArgumentException(L.T("Page data must be exactly {0} bytes, got {1}", _pageSize, data.Length), nameof(data));
 
         lock (_lock)
         {
@@ -189,7 +190,7 @@ public class MmfPager : IDisposable
                 throw new ObjectDisposedException(nameof(MmfPager));
 
             if (_fileStream == null)
-                throw new InvalidOperationException("Pager not opened");
+                throw new InvalidOperationException(L.T("Pager not opened"));
 
             var offset = FileHeader.HeaderSize + (Int64)(pageId * (UInt64)_pageSize);
 

@@ -1,4 +1,4 @@
-﻿using NewLife.Data;
+﻿using NewLife;using NewLife.Data;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;
@@ -27,7 +27,7 @@ public class DatabaseDirectory
         _options = options ?? throw new ArgumentNullException(nameof(options));
 
         if (String.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("Database path cannot be empty", nameof(path));
+            throw new ArgumentException(L.T("Database path cannot be empty"), nameof(path));
     }
 
     /// <summary>创建数据库（创建目录并写入元数据文件）</summary>
@@ -36,7 +36,7 @@ public class DatabaseDirectory
     {
         var metaFile = _basePath.CombinePath("nova.db").AsFile();
         if (metaFile.Exists && metaFile.Length > 0)
-            throw new NovaException(ErrorCode.InvalidArgument, $"Database directory already exists: {_basePath}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Database directory already exists: {0}", _basePath);
 
         _basePath.EnsureDirectory(false);
 
@@ -62,24 +62,24 @@ public class DatabaseDirectory
     public void Open()
     {
         if (!Directory.Exists(_basePath))
-            throw new NovaException(ErrorCode.InvalidArgument, $"Database directory does not exist: {_basePath}");
+            throw new NovaException(ErrorCode.InvalidArgument, "Database directory does not exist: {0}", _basePath);
 
         var metaPath = System.IO.Path.Combine(_basePath, "nova.db");
         if (!File.Exists(metaPath))
-            throw new NovaException(ErrorCode.FileCorrupted, $"Database metadata file not found: {metaPath}");
+            throw new NovaException(ErrorCode.FileCorrupted, "Database metadata file not found: {0}", metaPath);
 
         // 验证文件格式
         var metaBytes = File.ReadAllBytes(metaPath);
         var header = FileHeader.Read(new ArrayPacket(metaBytes));
 
         if (header.Version > 1)
-            throw new NovaException(ErrorCode.IncompatibleFileFormat, $"Unsupported database version: {header.Version}");
+            throw new NovaException(ErrorCode.IncompatibleFileFormat, "Unsupported database version: {0}", header.Version);
 
         // PageSize 一致性检查
         if (header.PageSize != _options.PageSize)
         {
-            Log.XTrace.WriteLine($"Warning: Database options mismatch. " +
-                $"File PageSize={header.PageSize}, Current PageSize={_options.PageSize}");
+            Log.XTrace.WriteLine("Warning: Database options mismatch. File PageSize={0}, Current PageSize={1}",
+                header.PageSize, _options.PageSize);
         }
     }
 
@@ -123,7 +123,7 @@ public class DatabaseDirectory
     public TableFileManager GetTableFileManager(String tableName)
     {
         if (String.IsNullOrWhiteSpace(tableName))
-            throw new ArgumentException("Table name cannot be empty", nameof(tableName));
+            throw new ArgumentException(L.T("Table name cannot be empty"), nameof(tableName));
 
         return new TableFileManager(_basePath, tableName, _options);
     }

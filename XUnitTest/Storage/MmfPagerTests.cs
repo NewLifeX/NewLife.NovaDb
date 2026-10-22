@@ -71,7 +71,7 @@ public class MmfPagerTests : IDisposable
         using var pager2 = new MmfPager(_testFile, 8192);
         var ex = Assert.Throws<NovaException>(() => pager2.Open());
         Assert.Equal(ErrorCode.IncompatibleFileFormat, ex.Code);
-        Assert.Contains("Page size mismatch", ex.Message);
+        Assert.Equal(ErrorCode.IncompatibleFileFormat, ex.Code);
     }
 
     [Fact(DisplayName = "释放后打开抛异常")]
@@ -297,7 +297,7 @@ public class MmfPagerTests : IDisposable
 
         var ex = Assert.Throws<NovaException>(() => pager2.ReadPage(0));
         Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
-        Assert.Contains("Checksum mismatch", ex.Message);
+        Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
     }
     #endregion
 

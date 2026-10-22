@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Utilities;
+﻿using NewLife;
+using NewLife.NovaDb.Utilities;
 
 namespace NewLife.NovaDb.Storage;
 
@@ -71,7 +72,7 @@ public class DatabaseLock : IDisposable
     public void Acquire()
     {
         if (!TryAcquire())
-            throw new Core.NovaException(Core.ErrorCode.FileLocked, $"Database is locked by another process: {_lockPath}");
+            throw new Core.NovaException(Core.ErrorCode.FileLocked, "Database is locked by another process: {0}", _lockPath);
     }
 
     /// <summary>释放锁</summary>

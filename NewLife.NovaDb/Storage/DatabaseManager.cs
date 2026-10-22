@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using NewLife;
 using NewLife.Data;
 using NewLife.Log;
 using NewLife.NovaDb.Core;
@@ -71,7 +72,7 @@ public class DatabaseManager
     {
         if (basePath == null) throw new ArgumentNullException(nameof(basePath));
         if (String.IsNullOrWhiteSpace(basePath))
-            throw new ArgumentException("Base path cannot be empty", nameof(basePath));
+            throw new ArgumentException(L.T("Base path cannot be empty"), nameof(basePath));
 
         _basePath = basePath;
         _options = options ?? throw new ArgumentNullException(nameof(options));
@@ -265,24 +266,24 @@ public class DatabaseManager
     public DatabaseInfo RegisterDatabase(String name, String path)
     {
         if (String.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("Database name cannot be empty", nameof(name));
+            throw new ArgumentException(L.T("Database name cannot be empty"), nameof(name));
         if (String.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("Database path cannot be empty", nameof(path));
+            throw new ArgumentException(L.T("Database path cannot be empty"), nameof(path));
 
         lock (_lock)
         {
             if (_databases.ContainsKey(name))
-                throw new NovaException(ErrorCode.DatabaseExists, $"Database '{name}' already registered");
+                throw new NovaException(ErrorCode.DatabaseExists, "Database '{0}' already registered", name);
         }
 
         // 验证路径下有有效的 nova.db
         var metaPath = Path.Combine(path, "nova.db");
         if (!File.Exists(metaPath))
-            throw new NovaException(ErrorCode.DatabaseNotFound, $"No metadata file found at: {path}");
+            throw new NovaException(ErrorCode.DatabaseNotFound, "No metadata file found at: {0}", path);
 
         var header = TryReadFileHeader(metaPath);
         if (header == null)
-            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid metadata file at: {metaPath}");
+            throw new NovaException(ErrorCode.FileCorrupted, "Invalid metadata file at: {0}", metaPath);
 
         var nowTicks = DateTime.UtcNow.Ticks;
 

@@ -1,4 +1,5 @@
-﻿using NewLife.Buffers;
+﻿using NewLife;
+using NewLife.Buffers;
 using NewLife.Data;
 
 namespace NewLife.NovaDb.Storage;
@@ -84,7 +85,7 @@ public class PageHeader
             throw new ArgumentNullException(nameof(data));
 
         if (data.Length < HeaderSize)
-            throw new ArgumentException($"Buffer too short for PageHeader, expected {HeaderSize} bytes, got {data.Length}", nameof(data));
+            throw new ArgumentException(L.T("Buffer too short for PageHeader, expected {0} bytes, got {1}", HeaderSize, data.Length), nameof(data));
 
         var reader = new SpanReader(data);
 
@@ -94,7 +95,7 @@ public class PageHeader
         // PageType 验证
         var pageTypeByte = reader.ReadByte();
         if (!Enum.IsDefined(typeof(PageType), pageTypeByte))
-            throw new Core.NovaException(Core.ErrorCode.FileCorrupted, $"Invalid page type: {pageTypeByte}");
+            throw new Core.NovaException(Core.ErrorCode.FileCorrupted, "Invalid page type: {0}", pageTypeByte);
 
         var pageType = (PageType)pageTypeByte;
 

@@ -92,7 +92,7 @@ public class DatabaseDirectoryTests : IDisposable
         var db = new DatabaseDirectory(_testPath, _options);
         var ex = Assert.Throws<NovaException>(() => db.Create());
         Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
-        Assert.Contains("already exists", ex.Message);
+        Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
     }
 
     [Fact(DisplayName = "在已有目录中创建数据库成功")]
@@ -141,7 +141,7 @@ public class DatabaseDirectoryTests : IDisposable
 
         var ex = Assert.Throws<NovaException>(() => db.Open());
         Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
-        Assert.Contains("does not exist", ex.Message);
+        Assert.Equal(ErrorCode.InvalidArgument, ex.Code);
     }
 
     [Fact(DisplayName = "打开缺少元数据文件的数据库抛异常")]
@@ -153,7 +153,7 @@ public class DatabaseDirectoryTests : IDisposable
         var db = new DatabaseDirectory(_testPath, _options);
         var ex = Assert.Throws<NovaException>(() => db.Open());
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
-        Assert.Contains("metadata file not found", ex.Message);
+        Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
     }
 
     [Fact(DisplayName = "打开元数据损坏的数据库抛异常")]
@@ -184,7 +184,7 @@ public class DatabaseDirectoryTests : IDisposable
         var db2 = new DatabaseDirectory(_testPath, _options);
         var ex = Assert.Throws<NovaException>(() => db2.Open());
         Assert.Equal(ErrorCode.IncompatibleFileFormat, ex.Code);
-        Assert.Contains("Unsupported database version", ex.Message);
+        Assert.Equal(ErrorCode.IncompatibleFileFormat, ex.Code);
     }
 
     [Fact(DisplayName = "打开元数据截断的数据库抛异常")]

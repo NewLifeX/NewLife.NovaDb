@@ -80,7 +80,7 @@ public class FileHeaderTests
 
         var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
-        Assert.Contains("checksum mismatch", ex.Message);
+        Assert.Equal(ErrorCode.ChecksumFailed, ex.Code);
     }
 
     [Fact(DisplayName = "校验和检测数据损坏")]
@@ -139,7 +139,7 @@ public class FileHeaderTests
 
         var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
-        Assert.Contains("Invalid magic number", ex.Message);
+        Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
     }
 
     [Fact(DisplayName = "空缓冲区读取抛异常")]
@@ -153,7 +153,7 @@ public class FileHeaderTests
     {
         var bytes = new Byte[31]; // 少于 32 字节
         var ex = Assert.Throws<ArgumentException>(() => FileHeader.Read(bytes));
-        Assert.Contains("too short", ex.Message);
+        Assert.Equal("span", ex.ParamName);
     }
 
     [Fact(DisplayName = "非法文件类型抛异常")]
@@ -169,7 +169,7 @@ public class FileHeaderTests
 
         var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
-        Assert.Contains("Invalid file type", ex.Message);
+        Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
     }
 
     [Fact(DisplayName = "页大小位移过大抛异常")]
@@ -185,7 +185,7 @@ public class FileHeaderTests
 
         var ex = Assert.Throws<NovaException>(() => FileHeader.Read(bytes));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
-        Assert.Contains("Invalid page size shift", ex.Message);
+        Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
     }
 
     [Fact(DisplayName = "非 2 的幂页大小序列化抛异常")]

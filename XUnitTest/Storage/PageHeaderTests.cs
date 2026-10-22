@@ -46,7 +46,7 @@ public class PageHeaderTests
     {
         var bytes = new Byte[31]; // 少于 32 字节
         var ex = Assert.Throws<ArgumentException>(() => PageHeader.Read(new ArrayPacket(bytes)));
-        Assert.Contains("too short", ex.Message);
+        Assert.Equal("data", ex.ParamName);
     }
 
     [Fact(DisplayName = "测试无效页类型抛出异常")]
@@ -66,7 +66,7 @@ public class PageHeaderTests
 
         var ex = Assert.Throws<NovaException>(() => PageHeader.Read(new ArrayPacket(bytes)));
         Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
-        Assert.Contains("Invalid page type", ex.Message);
+        Assert.Equal(ErrorCode.FileCorrupted, ex.Code);
     }
 
     [Fact(DisplayName = "测试所有页类型序列化往返")]

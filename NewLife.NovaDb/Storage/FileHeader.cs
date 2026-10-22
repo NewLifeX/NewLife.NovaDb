@@ -49,7 +49,7 @@ public class FileHeader
     public void Write(Span<Byte> span)
     {
         if (span.Length < HeaderSize)
-            throw new ArgumentException($"Span too short for FileHeader, expected {HeaderSize} bytes, got {span.Length}", nameof(span));
+            throw new ArgumentException(L.T("Span too short for FileHeader, expected {0} bytes, got {1}", HeaderSize, span.Length), nameof(span));
 
         var writer = new SpanWriter(span);
 
@@ -98,14 +98,14 @@ public class FileHeader
     public static FileHeader Read(ReadOnlySpan<Byte> span)
     {
         if (span.Length < HeaderSize)
-            throw new ArgumentException($"Buffer too short for FileHeader, expected {HeaderSize} bytes, got {span.Length}", nameof(span));
+            throw new ArgumentException(L.T("Buffer too short for FileHeader, expected {0} bytes, got {1}", HeaderSize, span.Length), nameof(span));
 
         var reader = new SpanReader(span);
 
         // Magic Number 验证 - 小端读取，MagicNumber=0x41564F4E，对应磁盘 "NOVA"
         var magic = reader.ReadUInt32();
         if (magic != MagicNumber)
-            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid magic number: 0x{magic:X8}, expected 0x{MagicNumber:X8}");
+            throw new NovaException(ErrorCode.FileCorrupted, "Invalid magic number: 0x{0:X8}, expected 0x{1:X8}", magic, MagicNumber);
 
         // Version
         var version = reader.ReadByte();
@@ -113,14 +113,14 @@ public class FileHeader
         // FileType
         var fileTypeByte = reader.ReadByte();
         if (!Enum.IsDefined(typeof(FileType), fileTypeByte))
-            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid file type: {fileTypeByte}");
+            throw new NovaException(ErrorCode.FileCorrupted, "Invalid file type: {0}", fileTypeByte);
 
         var fileType = (FileType)fileTypeByte;
 
         // PageSizeShift 验证（最大 2^24 = 16MB）
         var pageSizeShift = reader.ReadByte();
         if (pageSizeShift > 24)
-            throw new NovaException(ErrorCode.FileCorrupted, $"Invalid page size shift: {pageSizeShift}, must be 0-24");
+            throw new NovaException(ErrorCode.FileCorrupted, "Invalid page size shift: {0}, must be 0-24", pageSizeShift);
 
         var pageSize = 1u << pageSizeShift;
 
@@ -137,7 +137,7 @@ public class FileHeader
         var storedChecksum = reader.ReadUInt32();
         var computedChecksum = Crc32.Compute(span[..28]);
         if (storedChecksum != computedChecksum)
-            throw new NovaException(ErrorCode.ChecksumFailed, $"FileHeader checksum mismatch: stored=0x{storedChecksum:X8}, computed=0x{computedChecksum:X8}");
+            throw new NovaException(ErrorCode.ChecksumFailed, "FileHeader checksum mismatch: stored=0x{0:X8}, computed=0x{1:X8}", storedChecksum, computedChecksum);
 
         return new FileHeader
         {
@@ -175,11 +175,11 @@ public class FileHeader
 
         using var fs = new FileStream(fileName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
         if (fs.Length < HeaderSize)
-            throw new NovaException(ErrorCode.FileCorrupted, $"文件过短，无法读取文件头（期望 {HeaderSize} 字节，实际 {fs.Length} 字节）: {fileName}");
+            throw new NovaException(ErrorCode.FileCorrupted, "File too short, cannot read header (expected {0} bytes, actual {1} bytes): {2}", HeaderSize, fs.Length, fileName);
 
         var buf = new Byte[HeaderSize];
         if (fs.Read(buf, 0, HeaderSize) < HeaderSize)
-            throw new NovaException(ErrorCode.FileCorrupted, $"读取文件头失败，数据不足: {fileName}");
+            throw new NovaException(ErrorCode.FileCorrupted, "Failed to read file header, insufficient data: {0}", fileName);
 
         return Read(buf);
     }
@@ -190,7 +190,7 @@ public class FileHeader
     private static Byte GetPageSizeShift(UInt32 pageSize)
     {
         if (pageSize == 0 || (pageSize & (pageSize - 1)) != 0)
-            throw new ArgumentException($"PageSize must be a power of 2, got {pageSize}", nameof(pageSize));
+            throw new ArgumentException(L.T("PageSize must be a power of 2, got {0}", pageSize), nameof(pageSize));
 
         Byte shift = 0;
         var v = pageSize;
