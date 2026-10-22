@@ -30,7 +30,7 @@
 - **Папка как база данных**: Скопируйте папку для завершения миграции/резервного копирования, процесс dump/restore не требуется. Каждая таблица имеет независимые группы файлов (`.data`/`.idx`/`.wal`).
 - **Интеграция четырех движков**:
   - **Nova Engine** (общий реляционный): Индекс SkipList + транзакции MVCC (Read Committed), поддерживает CRUD, SQL-запросы, JOIN
-  - **Flux Engine** (временные ряды + MQ): Временное разбиение Append Only, поддерживает автоочистку TTL, группы потребителей в стиле Redis Stream + Pending + Ack
+  - **Flux Engine** (временные ряды + MQ): Временное разбиение Append Only, поддерживает автоочистку TTL, группы потребителей в стиле Redis Stream + Pending + Ack; колоночное запечатывание блоков с типо-зависимым кодированием (Delta/DeltaDelta/XOR/RLE/словарное) и блочным сжатием LZ4, предварительная агрегация rollup с автоматической маршрутизацией агрегатных запросов, группировка по окнам SESSION/STATE и отчёт о степени сжатия через `_sys.flux_compression`
   - **Режим KV** (хранилище ключ-значение): Независимый движок Bitcask (индекс в памяти + значения на диске), поддержка TTL, изоляция нескольких таблиц
   - **ADO.NET Provider**: Автоматически распознает встроенный/серверный режим, нативная интеграция с XCode ORM
 - **Динамическое разделение горячих и холодных индексов**: Горячие данные полностью загружаются в физическую память (узлы SkipList), холодные данные выгружаются в MMF с сохранением только разреженного каталога. Таблица из 10 миллионов строк, запрашивающая только последние 10 000 строк, использует < 20 МБ памяти.
@@ -55,8 +55,8 @@
 | String | `STRING(n)` / `STRING` | `String` | UTF-8, длина может быть указана |
 | Binary | `BINARY(n)` / `BLOB` | `Byte[]` | Длина может быть указана |
 | DateTime | `DATETIME` | `DateTime` | Точность до Ticks (100 наносекунд) |
-| GeoPoint | `GEOPOINT` | Пользовательская структура | Координаты широты/долготы (планируется) |
-| Vector | `VECTOR(n)` | `Single[]` | Поиск AI-векторов (планируется) |
+| GeoPoint | `GEOPOINT` | Пользовательская структура | Координаты широты/долготы, с запросами расстояния/полигона |
+| Vector | `VECTOR(n)` | `Single[]` | Поиск AI-векторов, с запросами ближайших соседей KNN |
 
 ### Возможности SQL
 
@@ -193,7 +193,20 @@ while (reader.Read())
 }
 ```
 
-#### 1.4 Транзакции
+#### 1.4 Агрегация и скалярные запросы
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = "SELECT COUNT(*) FROM users";
+var count = Convert.ToInt32(cmd.ExecuteScalar());
+Console.WriteLine($"Total users: {count}");
+
+cmd.CommandText = "SELECT AVG(age) FROM users WHERE age > 0";
+var avgAge = Convert.ToDouble(cmd.ExecuteScalar());
+Console.WriteLine($"Average age: {avgAge:F1}");
+```
+
+#### 1.5 Транзакции
 
 NovaDb реализует изоляцию транзакций на основе MVCC с уровнем изоляции по умолчанию Read Committed:
 
@@ -207,10 +220,12 @@ try
     using var cmd = conn.CreateCommand();
     cmd.Transaction = tx;
 
+    // Списание остатка
     cmd.CommandText = "UPDATE products SET stock = stock - 1 WHERE id = 1 AND stock > 0";
     var affected = cmd.ExecuteNonQuery();
     if (affected == 0) throw new InvalidOperationException("Insufficient stock");
 
+    // Создание заказа
     cmd.CommandText = "INSERT INTO orders (product_id, amount) VALUES (1, 1)";
     cmd.ExecuteNonQuery();
 
@@ -223,7 +238,7 @@ catch
 }
 ```
 
-#### 1.5 JOIN-запросы
+#### 1.6 JOIN-запросы
 
 ```csharp
 using var cmd = conn.CreateCommand();
@@ -243,7 +258,35 @@ while (reader.Read())
 }
 ```
 
-#### 1.6 Справочник по строке подключения
+#### 1.7 Операции DDL
+
+```sql
+-- Создание/удаление базы данных
+CREATE DATABASE shop;
+DROP DATABASE shop;
+
+-- Изменение структуры таблицы
+ALTER TABLE products ADD COLUMN category STRING;
+ALTER TABLE products MODIFY COLUMN name STRING(200);
+ALTER TABLE products DROP COLUMN category;
+
+-- Управление индексами
+CREATE INDEX idx_name ON users (name);
+CREATE UNIQUE INDEX idx_email ON users (email);
+DROP INDEX idx_name ON users;
+```
+
+#### 1.8 UPSERT
+
+```csharp
+using var cmd = conn.CreateCommand();
+cmd.CommandText = @"
+    INSERT INTO products (id, name, price) VALUES (1, 'Laptop', 5499.00)
+    ON DUPLICATE KEY UPDATE price = 5499.00";
+cmd.ExecuteNonQuery();
+```
+
+#### 1.9 Справочник по строке подключения
 
 | Параметр | Пример | Описание |
 |----------|--------|----------|
@@ -325,6 +368,19 @@ while (reader.Read())
 }
 ```
 
+#### 2.5 Политика хранения данных
+
+Таблицы временных рядов поддерживают автоматическую очистку устаревших шардов по TTL, сохраняя данные по времени или объёму:
+
+```csharp
+// Настройка параметров временных рядов через DbOptions
+var options = new DbOptions
+{
+    FluxPartitionHours = 1,        // Один раздел в час
+    FluxDefaultTtlSeconds = 86400, // Хранить данные 24 часа
+};
+```
+
 ---
 
 ### 3. Очередь сообщений (NovaClient)
@@ -343,6 +399,7 @@ client.Open();
 #### 3.2 Публикация сообщений
 
 ```csharp
+// Выполнение SQL через RPC для вставки сообщения в таблицу Flux
 var affected = await client.ExecuteAsync(
     "INSERT INTO order_events (timestamp, orderId, action, amount) " +
     "VALUES (NOW(), 10001, 'created', 299.00)");
@@ -352,6 +409,7 @@ Console.WriteLine($"Message published, affected rows: {affected}");
 #### 3.3 Потребление сообщений
 
 ```csharp
+// Чтение сообщений (по временному диапазону)
 var messages = await client.QueryAsync<IDictionary<String, Object>[]>(
     "SELECT * FROM order_events WHERE timestamp > @since ORDER BY timestamp LIMIT 10",
     new { since = DateTime.Now.AddMinutes(-5) });
@@ -386,6 +444,7 @@ Console.WriteLine($"Is connected: {client.IsConnected}");
 using var client = new NovaClient("tcp://127.0.0.1:3306");
 client.Open();
 
+// Создание KV-таблицы (TTL по умолчанию 7200 секунд = 2 часа)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
     Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
@@ -416,7 +475,28 @@ await client.ExecuteAsync(
     "ON DUPLICATE KEY UPDATE Value = Value + 1");
 ```
 
-#### 4.4 Обзор возможностей KV
+#### 4.4 Распределённая блокировка
+
+```csharp
+// Попытка захвата блокировки (вставка проходит только когда ключа ещё нет)
+var locked = await client.ExecuteAsync(
+    "INSERT INTO dist_lock (Key, Value, TTL) VALUES ('lock:order:123', 'worker-1', " +
+    "DATEADD(NOW(), 30, 'SECOND'))");
+
+if (locked > 0)
+{
+    try
+    {
+        // Блокировка захвачена, выполняем бизнес-логику
+    }
+    finally
+    {
+        await client.ExecuteAsync("DELETE FROM dist_lock WHERE Key = 'lock:order:123'");
+    }
+}
+```
+
+#### 4.5 Обзор возможностей KV
 
 | Операция | Описание |
 |----------|----------|
@@ -465,10 +545,11 @@ NovaDb поддерживает архитектуру **один master — н�
 | Версия | Планируемые функции |
 |--------|---------------------|
 | **v1.0** (Завершено) | Двойной встроенный+серверный режим, движки Nova/Flux/KV, SQL DDL/DML/SELECT/JOIN, транзакции/MVCC, WAL/восстановление, разделение горячих-холодных данных, разбиение, группы потребителей MQ, ADO.NET Provider, синхронизация master-slave кластера |
-| **v1.1** | Функции SQL уровня P0 (строковые/числовые/даты/преобразования/условные ~30 функций) |
-| **v1.2** | Блокирующее чтение MQ, операции KV Add/Inc, функции SQL уровня P1 |
-| **v1.3** | Отложенные сообщения MQ, очередь недоставленных сообщений |
+| **v1.1** (Завершено) | Функции SQL уровня P0 (строковые/числовые/даты/преобразования/условные ~30 функций) |
+| **v1.2** (Завершено) | Блокирующее чтение MQ, операции KV Add/Inc, функции SQL уровня P1 |
+| **v1.3** (Завершено) | Отложенные сообщения MQ, очередь недоставленных сообщений |
 | **v2.0** (Завершено) | Геокодирование GeoPoint + тип Vector (поиск AI-векторов), расширение GIS, полнотекстовый поиск (BM25), NovaVectorStore (IVectorStore, многоколлекционная), инкрементальные материализованные представления, управление Binlog, наблюдаемость и инструменты управления |
+| **v2.1** (Завершено) | Колоночное запечатывание временных рядов + блочное сжатие (числовое кодирование + LZ4), предварительная агрегация rollup с дозаполнением и автоматической маршрутизацией запросов, группировка SESSION/STATE_WINDOW, отчёт о степени сжатия, поддержка NativeAOT с многоплатформенным CI (win-x64/linux-x64/linux-arm64/loongarch64) |
 
 ## Позиционирование
 
