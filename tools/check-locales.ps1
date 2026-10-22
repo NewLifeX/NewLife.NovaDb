@@ -13,6 +13,7 @@ param(
     [String[]]$SourceDir = @("NewLife.NovaDb"),
     [Switch]$RequireComplete,
     [Switch]$RequireTranslated,
+    [Switch]$Coverage,
     [String[]]$AllowSameValue = @("NewLife.NovaDb"),
     [Switch]$SkipOrphan,
     [Switch]$SkipMessageCheck,
@@ -192,8 +193,8 @@ if (!$SkipMessageCheck) {
             # 去掉注释，避免把示例代码当成真实调用
             $text = [regex]::Replace([IO.File]::ReadAllText($file.FullName), '/\*.*?\*/', '', 'Singleline')
             $text = [regex]::Replace($text, '(?m)^\s*//.*$', '')
-            foreach ($pattern in $messagePatterns) {
-                foreach ($m in [regex]::Matches($text, $pattern)) {
+            foreach ($msgPattern in $messagePatterns) {
+                foreach ($m in [regex]::Matches($text, $msgPattern)) {
                     $key = Unescape-Yaml $m.Groups[1].Value
                     if ($AllowMissingMessage.Contains($key)) { continue }
                     if (!$reference.Entries.Contains($key) -and !$missingMessages.Contains($key)) {
@@ -210,6 +211,29 @@ if (!$SkipMessageCheck) {
     foreach ($key in $missingMessages.Keys) {
         $allErrors += "源码消息缺少词条：$key（$($missingMessages[$key])）"
     }
+}
+
+if ($Coverage) {
+    $rows = foreach ($file in Get-ChildItem $localeDir -Filter *.yml | Sort-Object Name) {
+        $loc = Read-Locale $file.FullName
+        $translated = 0
+        $untranslated = 0
+        $missing = 0
+        foreach ($key in $reference.Entries.Keys) {
+            if (!$loc.Entries.Contains($key)) {
+                $missing++
+            }
+            elseif ([String]::Equals($loc.Entries[$key], $key, [StringComparison]::Ordinal)) {
+                $untranslated++
+            }
+            else {
+                $translated++
+            }
+        }
+        [pscustomobject]@{ Language = $file.BaseName; Total = $reference.Entries.Count; Translated = $translated; Untranslated = $untranslated; Missing = $missing }
+    }
+    $rows | Format-Table -AutoSize
+    exit 0
 }
 
 foreach ($e in $allErrors) { Write-Host $e -ForegroundColor Red }

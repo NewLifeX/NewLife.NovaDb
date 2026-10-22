@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Globalization;
 using NewLife;
+using NewLife.Log;
 using NewLife.NovaDb.Core;
 using Xunit;
 using L10n = NewLife.Localization;
@@ -106,6 +107,27 @@ public class LocalizationTests
         finally
         {
             L10n.Culture = oldCulture;
+            L10n.LogCulture = oldLogCulture;
+        }
+    }
+
+    [Fact]
+    [DisplayName("日志格式化按日志语言翻译")]
+    public void LoggerFormat_Translated()
+    {
+        _ = typeof(NovaException);
+
+        var oldLogCulture = L10n.LogCulture;
+        try
+        {
+            L10n.LogCulture = new CultureInfo("zh-CN");
+            Assert.Equal("不支持的数据类型：255", Logger.FormatMessage(null, "Unsupported data type: {0}", [255]));
+
+            L10n.LogCulture = new CultureInfo("en-US");
+            Assert.Equal("Unsupported data type: 255", Logger.FormatMessage(null, "Unsupported data type: {0}", [255]));
+        }
+        finally
+        {
             L10n.LogCulture = oldLogCulture;
         }
     }
