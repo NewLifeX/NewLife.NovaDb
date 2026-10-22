@@ -5,6 +5,7 @@
 // 说明：AOT 能力验收冒烟件，由 .github/workflows/aot.yml 的 aot（win-x64/linux-x64/linux-arm64）
 // 与 loongarch64（QEMU）作业自动执行（非 0 退出码即失败）。
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -349,6 +350,21 @@ Run("Geo 坐标转换与 geohash", () =>
 
     var hash = GeoHelper.EncodeGeohash(39.908823, 116.397470, 6);
     if (String.IsNullOrEmpty(hash) || hash.Length != 6) throw new Exception($"geohash 异常: {hash}");
+});
+
+Run("运行时多语言（简体中文）", () =>
+{
+    var old = Localization.Culture;
+    try
+    {
+        Localization.Culture = new CultureInfo("zh-CN");
+        var text = Localization.Translate("Unsupported data type: {0}", (DataType)255);
+        if (text != "不支持的数据类型：255") throw new Exception($"翻译结果不符：{text}");
+    }
+    finally
+    {
+        Localization.Culture = old;
+    }
 });
 
 Run("备份、校验与恢复", () =>

@@ -145,6 +145,20 @@ public class LocalizationTests
     }
 
     [Fact]
+    [DisplayName("10 种语言均能翻译同一词条")]
+    public void AllLocales_Translate()
+    {
+        _ = typeof(NovaException);
+
+        foreach (var code in _cultures)
+        {
+            var text = WithCulture(code, () => L10n.Translate("Unsupported data type: {0}", 255));
+            Assert.NotEqual("Unsupported data type: 255", text);
+            Assert.Contains("255", text);
+        }
+    }
+
+    [Fact]
     [DisplayName("程序集标题与描述词条可本地化")]
     public void AssemblyMetadata_Translate()
     {
