@@ -25,11 +25,12 @@ echo "[ios] build start: $(date -u +%H:%M:%S)"
 run_limited 1200 dotnet build "$PROJECT" -c "$CONFIGURATION" -f net10.0-ios -p:MobileTargetFramework=net10.0-ios -p:RuntimeIdentifier="$RUNTIME" --nologo
 echo "[ios] build done: $(date -u +%H:%M:%S)"
 
-APP="$(find "$ROOT/Bin/MobileSmoke" -maxdepth 6 -name "*.app" -print -quit)"
+APP="$(find "$ROOT/Bin/MobileSmoke" -maxdepth 8 -name "*.app" -print -quit)"
 if [ -z "$APP" ]; then
   echo "iOS app bundle not found."
   exit 1
 fi
+echo "[ios] app bundle: $APP"
 
 UDID="$(xcrun simctl list devices available | awk -F '[()]' '/iPhone/ {print $2; exit}')"
 if [ -z "$UDID" ]; then
