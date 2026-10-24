@@ -348,4 +348,33 @@ public class DataCodecTests
         var buffer = new Byte[length - 1]; // 故意比需要的长度短1字节
         Assert.Throws<ArgumentException>(() => _codec.Encode(value, DataType.Vector, buffer, 0));
     }
+
+    [Fact(DisplayName = "整数编码固定为小端字节序")]
+    public void TestIntLittleEndianLayout()
+    {
+        var encoded = _codec.Encode(0x01020304, DataType.Int32);
+        Assert.Equal(new Byte[] { 0x04, 0x03, 0x02, 0x01 }, encoded);
+
+        var encoded64 = _codec.Encode(0x0102030405060708L, DataType.Int64);
+        Assert.Equal(new Byte[] { 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01 }, encoded64);
+    }
+
+    [Fact(DisplayName = "字符串长度前缀固定为小端字节序")]
+    public void TestStringLengthLittleEndianLayout()
+    {
+        var encoded = _codec.Encode("A", DataType.String);
+        Assert.Equal(new Byte[] { 0x01, 0x00, 0x00, 0x00, (Byte)'A' }, encoded);
+    }
+
+    [Fact(DisplayName = "小数与地理坐标固定为小端字节序")]
+    public void TestDecimalAndGeoLittleEndianLayout()
+    {
+        var encoded = _codec.Encode(1.5M, DataType.Decimal);
+        Assert.Equal(new Byte[] { 0x0F, 0x00, 0x00, 0x00 }, encoded[..4]);
+        Assert.Equal(1.5M, _codec.Decode(encoded, 0, DataType.Decimal));
+
+        var geo = _codec.Encode(new GeoPoint(1.0, 2.0), DataType.GeoPoint);
+        Assert.Equal(new Byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F }, geo[..8]);
+        Assert.Equal(new Byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40 }, geo[8..]);
+    }
 }

@@ -385,8 +385,8 @@ public class BinlogWriter : IDisposable
                 var dataLength = recordLength - 4;
                 if (dataLength < 1) break;
 
-                // 校验 CRC32
-                var expectedChecksum = BitConverter.ToUInt32(buf, dataLength);
+                // 校验 CRC32（小端，与写入保持一致）
+                var expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(dataLength));
                 var actualChecksum = Crc32.Compute(buf, 0, dataLength);
                 if (expectedChecksum != actualChecksum) continue;
 

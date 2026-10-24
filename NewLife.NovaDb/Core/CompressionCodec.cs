@@ -76,8 +76,8 @@ public class CompressionCodec
         if (algo != CompressionAlgorithm.GZip && algo != CompressionAlgorithm.Deflate)
             return data; // 不是压缩数据，直接返回
 
-        // 读取原始长度
-        var originalLength = BitConverter.ToInt32(data, 1);
+        // 读取原始长度（小端，与 Compress 写入保持一致）
+        var originalLength = BinaryPrimitives.ReadInt32LittleEndian(data.AsSpan(1, 4));
         if (originalLength <= 0 || originalLength > 128 * 1024 * 1024) // 最大 128MB
             return data;
 

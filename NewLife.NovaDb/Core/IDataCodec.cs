@@ -1,5 +1,4 @@
 ﻿using System.Buffers.Binary;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using NewLife;
@@ -62,13 +61,13 @@ public class DefaultDataCodec : IDataCodec
             return dataType switch
             {
                 DataType.Boolean => BitConverter.GetBytes((Boolean)value),
-                DataType.Int32 => BitConverter.GetBytes((Int32)value),
-                DataType.Int64 => BitConverter.GetBytes((Int64)value),
-                DataType.Double => BitConverter.GetBytes((Double)value),
+                DataType.Int32 => GetBytesLittleEndian((Int32)value),
+                DataType.Int64 => GetBytesLittleEndian((Int64)value),
+                DataType.Double => GetBytesLittleEndian((Double)value),
                 DataType.Decimal => EncodeDecimal((Decimal)value),
                 DataType.String => EncodeString((String)value),
                 DataType.Binary => EncodeByteArray((Byte[])value),
-                DataType.DateTime => BitConverter.GetBytes(((DateTime)value).Ticks),
+                DataType.DateTime => GetBytesLittleEndian(((DateTime)value).Ticks),
                 DataType.GeoPoint => EncodeGeoPoint((GeoPoint)value),
                 DataType.Vector => EncodeVector((Single[])value),
                 _ => throw new NotSupportedException(L.T("Unsupported data type: {0}", dataType))
@@ -118,21 +117,21 @@ public class DefaultDataCodec : IDataCodec
                     {
                         if (buffer.Length < offset + 4)
                             throw BufferTooShortEncode("Int32", offset + 4, buffer.Length);
-                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), (Int32)value);
+                        BinaryPrimitives.WriteInt32LittleEndian(buffer.AsSpan(offset, 4), (Int32)value);
                         return 4;
                     }
                 case DataType.Int64:
                     {
                         if (buffer.Length < offset + 8)
                             throw BufferTooShortEncode("Int64", offset + 8, buffer.Length);
-                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), (Int64)value);
+                        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(offset, 8), (Int64)value);
                         return 8;
                     }
                 case DataType.Double:
                     {
                         if (buffer.Length < offset + 8)
                             throw BufferTooShortEncode("Double", offset + 8, buffer.Length);
-                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), (Double)value);
+                        WriteDoubleLittleEndian(buffer.AsSpan(offset, 8), (Double)value);
                         return 8;
                     }
                 case DataType.Decimal:
@@ -145,7 +144,7 @@ public class DefaultDataCodec : IDataCodec
                     {
                         if (buffer.Length < offset + 8)
                             throw BufferTooShortEncode("DateTime", offset + 8, buffer.Length);
-                        Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(buffer.AsSpan(offset)), ((DateTime)value).Ticks);
+                        BinaryPrimitives.WriteInt64LittleEndian(buffer.AsSpan(offset, 8), ((DateTime)value).Ticks);
                         return 8;
                     }
                 case DataType.GeoPoint:
@@ -249,17 +248,7 @@ public class DefaultDataCodec : IDataCodec
     private static Byte[] EncodeDecimal(Decimal value)
     {
         var buffer = new Byte[16];
-
-#if NET5_0_OR_GREATER
-        Span<Int32> bits = stackalloc Int32[4];
-        Decimal.GetBits(value, bits);
-
-        // 把 4 个 int 的原始 16 字节拷贝到 byte[16]
-        MemoryMarshal.AsBytes(bits).CopyTo(buffer);
-#else
-        var bits = Decimal.GetBits(value);
-        Buffer.BlockCopy(bits, 0, buffer, 0, 16);
-#endif
+        WriteDecimal(value, buffer.AsSpan());
 
         return buffer;
     }
@@ -269,18 +258,20 @@ public class DefaultDataCodec : IDataCodec
         if (buffer.Length < offset + 16)
             throw BufferTooShortEncode("Decimal", offset + 16, buffer.Length);
 
-#if NET5_0_OR_GREATER
-        Span<Int32> bits = stackalloc Int32[4];
-        Decimal.GetBits(value, bits);
-
-        // 16 bytes 写入目标 buffer
-        MemoryMarshal.AsBytes(bits).CopyTo(buffer.AsSpan(offset, 16));
-#else
-        var bits = Decimal.GetBits(value);
-        Buffer.BlockCopy(bits, 0, buffer, offset, 16);
-#endif
+        WriteDecimal(value, buffer.AsSpan(offset, 16));
 
         return 16;
+    }
+
+    private static void WriteDecimal(Decimal value, Span<Byte> destination)
+    {
+        var bits = Decimal.GetBits(value);
+
+        // Decimal 的 4 个 32 位分量按小端写入，保证跨大端/小端平台的文件格式一致
+        for (var i = 0; i < 4; i++)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(destination.Slice(i * 4, 4), bits[i]);
+        }
     }
 
     private static Byte[] EncodeString(String value)
@@ -375,28 +366,28 @@ public class DefaultDataCodec : IDataCodec
     {
         if (buffer.Length < offset + 4)
             throw BufferTooShortRead("Int32", offset + 4, buffer.Length);
-        return BitConverter.ToInt32(buffer, offset);
+        return BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(offset, 4));
     }
 
     private static Int64 DecodeInt64(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 8)
             throw BufferTooShortRead("Int64", offset + 8, buffer.Length);
-        return BitConverter.ToInt64(buffer, offset);
+        return BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(offset, 8));
     }
 
     private static Double DecodeDouble(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 8)
             throw BufferTooShortRead("Double", offset + 8, buffer.Length);
-        return BitConverter.ToDouble(buffer, offset);
+        return BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(offset, 8)));
     }
 
     private static DateTime DecodeDateTime(Byte[] buffer, Int32 offset)
     {
         if (buffer.Length < offset + 8)
             throw BufferTooShortRead("DateTime", offset + 8, buffer.Length);
-        return new DateTime(BitConverter.ToInt64(buffer, offset));
+        return new DateTime(BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(offset, 8)));
     }
 
     private static Decimal DecodeDecimal(Byte[] buffer, Int32 offset)
@@ -404,7 +395,10 @@ public class DefaultDataCodec : IDataCodec
         if (buffer.Length < offset + 16)
             throw BufferTooShortRead("Decimal", offset + 16, buffer.Length);
         var bits = new Int32[4];
-        Buffer.BlockCopy(buffer, offset, bits, 0, 16);
+        for (var i = 0; i < 4; i++)
+        {
+            bits[i] = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(offset + i * 4, 4));
+        }
         return new Decimal(bits);
     }
 
@@ -413,7 +407,7 @@ public class DefaultDataCodec : IDataCodec
         if (buffer.Length < offset + 4)
             throw BufferTooShortRead("String length", offset + 4, buffer.Length);
 
-        var length = BitConverter.ToInt32(buffer, offset);
+        var length = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(offset, 4));
 
         if (length < 0)
             throw InvalidLength("String", length);
@@ -428,8 +422,8 @@ public class DefaultDataCodec : IDataCodec
     {
         if (buffer.Length < offset + 16)
             throw BufferTooShortRead("GeoPoint", offset + 16, buffer.Length);
-        var lat = BitConverter.ToDouble(buffer, offset);
-        var lon = BitConverter.ToDouble(buffer, offset + 8);
+        var lat = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(offset, 8)));
+        var lon = BitConverter.Int64BitsToDouble(BinaryPrimitives.ReadInt64LittleEndian(buffer.AsSpan(offset + 8, 8)));
         return new GeoPoint(lat, lon);
     }
 
@@ -437,7 +431,7 @@ public class DefaultDataCodec : IDataCodec
     {
         if (buffer.Length < offset + 4)
             throw BufferTooShortRead("Vector length", offset + 4, buffer.Length);
-        var length = BitConverter.ToInt32(buffer, offset);
+        var length = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(offset, 4));
         if (length < 0)
             throw InvalidLength("Vector", length);
         if (buffer.Length < offset + 4 + length * 4)
@@ -452,7 +446,7 @@ public class DefaultDataCodec : IDataCodec
         if (buffer.Length < offset + 4)
             throw BufferTooShortRead("ByteArray length", offset + 4, buffer.Length);
 
-        var length = BitConverter.ToInt32(buffer, offset);
+        var length = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(offset, 4));
         if (length < 0)
             throw InvalidLength("ByteArray", length);
         if (buffer.Length < offset + 4 + length)
@@ -471,6 +465,27 @@ public class DefaultDataCodec : IDataCodec
 
     private static ArgumentException InvalidLength(String kind, Int32 length) =>
         new(L.T("Invalid {0} length: {1}", kind, length));
+
+    private static Byte[] GetBytesLittleEndian(Int32 value)
+    {
+        var buffer = new Byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(buffer, value);
+        return buffer;
+    }
+
+    private static Byte[] GetBytesLittleEndian(Int64 value)
+    {
+        var buffer = new Byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer, value);
+        return buffer;
+    }
+
+    private static Byte[] GetBytesLittleEndian(Double value)
+    {
+        var buffer = new Byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(buffer, BitConverter.DoubleToInt64Bits(value));
+        return buffer;
+    }
 
     private static void WriteDoubleLittleEndian(Span<Byte> destination, Double value)
     {

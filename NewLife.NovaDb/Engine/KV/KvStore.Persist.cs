@@ -1,6 +1,6 @@
 ﻿using System.Buffers;
+using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Threading;
 using NewLife;
@@ -346,9 +346,11 @@ public partial class KvStore
             using var accessor = mmf.CreateViewAccessor(0, fileLength, MemoryMappedFileAccess.Read);
 
             var pos = (Int64)FileHeaderSize;
+            var lenBytes = new Byte[4];
             while (pos + 8 < fileLength) // 至少需要 4B(长度) + 1B(类型) + 4B(CRC)
             {
-                var totalLength = accessor.ReadInt32(pos);
+                accessor.ReadArray(pos, lenBytes, 0, 4);
+                var totalLength = BinaryPrimitives.ReadInt32LittleEndian(lenBytes);
                 if (totalLength < 5 || pos + 4 + totalLength > fileLength) break;
 
                 // 读取完整记录体
@@ -395,7 +397,7 @@ public partial class KvStore
             if (_fileStream.Read(lenBuf, 0, 4) < 4) break;
 #endif
 
-            var totalLength = Unsafe.ReadUnaligned<Int32>(ref lenBuf[0]);
+            var totalLength = BinaryPrimitives.ReadInt32LittleEndian(lenBuf);
             if (totalLength < 5) break;
 
             var body = ArrayPool<Byte>.Shared.Rent(totalLength);
@@ -421,8 +423,8 @@ public partial class KvStore
         var dataLength = body.Length - 1 - 4;
         if (dataLength < 0) return;
 
-        // 校验 CRC32
-        var expectedChecksum = Unsafe.ReadUnaligned<UInt32>(ref MemoryMarshal.GetReference(body.Slice(body.Length - 4)));
+        // 校验 CRC32（小端，与写入保持一致）
+        var expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(body.Slice(body.Length - 4));
         var actualChecksum = Crc32.Compute(body.Slice(0, 1 + dataLength));
         if (expectedChecksum != actualChecksum) return;
 

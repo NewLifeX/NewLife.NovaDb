@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Buffers.Binary;
 using NewLife.Buffers;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Utilities;
@@ -201,7 +202,7 @@ public partial class NovaTable
                 if (dataLength < 0) break;
 
                 // 校验 CRC32
-                var expectedChecksum = BitConverter.ToUInt32(buf, recordLength - 4);
+                var expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(recordLength - 4));
                 var actualChecksum = Crc32.Compute(buf, 0, 1 + dataLength);
                 if (expectedChecksum != actualChecksum) continue; // CRC 不匹配，跳过损坏记录
 

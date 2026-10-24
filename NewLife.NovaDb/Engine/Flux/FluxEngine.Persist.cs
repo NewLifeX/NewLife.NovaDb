@@ -330,8 +330,8 @@ public partial class FluxEngine
                 var dataLength = recordLength - 1 - 4;
                 if (dataLength < 0) break;
 
-                // 校验 CRC32
-                var expectedChecksum = BitConverter.ToUInt32(buf, recordLength - 4);
+                // 校验 CRC32（小端，与写入保持一致）
+                var expectedChecksum = BinaryPrimitives.ReadUInt32LittleEndian(buf.AsSpan(recordLength - 4));
                 var actualChecksum = Crc32.Compute(buf, 0, 1 + dataLength);
                 if (expectedChecksum != actualChecksum) continue;
 

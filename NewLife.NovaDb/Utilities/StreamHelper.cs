@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Buffers.Binary;
 
 namespace NewLife.NovaDb.Utilities;
 
@@ -24,9 +25,9 @@ internal static class StreamHelper
     {
         length = 0;
 
-        // 读取 4 字节长度前缀
+        // 读取 4 字节长度前缀（小端，与写入方保持一致）
         if (stream.ReadAtLeast(buf, 0, 4, 4, false) != 4) return false;
-        length = BitConverter.ToInt32(buf, 0);
+        length = BinaryPrimitives.ReadInt32LittleEndian(buf.AsSpan(0, 4));
         if (length <= 0 || length > maxLength)
         {
             length = 0;

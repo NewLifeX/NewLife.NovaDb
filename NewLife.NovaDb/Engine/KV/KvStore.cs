@@ -1,4 +1,5 @@
 ﻿using System.Collections.Concurrent;
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -409,7 +410,7 @@ public partial class KvStore : IDisposable
 
             const Int32 length = sizeof(Int64);
             Span<Byte> valueBytes = stackalloc Byte[length];
-            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(valueBytes), newValue);
+            BinaryPrimitives.WriteInt64LittleEndian(valueBytes, newValue);
 
             var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
             _data[key] = new KvEntry
@@ -455,7 +456,7 @@ public partial class KvStore : IDisposable
 
             const Int32 length = sizeof(Double);
             Span<Byte> valueBytes = stackalloc Byte[length];
-            Unsafe.WriteUnaligned(ref MemoryMarshal.GetReference(valueBytes), newValue);
+            BinaryPrimitives.WriteInt64LittleEndian(valueBytes, BitConverter.DoubleToInt64Bits(newValue));
 
             var valueOffset = WriteSetRecordNoLock(key, valueBytes, expiresAt);
             _data[key] = new KvEntry
