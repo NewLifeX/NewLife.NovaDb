@@ -265,7 +265,12 @@ public class DefaultDataCodec : IDataCodec
 
     private static void WriteDecimal(Decimal value, Span<Byte> destination)
     {
+#if NET5_0_OR_GREATER
+        Span<Int32> bits = stackalloc Int32[4];
+        Decimal.GetBits(value, bits);
+#else
         var bits = Decimal.GetBits(value);
+#endif
 
         // Decimal 的 4 个 32 位分量按小端写入，保证跨大端/小端平台的文件格式一致
         for (var i = 0; i < 4; i++)
