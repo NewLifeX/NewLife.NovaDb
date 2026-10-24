@@ -11,7 +11,19 @@ ARTIFACTS="$ROOT/Bin/MobileSmoke/artifacts"
 
 mkdir -p "$ARTIFACTS"
 
-dotnet build "$PROJECT" -c "$CONFIGURATION" -f net10.0-ios -p:MobileTargetFramework=net10.0-ios -p:RuntimeIdentifier="$RUNTIME" --nologo
+# 用 perl 的 alarm 实现超时（macOS 自带 perl，无 GNU timeout）
+run_limited() {
+  local secs="$1"; shift
+  perl -e 'alarm shift; exec @ARGV' "$secs" "$@"
+}
+
+echo "[ios] xcodebuild: $(xcodebuild -version | head -1)"
+xcrun simctl list runtimes | sed -n '1,20p'
+xcrun simctl list devices available | sed -n '1,30p'
+
+echo "[ios] build start: $(date -u +%H:%M:%S)"
+run_limited 1200 dotnet build "$PROJECT" -c "$CONFIGURATION" -f net10.0-ios -p:MobileTargetFramework=net10.0-ios -p:RuntimeIdentifier="$RUNTIME" --nologo
+echo "[ios] build done: $(date -u +%H:%M:%S)"
 
 APP="$(find "$ROOT/Bin/MobileSmoke" -maxdepth 6 -name "*.app" -print -quit)"
 if [ -z "$APP" ]; then
@@ -25,8 +37,10 @@ if [ -z "$UDID" ]; then
   exit 1
 fi
 
+echo "[ios] booting simulator $UDID: $(date -u +%H:%M:%S)"
 xcrun simctl boot "$UDID" 2>/dev/null || true
-xcrun simctl bootstatus "$UDID" -b
+run_limited 300 xcrun simctl bootstatus "$UDID" -b
+echo "[ios] simulator booted: $(date -u +%H:%M:%S)"
 xcrun simctl install "$UDID" "$APP"
 xcrun simctl terminate "$UDID" "$BUNDLE_ID" 2>/dev/null || true
 xcrun simctl launch "$UDID" "$BUNDLE_ID"
