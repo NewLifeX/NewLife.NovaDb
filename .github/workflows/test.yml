@@ -11,7 +11,8 @@ jobs:
   # 全解决方案编译校验（含 NovaServer/AotSmoke/Benchmark 等非测试工程），与测试矩阵并行运行
   build:
     name: build solution
-    runs-on: windows-latest
+    # 解决方案多目标 net45~net10，Linux 由 SDK 自动引用 .NET Framework 参考程序集，优先使用 Ubuntu
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
     steps:

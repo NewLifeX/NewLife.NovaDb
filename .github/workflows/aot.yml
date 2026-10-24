@@ -12,7 +12,7 @@ jobs:
   # 非阻塞：AOT 相关校验仅作参考，失败不阻断合入（如需强约束，去掉本 job 的 continue-on-error）。
   aot-analyzer:
     name: aot analyzer check
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     continue-on-error: true
 

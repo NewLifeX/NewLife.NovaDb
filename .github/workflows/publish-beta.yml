@@ -7,6 +7,11 @@ on:
         - 'NewLife.NovaDb/**'
   workflow_dispatch:
 
+# GitHub Packages 推送需要 packages: write
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-publish:
 
@@ -23,9 +28,36 @@ jobs:
           8.x
           9.x
           10.x
+    - name: Get Version
+      run: |
+        VERSION="$(date +%Y.%m%d-beta%H%M)"
+        echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+        echo "package version suffix: $VERSION"
     - name: Build
       run: |
-        dotnet pack --version-suffix $(date "+%Y.%m%d-beta%H%M") -c Release -o out NewLife.NovaDb/NewLife.NovaDb.csproj
-    - name: Publish
+        dotnet pack --version-suffix ${{ env.VERSION }} -c Release -o out NewLife.NovaDb/NewLife.NovaDb.csproj
+    - name: Publish to GitHub Packages
+      id: ghpackages
+      # 备用镜像渠道，失败只告警，不阻断 NuGet.org 发布
+      continue-on-error: true
+      run: |
+        dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://nuget.pkg.github.com/NewLifeX/index.json --api-key ${{ github.token }}
+    - name: Publish to NuGet.org
+      id: nuget
       run: |
         dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.nugetKey }}
+    - name: Publish Summary
+      if: always()
+      shell: pwsh
+      run: |
+        $rows = [ordered]@{
+          'GitHub Packages' = '${{ steps.ghpackages.outcome }}'
+          'NuGet.org'       = '${{ steps.nuget.outcome }}'
+        }
+        $marks = @{ success = '✅'; failure = '⚠️'; skipped = '⏭'; cancelled = '⛔' }
+        $lines = @('### 发布结果', '', '| 渠道 | 结果 |', '| --- | --- |')
+        foreach ($k in $rows.Keys) {
+          $o = $rows[$k]
+          $lines += "| $k | $($marks[$o]) $o |"
+        }
+        $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
