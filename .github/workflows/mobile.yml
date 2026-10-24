@@ -76,6 +76,9 @@ jobs:
       # 写成 10.400.1 会被解析成其他包并报找不到。
       run: dotnet workload install ios --version 10.0.400.1 || sudo dotnet workload install ios --version 10.0.400.1
     - name: Run iOS smoke
+      # 冒烟验证运行时兼容性，Debug 构建跳过裁剪与 Mono AOT（Release 下 mono-aot-cross 在 CI 上长时间挂起）
+      env:
+        CONFIGURATION: Debug
       run: bash ./Samples/MobileSmoke/run-ios.sh
     - name: Upload iOS artifacts
       if: always()
