@@ -29,8 +29,8 @@ jobs:
     - name: AOT Analyzer Check
       # 库自身 AOT/裁剪分析器告警（net8.0/net10.0，当前 0 条）；-warnaserror 使新增告警阻断
       run: |
-        dotnet build NewLife.NovaDb\NewLife.NovaDb.csproj -f net8.0 -c Release -warnaserror
-        dotnet build NewLife.NovaDb\NewLife.NovaDb.csproj -f net10.0 -c Release -warnaserror
+        dotnet build NewLife.NovaDb/NewLife.NovaDb.csproj -f net8.0 -c Release -warnaserror
+        dotnet build NewLife.NovaDb/NewLife.NovaDb.csproj -f net10.0 -c Release -warnaserror
 
   # NativeAOT 冒烟矩阵：NativeAOT 官方不支持跨 OS 编译，每个 RID 用原生 runner 发布运行。
   # win-x64 / linux-x64 / linux-arm64 覆盖主流 RID；非阻塞：AOT 校验失败不阻断合入。

@@ -25,9 +25,9 @@ jobs:
     continue-on-error: true
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Setup dotNET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     - name: Install Android workload
@@ -47,7 +47,7 @@ jobs:
         script: pwsh ./Samples/MobileSmoke/run-android.ps1 -Configuration Release
     - name: Upload Android artifacts
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: mobile-android
         path: Bin/MobileSmoke/**/*.apk
@@ -61,20 +61,23 @@ jobs:
     continue-on-error: true
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Setup dotNET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.402
     - name: Select Xcode
       run: sudo xcode-select -s /Applications/Xcode_26.6.app
     - name: Install iOS workload
-      run: dotnet workload install ios --version 10.400.1 || sudo dotnet workload install ios --version 10.400.1
+      # iOS SDK 版本必须与 Xcode 主次版本严格一致：默认 workload set 的 iOS 27 需要 Xcode 27；
+      # 这里固定到 Xcode 26.6 对应的 workload set。版本必须是 4 段（SDK 版本 + workload 补丁），
+      # 写成 10.400.1 会被解析成其他包并报找不到。
+      run: dotnet workload install ios --version 10.0.400.1 || sudo dotnet workload install ios --version 10.0.400.1
     - name: Run iOS smoke
       run: bash ./Samples/MobileSmoke/run-ios.sh
     - name: Upload iOS artifacts
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: mobile-ios
         path: Bin/MobileSmoke/artifacts/**
