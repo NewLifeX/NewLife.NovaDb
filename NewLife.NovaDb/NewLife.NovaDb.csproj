@@ -38,7 +38,7 @@
     <RepositoryUrl>https://git.newlifex.com/NewLife/NewLife.NovaDb</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>新生命团队;X组件;NewLife;NovaDb;Database;SQL;TimeSeries;MessageQueue;KV;Embedded;Server;$(AssemblyName)</PackageTags>
-    <PackageReleaseNotes>以 C# 实现、运行于 .NET 平台的混合数据库，嵌入/服务双模；融合关系型、时序、消息队列、KV 四大引擎；支持 SQL 子集、JOIN、事务 MVCC、WAL 崩溃恢复；新增 GeoPoint 地理与 Vector 向量类型、全文检索（BM25）、NovaVectorStore 多集合架构；Binlog 主从复制与故障切换、XCode ORM 全链路适配；千万行级表热冷索引分离查询仅用 &lt;20MB 内存</PackageReleaseNotes>
+    <PackageReleaseNotes>以 C# 实现、运行于 .NET 平台的混合数据库，嵌入/服务双模；融合关系型、时序、消息队列、KV 四大引擎；本次新增 11 种语言运行时本地化、时序列式封存与预聚合查询路由、NativeAOT 支持与多架构冒烟、ADO.NET 架构表；升级 NewLife.Core 12、NewLife.Remoting 4.0、NewLife.XCode 12.3</PackageReleaseNotes>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -54,8 +54,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NewLife.Core" Version="12.0.2026.1021-beta0321" />
-    <PackageReference Include="NewLife.Remoting" Version="3.9.2026.1021-beta0410" />
+    <PackageReference Include="NewLife.Core" Version="12.0.2026.1024" />
+    <PackageReference Include="NewLife.Remoting" Version="4.0.2026.1024" />
   </ItemGroup>
 
   <ItemGroup>
