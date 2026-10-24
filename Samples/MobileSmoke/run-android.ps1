@@ -31,5 +31,6 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Seconds 2
 }
 
-adb logcat -d -s MobileSmoke:* | Out-Host
+adb logcat -d -s MobileSmoke:* AndroidRuntime:E | Out-Host
+adb logcat -d -b crash | Out-Host
 throw "Android smoke timed out"
