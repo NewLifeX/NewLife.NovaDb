@@ -1,4 +1,5 @@
 ﻿using System.Buffers;
+using System.Globalization;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Utilities;
@@ -143,7 +144,7 @@ partial class SqlEngine
                 foreach (var row in rows)
                 {
                     var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
-                    if (val != null) sum += Convert.ToDouble(val);
+                    if (val != null) sum += Convert.ToDouble(val, CultureInfo.InvariantCulture);
                 }
                 return sum;
 
@@ -155,7 +156,7 @@ partial class SqlEngine
                     var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
                     if (val != null)
                     {
-                        total += Convert.ToDouble(val);
+                        total += Convert.ToDouble(val, CultureInfo.InvariantCulture);
                         count++;
                     }
                 }
@@ -183,13 +184,13 @@ partial class SqlEngine
 
             case "STRING_AGG":
                 var separator = func.Arguments.Count > 1
-                    ? Convert.ToString(EvaluateExpression(func.Arguments[1], rows.Count > 0 ? rows[0] : null, schema, parameters)) ?? ","
+                    ? Convert.ToString(EvaluateExpression(func.Arguments[1], rows.Count > 0 ? rows[0] : null, schema, parameters), CultureInfo.InvariantCulture) ?? ","
                     : ",";
                 var parts = new List<String>();
                 foreach (var row in rows)
                 {
                     var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
-                    if (val != null) parts.Add(Convert.ToString(val)!);
+                    if (val != null) parts.Add(Convert.ToString(val, CultureInfo.InvariantCulture)!);
                 }
                 return String.Join(separator, parts);
 
@@ -198,7 +199,7 @@ partial class SqlEngine
                 foreach (var row in rows)
                 {
                     var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
-                    if (val != null) gcParts.Add(Convert.ToString(val)!);
+                    if (val != null) gcParts.Add(Convert.ToString(val, CultureInfo.InvariantCulture)!);
                 }
                 return String.Join(",", gcParts);
 
@@ -207,7 +208,7 @@ partial class SqlEngine
                 foreach (var row in rows)
                 {
                     var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
-                    if (val != null) stdValues.Add(Convert.ToDouble(val));
+                    if (val != null) stdValues.Add(Convert.ToDouble(val, CultureInfo.InvariantCulture));
                 }
                 if (stdValues.Count == 0) return null;
                 // 样本标准差（贝塞尔校正，除以 N-1），与 MySQL/PostgreSQL STDDEV() 语义一致
@@ -222,7 +223,7 @@ partial class SqlEngine
                 foreach (var row in rows)
                 {
                     var val = EvaluateExpression(func.Arguments[0], row, schema, parameters);
-                    if (val != null) varValues.Add(Convert.ToDouble(val));
+                    if (val != null) varValues.Add(Convert.ToDouble(val, CultureInfo.InvariantCulture));
                 }
                 if (varValues.Count == 0) return null;
                 // 样本方差（贝塞尔校正，除以 N-1），与 MySQL/PostgreSQL VARIANCE() 语义一致
@@ -261,7 +262,7 @@ partial class SqlEngine
                 }
                 if (spreadMin == null) return null;
                 // 最大值与最小值之差，与 TDengine SPREAD 语义对齐（单值时返回 0）
-                return Convert.ToDouble(spreadMax) - Convert.ToDouble(spreadMin);
+                return Convert.ToDouble(spreadMax, CultureInfo.InvariantCulture) - Convert.ToDouble(spreadMin, CultureInfo.InvariantCulture);
 
             default:
                 throw new NovaException(ErrorCode.NotSupported, "Unsupported aggregate function: {0}", func.FunctionName);
@@ -322,176 +323,176 @@ partial class SqlEngine
 
             // 字符串函数
             case "CONCAT":
-                return String.Concat(args.Select(a => Convert.ToString(a) ?? String.Empty));
+                return String.Concat(args.Select(a => Convert.ToString(a, CultureInfo.InvariantCulture) ?? String.Empty));
 
             case "LENGTH" or "LEN":
-                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0])!.Length : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.Length : (Object?)null;
 
             case "SUBSTRING" or "SUBSTR":
                 if (args.Count < 2 || args[0] == null) return null;
-                var subStr = Convert.ToString(args[0])!;
-                var startPos = Convert.ToInt32(args[1]) - 1; // SQL 1-based
+                var subStr = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var startPos = Convert.ToInt32(args[1], CultureInfo.InvariantCulture) - 1; // SQL 1-based
                 if (startPos < 0) startPos = 0;
                 if (startPos >= subStr.Length) return String.Empty;
                 if (args.Count >= 3 && args[2] != null)
                 {
-                    var len = Convert.ToInt32(args[2]);
+                    var len = Convert.ToInt32(args[2], CultureInfo.InvariantCulture);
                     if (startPos + len > subStr.Length) len = subStr.Length - startPos;
                     return subStr.Substring(startPos, len);
                 }
                 return subStr.Substring(startPos);
 
             case "UPPER":
-                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0])!.ToUpper() : null;
+                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToUpperInvariant() : null;
 
             case "LOWER":
-                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0])!.ToLower() : null;
+                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToLowerInvariant() : null;
 
             case "TRIM":
-                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0])!.Trim() : null;
+                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.Trim() : null;
 
             case "LTRIM":
-                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0])!.TrimStart() : null;
+                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.TrimStart() : null;
 
             case "RTRIM":
-                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0])!.TrimEnd() : null;
+                return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.TrimEnd() : null;
 
             case "REPLACE":
                 if (args.Count < 3 || args[0] == null) return args.Count > 0 ? args[0] : null;
-                return Convert.ToString(args[0])!.Replace(
-                    Convert.ToString(args[1]) ?? String.Empty,
-                    Convert.ToString(args[2]) ?? String.Empty);
+                return Convert.ToString(args[0], CultureInfo.InvariantCulture)!.Replace(
+                    Convert.ToString(args[1], CultureInfo.InvariantCulture) ?? String.Empty,
+                    Convert.ToString(args[2], CultureInfo.InvariantCulture) ?? String.Empty);
 
             case "LEFT":
                 if (args.Count < 2 || args[0] == null) return null;
-                var leftStr = Convert.ToString(args[0])!;
-                var leftLen = Convert.ToInt32(args[1]);
+                var leftStr = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var leftLen = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
                 return leftLen >= leftStr.Length ? leftStr : leftStr.Substring(0, leftLen);
 
             case "RIGHT":
                 if (args.Count < 2 || args[0] == null) return null;
-                var rightStr = Convert.ToString(args[0])!;
-                var rightLen = Convert.ToInt32(args[1]);
+                var rightStr = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var rightLen = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
                 return rightLen >= rightStr.Length ? rightStr : rightStr.Substring(rightStr.Length - rightLen);
 
             case "CHARINDEX":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return 0;
-                var ciNeedle = Convert.ToString(args[0])!;
-                var ciHaystack = Convert.ToString(args[1])!;
+                var ciNeedle = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var ciHaystack = Convert.ToString(args[1], CultureInfo.InvariantCulture)!;
                 var ciIdx = ciHaystack.IndexOf(ciNeedle, StringComparison.OrdinalIgnoreCase);
                 return ciIdx >= 0 ? ciIdx + 1 : 0; // 1-based
 
             // INSTR(haystack, needle) — MySQL 语义，参数顺序与 CHARINDEX 相反
             case "INSTR":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return 0;
-                var instrHaystack = Convert.ToString(args[0])!;
-                var instrNeedle = Convert.ToString(args[1])!;
+                var instrHaystack = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var instrNeedle = Convert.ToString(args[1], CultureInfo.InvariantCulture)!;
                 var instrIdx = instrHaystack.IndexOf(instrNeedle, StringComparison.OrdinalIgnoreCase);
                 return instrIdx >= 0 ? instrIdx + 1 : 0; // 1-based
 
             case "REVERSE":
                 if (args.Count < 1 || args[0] == null) return null;
-                var revChars = Convert.ToString(args[0])!.ToCharArray();
+                var revChars = Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToCharArray();
                 Array.Reverse(revChars);
                 return new String(revChars);
 
             case "LPAD":
                 if (args.Count < 2 || args[0] == null) return null;
-                var lpadStr = Convert.ToString(args[0])!;
-                var lpadLen = Convert.ToInt32(args[1]);
-                var lpadChar = args.Count >= 3 && args[2] != null ? Convert.ToString(args[2])![0] : ' ';
+                var lpadStr = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var lpadLen = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
+                var lpadChar = args.Count >= 3 && args[2] != null ? Convert.ToString(args[2], CultureInfo.InvariantCulture)![0] : ' ';
                 return lpadStr.PadLeft(lpadLen, lpadChar);
 
             case "RPAD":
                 if (args.Count < 2 || args[0] == null) return null;
-                var rpadStr = Convert.ToString(args[0])!;
-                var rpadLen = Convert.ToInt32(args[1]);
-                var rpadChar = args.Count >= 3 && args[2] != null ? Convert.ToString(args[2])![0] : ' ';
+                var rpadStr = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var rpadLen = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
+                var rpadChar = args.Count >= 3 && args[2] != null ? Convert.ToString(args[2], CultureInfo.InvariantCulture)![0] : ' ';
                 return rpadStr.PadRight(rpadLen, rpadChar);
 
             // 数值函数
             case "ABS":
-                return args.Count > 0 && args[0] != null ? Math.Abs(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Abs(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             case "ROUND":
                 if (args.Count < 1 || args[0] == null) return null;
-                var roundDecimals = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1]) : 0;
-                return Math.Round(Convert.ToDouble(args[0]), roundDecimals, MidpointRounding.AwayFromZero);
+                var roundDecimals = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1], CultureInfo.InvariantCulture) : 0;
+                return Math.Round(Convert.ToDouble(args[0], CultureInfo.InvariantCulture), roundDecimals, MidpointRounding.AwayFromZero);
 
             case "CEILING" or "CEIL":
-                return args.Count > 0 && args[0] != null ? Math.Ceiling(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Ceiling(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             case "FLOOR":
-                return args.Count > 0 && args[0] != null ? Math.Floor(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Floor(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             case "MOD":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                var modB = Convert.ToDouble(args[1]);
+                var modB = Convert.ToDouble(args[1], CultureInfo.InvariantCulture);
                 if (modB == 0) throw new DivideByZeroException();
-                return Convert.ToDouble(args[0]) % modB;
+                return Convert.ToDouble(args[0], CultureInfo.InvariantCulture) % modB;
 
             case "POWER" or "POW":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                return Math.Pow(Convert.ToDouble(args[0]), Convert.ToDouble(args[1]));
+                return Math.Pow(Convert.ToDouble(args[0], CultureInfo.InvariantCulture), Convert.ToDouble(args[1], CultureInfo.InvariantCulture));
 
             case "SQRT":
-                return args.Count > 0 && args[0] != null ? Math.Sqrt(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Sqrt(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             case "RAND" or "RANDOM":
                 return NextRandom();
 
             case "SIGN":
-                return args.Count > 0 && args[0] != null ? (Object)Math.Sign(Convert.ToDouble(args[0])) : null;
+                return args.Count > 0 && args[0] != null ? (Object)Math.Sign(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : null;
 
             case "TRUNCATE" or "TRUNC":
                 if (args.Count < 1 || args[0] == null) return null;
-                var truncDecimals = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1]) : 0;
+                var truncDecimals = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1], CultureInfo.InvariantCulture) : 0;
                 var truncFactor = Math.Pow(10, truncDecimals);
-                return Math.Truncate(Convert.ToDouble(args[0]) * truncFactor) / truncFactor;
+                return Math.Truncate(Convert.ToDouble(args[0], CultureInfo.InvariantCulture) * truncFactor) / truncFactor;
 
             case "PI":
                 return Math.PI;
 
             case "EXP":
-                return args.Count > 0 && args[0] != null ? Math.Exp(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Exp(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             case "LOG" or "LN":
-                return args.Count > 0 && args[0] != null ? Math.Log(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Log(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             case "LOG10":
-                return args.Count > 0 && args[0] != null ? Math.Log10(Convert.ToDouble(args[0])) : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Math.Log10(Convert.ToDouble(args[0], CultureInfo.InvariantCulture)) : (Object?)null;
 
             // 日期时间函数
             case "NOW" or "GETDATE" or "CURRENT_TIMESTAMP":
                 return DateTime.Now;
 
             case "YEAR":
-                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0]).Year : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Year : (Object?)null;
 
             case "MONTH":
-                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0]).Month : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Month : (Object?)null;
 
             case "DAY":
-                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0]).Day : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Day : (Object?)null;
 
             case "HOUR":
-                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0]).Hour : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Hour : (Object?)null;
 
             case "MINUTE":
-                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0]).Minute : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Minute : (Object?)null;
 
             case "SECOND":
-                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0]).Second : (Object?)null;
+                return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Second : (Object?)null;
 
             case "DATEDIFF":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                return (Convert.ToDateTime(args[0]) - Convert.ToDateTime(args[1])).Days;
+                return (Convert.ToDateTime(args[0], CultureInfo.InvariantCulture) - Convert.ToDateTime(args[1], CultureInfo.InvariantCulture)).Days;
 
             case "DATEADD":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
-                var daInterval = Convert.ToString(args[0])!.ToUpper();
-                var daAmount = Convert.ToInt32(args[1]);
-                var daDate = Convert.ToDateTime(args[2]);
+                var daInterval = Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToUpperInvariant();
+                var daAmount = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
+                var daDate = Convert.ToDateTime(args[2], CultureInfo.InvariantCulture);
                 return daInterval switch
                 {
                     "YEAR" => daDate.AddYears(daAmount),
@@ -505,8 +506,8 @@ partial class SqlEngine
 
             case "DATEPART":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                var dpPart = Convert.ToString(args[0])!.ToUpper();
-                var dpDate = Convert.ToDateTime(args[1]);
+                var dpPart = Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToUpperInvariant();
+                var dpDate = Convert.ToDateTime(args[1], CultureInfo.InvariantCulture);
                 return dpPart switch
                 {
                     "YEAR" => dpDate.Year,
@@ -523,47 +524,47 @@ partial class SqlEngine
                 };
 
             case "WEEKDAY" or "DAYOFWEEK":
-                return args.Count > 0 && args[0] != null ? (Int32)Convert.ToDateTime(args[0]).DayOfWeek + 1 : (Object?)null;
+                return args.Count > 0 && args[0] != null ? (Int32)Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).DayOfWeek + 1 : (Object?)null;
 
             case "QUARTER":
                 if (args.Count < 1 || args[0] == null) return null;
-                return (Convert.ToDateTime(args[0]).Month - 1) / 3 + 1;
+                return (Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Month - 1) / 3 + 1;
 
             case "WEEK":
                 if (args.Count < 1 || args[0] == null) return null;
-                var wkDate = Convert.ToDateTime(args[0]);
+                var wkDate = Convert.ToDateTime(args[0], CultureInfo.InvariantCulture);
                 return System.Globalization.CultureInfo.InvariantCulture.Calendar.GetWeekOfYear(
                     wkDate, System.Globalization.CalendarWeekRule.FirstDay, DayOfWeek.Sunday);
 
             case "ASCII":
                 if (args.Count < 1 || args[0] == null) return null;
-                var ascStr = Convert.ToString(args[0]);
+                var ascStr = Convert.ToString(args[0], CultureInfo.InvariantCulture);
                 return ascStr != null && ascStr.Length > 0 ? (Int32)ascStr[0] : (Object?)null;
 
             case "CHAR":
                 if (args.Count < 1 || args[0] == null) return null;
-                var charCode = Convert.ToInt32(args[0]);
+                var charCode = Convert.ToInt32(args[0], CultureInfo.InvariantCulture);
                 return charCode is >= 0 and <= 0xFFFF ? ((Char)charCode).ToString() : (Object?)null;
 
             case "LAST_DAY":
                 if (args.Count < 1 || args[0] == null) return null;
-                var ldDate = Convert.ToDateTime(args[0]);
+                var ldDate = Convert.ToDateTime(args[0], CultureInfo.InvariantCulture);
                 return new DateTime(ldDate.Year, ldDate.Month, DateTime.DaysInMonth(ldDate.Year, ldDate.Month));
 
             case "DATE_FORMAT":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                var dfDate = Convert.ToDateTime(args[0]);
-                var dfFormat = Convert.ToString(args[1])!
+                var dfDate = Convert.ToDateTime(args[0], CultureInfo.InvariantCulture);
+                var dfFormat = Convert.ToString(args[1], CultureInfo.InvariantCulture)!
                     .Replace("%Y", "yyyy").Replace("%m", "MM").Replace("%d", "dd")
                     .Replace("%H", "HH").Replace("%i", "mm").Replace("%s", "ss")
                     .Replace("%M", "MMMM").Replace("%W", "dddd");
-                return dfDate.ToString(dfFormat);
+                return dfDate.ToString(dfFormat, CultureInfo.InvariantCulture);
 
             case "TIMESTAMPDIFF":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
-                var tdUnit = Convert.ToString(args[0])!.ToUpper();
-                var tdDate1 = Convert.ToDateTime(args[1]);
-                var tdDate2 = Convert.ToDateTime(args[2]);
+                var tdUnit = Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToUpperInvariant();
+                var tdDate1 = Convert.ToDateTime(args[1], CultureInfo.InvariantCulture);
+                var tdDate2 = Convert.ToDateTime(args[2], CultureInfo.InvariantCulture);
                 var tdDiff = tdDate2 - tdDate1;
                 return tdUnit switch
                 {
@@ -578,9 +579,9 @@ partial class SqlEngine
 
             case "TIMESTAMPADD":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
-                var taUnit = Convert.ToString(args[0])!.ToUpper();
-                var taAmount = Convert.ToInt32(args[1]);
-                var taDate = Convert.ToDateTime(args[2]);
+                var taUnit = Convert.ToString(args[0], CultureInfo.InvariantCulture)!.ToUpperInvariant();
+                var taAmount = Convert.ToInt32(args[1], CultureInfo.InvariantCulture);
+                var taDate = Convert.ToDateTime(args[2], CultureInfo.InvariantCulture);
                 return taUnit switch
                 {
                     "YEAR" => taDate.AddYears(taAmount),
@@ -594,14 +595,14 @@ partial class SqlEngine
 
             case "TIME_BUCKET":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                var tbBucket = Convert.ToString(args[0])!.Trim().ToLower();
-                var tbDate2 = Convert.ToDateTime(args[1]);
+                var tbBucket = Convert.ToString(args[0], CultureInfo.InvariantCulture)!.Trim().ToLowerInvariant();
+                var tbDate2 = Convert.ToDateTime(args[1], CultureInfo.InvariantCulture);
                 return ParseTimeBucket(tbBucket, tbDate2);
 
             // 类型转换函数
             case "CONVERT":
                 if (args.Count < 2) return null;
-                var convTypeName = Convert.ToString(args[0]) ?? String.Empty;
+                var convTypeName = Convert.ToString(args[0], CultureInfo.InvariantCulture) ?? String.Empty;
                 return CastValue(args[1], convTypeName);
 
             case "COALESCE":
@@ -647,26 +648,26 @@ partial class SqlEngine
             // 哈希函数
             case "MD5":
                 if (args.Count < 1 || args[0] == null) return null;
-                return HashHelper.Md5ToHex(Convert.ToString(args[0])!);
+                return HashHelper.Md5ToHex(Convert.ToString(args[0], CultureInfo.InvariantCulture)!);
 
             case "SHA1":
                 if (args.Count < 1 || args[0] == null) return null;
-                return HashHelper.Sha1ToHex(Convert.ToString(args[0])!);
+                return HashHelper.Sha1ToHex(Convert.ToString(args[0], CultureInfo.InvariantCulture)!);
 
             case "SHA2":
                 if (args.Count < 1 || args[0] == null) return null;
-                var sha2Bits = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1]) : 256;
+                var sha2Bits = args.Count >= 2 && args[1] != null ? Convert.ToInt32(args[1], CultureInfo.InvariantCulture) : 256;
                 return sha2Bits switch
                 {
-                    384 => HashHelper.Sha384ToHex(Convert.ToString(args[0])!),
-                    512 => HashHelper.Sha512ToHex(Convert.ToString(args[0])!),
-                    _ => HashHelper.Sha256ToHex(Convert.ToString(args[0])!)
+                    384 => HashHelper.Sha384ToHex(Convert.ToString(args[0], CultureInfo.InvariantCulture)!),
+                    512 => HashHelper.Sha512ToHex(Convert.ToString(args[0], CultureInfo.InvariantCulture)!),
+                    _ => HashHelper.Sha256ToHex(Convert.ToString(args[0], CultureInfo.InvariantCulture)!)
                 };
 
             // GeoPoint 函数
             case "GEOPOINT":
                 if (args.Count < 2) throw new NovaException(ErrorCode.InvalidArgument, "GEOPOINT requires 2 arguments (lat, lon)");
-                return new GeoPoint(Convert.ToDouble(args[0]), Convert.ToDouble(args[1]));
+                return new GeoPoint(Convert.ToDouble(args[0], CultureInfo.InvariantCulture), Convert.ToDouble(args[1], CultureInfo.InvariantCulture));
 
             case "DISTANCE":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
@@ -679,11 +680,11 @@ partial class SqlEngine
             case "WITHIN_RADIUS":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
                 var center = (GeoPoint)args[1]!;
-                return ((GeoPoint)args[0]!).WithinRadius(in center, Convert.ToDouble(args[2]));
+                return ((GeoPoint)args[0]!).WithinRadius(in center, Convert.ToDouble(args[2], CultureInfo.InvariantCulture));
 
             case "WITHIN_POLYGON":
                 if (args.Count < 2 || args[0] == null || args[1] == null) return null;
-                var wkt = Convert.ToString(args[1])!;
+                var wkt = Convert.ToString(args[1], CultureInfo.InvariantCulture)!;
                 var count = GeoPoint.GetPolygonWktCount(wkt);
                 if (count == 0) return false;
                 var polygonPoints = ArrayPool<GeoPoint>.Shared.Rent(count);
@@ -702,7 +703,7 @@ partial class SqlEngine
             // GIS 坐标系转换（WGS84 / GCJ-02 / BD-09）
             case "GEO_TRANSFORM":
                 if (args.Count < 3 || args[0] == null || args[1] == null || args[2] == null) return null;
-                return TransformGeoPoint((GeoPoint)args[0]!, Convert.ToString(args[1])!, Convert.ToString(args[2])!);
+                return TransformGeoPoint((GeoPoint)args[0]!, Convert.ToString(args[1], CultureInfo.InvariantCulture)!, Convert.ToString(args[2], CultureInfo.InvariantCulture)!);
 
             case "GEO_WGS84_TO_GCJ02":
                 if (args.Count < 1 || args[0] == null) return null;
@@ -731,14 +732,14 @@ partial class SqlEngine
             // GIS geohash 编码
             case "GEOHASH":
                 if (args.Count < 1 || args[0] == null) return null;
-                return EncodeGeoHashPoint((GeoPoint)args[0]!, args.Count > 1 ? Convert.ToInt32(args[1]) : 8);
+                return EncodeGeoHashPoint((GeoPoint)args[0]!, args.Count > 1 ? Convert.ToInt32(args[1], CultureInfo.InvariantCulture) : 8);
 
             // Vector 函数
             case "VECTOR":
                 var vec = new Single[args.Count];
                 for (var i = 0; i < args.Count; i++)
                 {
-                    vec[i] = Convert.ToSingle(args[i]);
+                    vec[i] = Convert.ToSingle(args[i], CultureInfo.InvariantCulture);
                 }
                 return vec;
 
@@ -832,15 +833,15 @@ partial class SqlEngine
     {
         if (value == null) return null;
 
-        return typeName.ToUpper() switch
+        return typeName.ToUpperInvariant() switch
         {
-            "INT" or "INT32" or "INTEGER" => Convert.ToInt32(value),
-            "BIGINT" or "INT64" or "LONG" => Convert.ToInt64(value),
-            "FLOAT" or "DOUBLE" or "REAL" => Convert.ToDouble(value),
-            "DECIMAL" or "NUMERIC" => Convert.ToDecimal(value),
-            "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" or "CHAR" => Convert.ToString(value),
+            "INT" or "INT32" or "INTEGER" => Convert.ToInt32(value, CultureInfo.InvariantCulture),
+            "BIGINT" or "INT64" or "LONG" => Convert.ToInt64(value, CultureInfo.InvariantCulture),
+            "FLOAT" or "DOUBLE" or "REAL" => Convert.ToDouble(value, CultureInfo.InvariantCulture),
+            "DECIMAL" or "NUMERIC" => Convert.ToDecimal(value, CultureInfo.InvariantCulture),
+            "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" or "CHAR" => Convert.ToString(value, CultureInfo.InvariantCulture),
             "BOOL" or "BOOLEAN" => Convert.ToBoolean(value),
-            "DATETIME" or "TIMESTAMP" or "DATE" => Convert.ToDateTime(value),
+            "DATETIME" or "TIMESTAMP" or "DATE" => Convert.ToDateTime(value, CultureInfo.InvariantCulture),
             _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown CAST target type: {0}", typeName)
         };
     }
@@ -893,10 +894,10 @@ partial class SqlEngine
         var parts = bucket.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length < 2) throw new NovaException(ErrorCode.InvalidArgument, "Invalid TIME_BUCKET format: {0}", bucket);
 
-        var amount = Convert.ToInt32(parts[0]);
+        var amount = Convert.ToInt32(parts[0], CultureInfo.InvariantCulture);
         if (amount <= 0) throw new NovaException(ErrorCode.InvalidArgument, "TIME_BUCKET amount must be positive: {0}", amount);
 
-        var unit = parts[1].TrimEnd('s').ToLower();
+        var unit = parts[1].TrimEnd('s').ToLowerInvariant();
         return unit switch
         {
             "second" => new DateTime(dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second / amount * amount),

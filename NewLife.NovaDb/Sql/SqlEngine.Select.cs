@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Globalization;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 
 namespace NewLife.NovaDb.Sql;
@@ -86,7 +87,7 @@ partial class SqlEngine
 
     private SqlResult ExecuteSystemTableQuery(SelectStatement stmt, Dictionary<String, Object?>? parameters)
     {
-        var sysTableName = stmt.TableName!.Substring(SystemTablePrefix.Length).ToLower();
+        var sysTableName = stmt.TableName!.Substring(SystemTablePrefix.Length).ToLowerInvariant();
 
         // 构建虚拟 Schema 和行数据
         var (schema, rows) = sysTableName switch
@@ -272,7 +273,7 @@ partial class SqlEngine
             new Object?[] { "commit_count", Metrics.CommitCount.ToString() },
             new Object?[] { "rollback_count", Metrics.RollbackCount.ToString() },
             new Object?[] { "start_time", Metrics.StartTime.ToString("o") },
-            new Object?[] { "uptime_seconds", Metrics.Uptime.TotalSeconds.ToString("F0") }
+            new Object?[] { "uptime_seconds", Metrics.Uptime.TotalSeconds.ToString("F0", CultureInfo.InvariantCulture) }
         };
 
         return (schema, rows);
@@ -337,8 +338,8 @@ partial class SqlEngine
         rows.Add(["compressed_column_count", stats.CompressedColumnCount.ToString()]);
         rows.Add(["row_bytes", stats.RowBytes.ToString()]);
         rows.Add(["block_bytes", stats.BlockBytes.ToString()]);
-        rows.Add(["compression_ratio", stats.CompressionRatio.ToString("F2")]);
-        rows.Add(["saved_ratio", stats.SavedRatio.ToString("F4")]);
+        rows.Add(["compression_ratio", stats.CompressionRatio.ToString("F2", CultureInfo.InvariantCulture)]);
+        rows.Add(["saved_ratio", stats.SavedRatio.ToString("F4", CultureInfo.InvariantCulture)]);
 
         return (schema, rows);
     }
@@ -354,7 +355,7 @@ partial class SqlEngine
     /// <remarks>XCode 等元数据访问会先 SHOW TABLE STATUS，再查 information_schema.columns / statistics</remarks>
     private SqlResult ExecuteInformationSchemaQuery(SelectStatement stmt, Dictionary<String, Object?>? parameters)
     {
-        var name = stmt.TableName!.Substring(InformationSchemaPrefix.Length).ToLower();
+        var name = stmt.TableName!.Substring(InformationSchemaPrefix.Length).ToLowerInvariant();
 
         var (schema, rows) = name switch
         {
@@ -816,7 +817,7 @@ partial class SqlEngine
             if (func.Arguments.Count < 2) throw new NovaException(ErrorCode.InvalidArgument, "SESSION_WINDOW requires (time, gapSeconds)");
 
             var ts = EvaluateExpression(func.Arguments[0], row, schema, parameters);
-            var gap = Convert.ToDouble(EvaluateExpression(func.Arguments[1], row, schema, parameters));
+            var gap = Convert.ToDouble(EvaluateExpression(func.Arguments[1], row, schema, parameters), CultureInfo.InvariantCulture);
             if (ts == null) return state.CurrentKey;
 
             if (!state.Initialized)
@@ -855,11 +856,11 @@ partial class SqlEngine
     {
         if (current is DateTime dt)
         {
-            var lt = Convert.ToDateTime(last);
+            var lt = Convert.ToDateTime(last, CultureInfo.InvariantCulture);
             return Math.Abs((dt - lt).TotalSeconds) > gap;
         }
 
-        return Math.Abs(Convert.ToDouble(current) - Convert.ToDouble(last)) > gap;
+        return Math.Abs(Convert.ToDouble(current, CultureInfo.InvariantCulture) - Convert.ToDouble(last, CultureInfo.InvariantCulture)) > gap;
     }
 
     /// <summary>格式化分组键分量</summary>
@@ -869,7 +870,7 @@ partial class SqlEngine
     {
         null => "NULL",
         DateTime dt => dt.ToString("o"),
-        _ => Convert.ToString(value) ?? "NULL",
+        _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? "NULL",
     };
 
     /// <summary>查找 SELECT 列中的窗口函数在 GROUP BY 中的位置</summary>

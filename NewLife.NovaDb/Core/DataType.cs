@@ -257,8 +257,8 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
                 throw InvalidCoordinate(pointString);
 
             // WKT 标准格式为 "经度 纬度"
-            var lon = Double.Parse(parts[0].Trim());
-            var lat = Double.Parse(parts[1].Trim());
+            var lon = Double.Parse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
+            var lat = Double.Parse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
             points[idx] = new GeoPoint(lat, lon);
             idx++;
         }
@@ -352,8 +352,8 @@ public readonly struct GeoPoint(Double latitude, Double longitude) : IEquatable<
                 throw InvalidCoordinate(pointString);
 
             // WKT 标准格式为 "经度 纬度"
-            var lon = Double.Parse(parts[0].Trim());
-            var lat = Double.Parse(parts[1].Trim());
+            var lon = Double.Parse(parts[0].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
+            var lat = Double.Parse(parts[1].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture);
             points[count] = new GeoPoint(lat, lon);
             count++;
         }

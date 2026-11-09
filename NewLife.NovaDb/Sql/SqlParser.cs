@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Globalization;
+using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -306,7 +307,7 @@ public class SqlParser
                 throw SyntaxError($"Expected datetime string after BEFORE, got '{dateToken.Value}'");
             Advance();
             // 时间模式：转换为目标文件索引（保留当前文件）
-            if (!DateTime.TryParse(dateToken.Value, out var beforeTime))
+            if (!DateTime.TryParse(dateToken.Value, CultureInfo.InvariantCulture, DateTimeStyles.None, out var beforeTime))
                 throw SyntaxError($"Invalid datetime: {dateToken.Value}");
             stmt.ToIndex = null;
             stmt.IsTo = false;
@@ -342,7 +343,7 @@ public class SqlParser
             throw new NovaException(ErrorCode.InvalidArgument, "Invalid binlog file name: {0}", fileName);
 
         var idxStr = fileName.Substring(dot + 1);
-        if (!Int32.TryParse(idxStr, out var index))
+        if (!Int32.TryParse(idxStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index))
             throw new NovaException(ErrorCode.InvalidArgument, "Invalid binlog file index: {0}", idxStr);
 
         return index;
@@ -1085,7 +1086,7 @@ public class SqlParser
                     var func = ParsePrimary();
                     windows ??= FillNulls(stmt.GroupBy.Count);
                     windows.Add(func);
-                    stmt.GroupBy.Add(item.Value.ToUpper());
+                    stmt.GroupBy.Add(item.Value.ToUpperInvariant());
                 }
                 else
                 {
@@ -1141,14 +1142,14 @@ public class SqlParser
         if (Peek().Type == SqlTokenType.Limit)
         {
             Advance();
-            stmt.Limit = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value);
+            stmt.Limit = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
         }
 
         // OFFSET
         if (Peek().Type == SqlTokenType.Offset)
         {
             Advance();
-            stmt.OffsetValue = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value);
+            stmt.OffsetValue = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
         }
 
         return stmt;
@@ -1444,13 +1445,13 @@ public class SqlParser
                 Advance();
                 return new LiteralExpression
                 {
-                    Value = Int64.Parse(token.Value),
-                    DataType = Int64.Parse(token.Value) is >= Int32.MinValue and <= Int32.MaxValue ? DataType.Int32 : DataType.Int64
+                    Value = Int64.Parse(token.Value, NumberStyles.Integer, CultureInfo.InvariantCulture),
+                    DataType = Int64.Parse(token.Value, NumberStyles.Integer, CultureInfo.InvariantCulture) is >= Int32.MinValue and <= Int32.MaxValue ? DataType.Int32 : DataType.Int64
                 };
 
             case SqlTokenType.FloatLiteral:
                 Advance();
-                return new LiteralExpression { Value = Double.Parse(token.Value), DataType = DataType.Double };
+                return new LiteralExpression { Value = Double.Parse(token.Value, NumberStyles.Float, CultureInfo.InvariantCulture), DataType = DataType.Double };
 
             case SqlTokenType.StringLiteral:
                 Advance();
@@ -1590,7 +1591,7 @@ public class SqlParser
 
         var func = new FunctionExpression
         {
-            FunctionName = functionName.ToUpper(),
+            FunctionName = functionName.ToUpperInvariant(),
             IsAggregate = false
         };
 
@@ -1676,7 +1677,7 @@ public class SqlParser
 
         var func = new FunctionExpression
         {
-            FunctionName = funcToken.Value.ToUpper(),
+            FunctionName = funcToken.Value.ToUpperInvariant(),
             IsAggregate = funcToken.Type is SqlTokenType.Count or SqlTokenType.Sum or SqlTokenType.Avg
                 or SqlTokenType.Min or SqlTokenType.Max or SqlTokenType.StringAgg
                 or SqlTokenType.GroupConcat or SqlTokenType.Stddev or SqlTokenType.Variance

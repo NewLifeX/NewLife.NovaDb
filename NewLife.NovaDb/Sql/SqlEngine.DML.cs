@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Globalization;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
 
@@ -62,7 +63,7 @@ partial class SqlEngine
                 // 用户显式提供值，更新种子，避免后续冲突
                 try
                 {
-                    var v = Convert.ToInt64(row[pkCol.Ordinal]);
+                    var v = Convert.ToInt64(row[pkCol.Ordinal], CultureInfo.InvariantCulture);
                     if (v > schema.NextAutoIncrement) schema.NextAutoIncrement = v;
                     LastInsertId = v;
                 }
@@ -146,7 +147,7 @@ partial class SqlEngine
             {
                 try
                 {
-                    var v = Convert.ToInt64(row[pkCol.Ordinal]);
+                    var v = Convert.ToInt64(row[pkCol.Ordinal], CultureInfo.InvariantCulture);
                     if (v > schema.NextAutoIncrement) schema.NextAutoIncrement = v;
                     LastInsertId = v;
                 }
@@ -493,7 +494,7 @@ partial class SqlEngine
             if (v == null) continue;
             try
             {
-                var n = Convert.ToInt64(v);
+                var n = Convert.ToInt64(v, CultureInfo.InvariantCulture);
                 if (n > max) max = n;
             }
             catch { }

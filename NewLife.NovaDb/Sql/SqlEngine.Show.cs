@@ -272,7 +272,7 @@ public partial class SqlEngine
             {
                 rows.Add([
                     col.Name,                                  // 0: Field
-                    col.DataType.ToString().ToLower(),         // 1: Type
+                    col.DataType.ToString().ToLowerInvariant(),         // 1: Type
                     col.Nullable ? "YES" : "NO",               // 2: Null
                     col.IsPrimaryKey ? "PRI" : String.Empty,   // 3: Key
                     (Object?)DBNull.Value,                     // 4: Default

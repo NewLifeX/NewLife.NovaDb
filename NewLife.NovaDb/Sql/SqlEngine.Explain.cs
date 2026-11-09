@@ -87,7 +87,7 @@ public partial class SqlEngine
         {
             foreach (var join in select.Joins)
             {
-                var joinType = join.Type.ToString().ToUpper() + " JOIN";
+                var joinType = join.Type.ToString().ToUpperInvariant() + " JOIN";
                 var joinTable = join.TableName;
                 var joinExtra = $"Nested Loop, ON: {join.Condition}";
                 plan.Add([stepId.ToString(), joinType, joinTable, "", "?", joinExtra]);

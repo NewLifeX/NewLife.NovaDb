@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Globalization;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 
 namespace NewLife.NovaDb.Sql;
@@ -205,7 +206,7 @@ partial class SqlEngine
 
     private static DataType ParseDataType(String typeName)
     {
-        return typeName.ToUpper() switch
+        return typeName.ToUpperInvariant() switch
         {
             "BOOL" or "BOOLEAN" => DataType.Boolean,
             "TINYINT" or "SMALLINT" or "MEDIUMINT" or "INT" or "INT32" or "INTEGER" => DataType.Int32,
@@ -237,12 +238,12 @@ partial class SqlEngine
         return targetType switch
         {
             DataType.Boolean => Convert.ToBoolean(value),
-            DataType.Int32 => Convert.ToInt32(value),
-            DataType.Int64 => Convert.ToInt64(value),
-            DataType.Double => Convert.ToDouble(value),
-            DataType.Decimal => Convert.ToDecimal(value),
-            DataType.String => Convert.ToString(value)!,
-            DataType.DateTime => Convert.ToDateTime(value),
+            DataType.Int32 => Convert.ToInt32(value, CultureInfo.InvariantCulture),
+            DataType.Int64 => Convert.ToInt64(value, CultureInfo.InvariantCulture),
+            DataType.Double => Convert.ToDouble(value, CultureInfo.InvariantCulture),
+            DataType.Decimal => Convert.ToDecimal(value, CultureInfo.InvariantCulture),
+            DataType.String => Convert.ToString(value, CultureInfo.InvariantCulture)!,
+            DataType.DateTime => Convert.ToDateTime(value, CultureInfo.InvariantCulture),
             DataType.Binary when value is Byte[] bytes => bytes,
             DataType.GeoPoint when value is GeoPoint gp => gp,
             DataType.Vector when value is Single[] vec => vec,
@@ -258,10 +259,10 @@ partial class SqlEngine
 
         // 尝试数值比较
         if (IsNumeric(left) && IsNumeric(right))
-            return Convert.ToDouble(left).CompareTo(Convert.ToDouble(right));
+            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(Convert.ToDouble(right, CultureInfo.InvariantCulture));
 
         // 字符串比较
-        return String.Compare(Convert.ToString(left), Convert.ToString(right), StringComparison.OrdinalIgnoreCase);
+        return String.Compare(Convert.ToString(left, CultureInfo.InvariantCulture), Convert.ToString(right, CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
     }
 
     private static Boolean IsNumeric(Object? value) =>
@@ -348,9 +349,9 @@ partial class SqlEngine
         if (args[0] == null) return null;
 
         var queryVec = (Single[])args[0]!;
-        var tableName = Convert.ToString(args[1])!;
-        var k = Convert.ToInt32(args[2]);
-        var metric = args.Count > 3 && args[3] != null ? Convert.ToString(args[3])!.ToLower() : "cosine";
+        var tableName = Convert.ToString(args[1], CultureInfo.InvariantCulture)!;
+        var k = Convert.ToInt32(args[2], CultureInfo.InvariantCulture);
+        var metric = args.Count > 3 && args[3] != null ? Convert.ToString(args[3], CultureInfo.InvariantCulture)!.ToLowerInvariant() : "cosine";
 
         if (k <= 0) throw new NovaException(ErrorCode.InvalidArgument, "VECTOR_NEAREST k must be positive");
 
@@ -406,7 +407,7 @@ partial class SqlEngine
             if (i > 0) sb.Append(',');
             sb.Append(scored[i].PrimaryKey);
             sb.Append(':');
-            sb.Append(scored[i].Score.ToString("F6"));
+            sb.Append(scored[i].Score.ToString("F6", CultureInfo.InvariantCulture));
         }
 
         return sb.ToString();
@@ -415,21 +416,21 @@ partial class SqlEngine
     private static Object? ArithmeticOp(Object? left, Object? right, Func<Double, Double, Double> op)
     {
         if (left == null || right == null) return null;
-        return op(Convert.ToDouble(left), Convert.ToDouble(right));
+        return op(Convert.ToDouble(left, CultureInfo.InvariantCulture), Convert.ToDouble(right, CultureInfo.InvariantCulture));
     }
 
     private static Object? ArithmeticNegate(Object? value)
     {
         if (value == null) return null;
-        return -Convert.ToDouble(value);
+        return -Convert.ToDouble(value, CultureInfo.InvariantCulture);
     }
 
     private static Object? EvaluateLike(Object? left, Object? right)
     {
         if (left == null || right == null) return false;
 
-        var str = Convert.ToString(left)!;
-        var pattern = Convert.ToString(right)!;
+        var str = Convert.ToString(left, CultureInfo.InvariantCulture)!;
+        var pattern = Convert.ToString(right, CultureInfo.InvariantCulture)!;
 
         // 简单 LIKE 实现：% 匹配任意字符序列, _ 匹配单个字符
         var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
@@ -452,7 +453,7 @@ partial class SqlEngine
         foreach (var colName in groupByColumns)
         {
             var idx = schema.GetColumnIndex(colName);
-            parts.Add(Convert.ToString(row[idx]) ?? "NULL");
+            parts.Add(Convert.ToString(row[idx], CultureInfo.InvariantCulture) ?? "NULL");
         }
         return String.Join("|", parts);
     }
