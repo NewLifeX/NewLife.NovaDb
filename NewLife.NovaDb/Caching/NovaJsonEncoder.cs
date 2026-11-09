@@ -1,3 +1,6 @@
+#if NET8_0_OR_GREATER
+using System.Text.Json;
+#endif
 using NewLife.Data;
 using NewLife.Reflection;
 using NewLife.Serialization;
@@ -25,8 +28,14 @@ public class NovaJsonEncoder : DefaultPacketEncoder
     {
         // 尝试使用 System.Text.Json，不支持时使用 FastJson
         var host = JsonHelper.Default;
-        if (host == null || host.GetType().Name == "FastJson")
+        if (host == null || host.GetType() == typeof(FastJson))
         {
+#if NET8_0_OR_GREATER
+            // 直接引用类型而非按名称反射查找：裁剪/NativeAOT 下字符串查找可能静默失败。
+            // NativeAOT 默认关闭 System.Text.Json 反射序列化，此时保留带裁剪注解的 FastJson，
+            // 由调用方以 DynamicallyAccessedMembers 保留被序列化类型的成员
+            if (JsonSerializer.IsReflectionEnabledByDefault) host = new SystemJson();
+#else
             // 当前组件输出 net45 和 netstandard2.0，SystemJson 要求 net5 以上，通过反射加载
             try
             {
@@ -37,6 +46,7 @@ public class NovaJsonEncoder : DefaultPacketEncoder
                 }
             }
             catch { }
+#endif
         }
 
         return host ?? JsonHelper.Default;
