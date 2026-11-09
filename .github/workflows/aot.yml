@@ -66,7 +66,7 @@ jobs:
       if: runner.os == 'Linux'
       run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
     - name: JIT Baseline
-      # 同一冒烟工程以 JIT 运行（14 场景），为 AOT 结果提供对照
+      # 同一冒烟工程以 JIT 运行（17 场景），为 AOT 结果提供对照
       run: dotnet run -c Release --project AotSmoke/AotSmoke.csproj
     - name: Publish NativeAOT Smoke
       run: dotnet publish AotSmoke/AotSmoke.csproj -c Release -r ${{ matrix.rid }} -o AotSmoke/bin/aot-out
@@ -77,7 +77,7 @@ jobs:
 
   # LoongArch64（linux-loongarch64，QEMU）：GitHub 无 LA64 runner/runtime pack。
   # 方案：docker + QEMU 用户态仿真（loong64 binfmt）+ 龙芯 SDK。
-  # 以 LA64 运行时执行同一冒烟（15 场景），验证库在龙芯平台的行为一致性；
+  # 以 LA64 运行时执行同一冒烟（17 场景），验证库在龙芯平台的行为一致性；
   # 探索部分：尝试 NativeAOT 发布 linux-loongarch64（ILCompiler 未见 LA64 官方承诺）。
   # 非阻塞：QEMU 仿真与第三方龙芯 SDK 不受本仓库控制，失败不阻断合入。
   loongarch64:
@@ -109,7 +109,7 @@ jobs:
       run: |
         dotnet restore AotSmoke/AotSmoke.csproj
         dotnet build AotSmoke/AotSmoke.csproj -c Release --no-restore
-    - name: JIT Smoke in loong64 Container (AotSmoke 14 场景)
+    - name: JIT Smoke in loong64 Container (AotSmoke 17 场景)
       # DOTNET_EnableHWIntrinsic=0：QEMU 用户态对 LASX/LSX 指令覆盖不全，关闭硬件内建以强制基线指令
       env:
         DOTNET_CLI_TELEMETRY_OPTOUT: 1

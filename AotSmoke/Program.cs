@@ -352,18 +352,60 @@ Run("Geo 坐标转换与 geohash", () =>
     if (String.IsNullOrEmpty(hash) || hash.Length != 6) throw new Exception($"geohash 异常: {hash}");
 });
 
-Run("运行时多语言（简体中文）", () =>
+Run("运行时多语言（10 语种译文）", () =>
 {
+    // 冒烟验证编译期压缩语言表确实进入原生镜像：10 个语种都必须能翻译同一条英文源文
     var old = Localization.Culture;
     try
     {
         Localization.Culture = new CultureInfo("zh-CN");
         var text = Localization.Translate("Unsupported data type: {0}", (DataType)255);
         if (text != "不支持的数据类型：255") throw new Exception($"翻译结果不符：{text}");
+
+        String[] cultures = ["zh-Hans", "zh-Hant", "es", "de", "ja", "fr", "pt", "ru", "ko", "ar"];
+        foreach (var code in cultures)
+        {
+            Localization.Culture = new CultureInfo(code);
+            var item = Localization.Translate("Unsupported data type: {0}", (DataType)255);
+            if (item == "Unsupported data type: 255") throw new Exception($"{code} 缺少译文");
+            if (!item.Contains("255")) throw new Exception($"{code} 占位符丢失：{item}");
+        }
     }
     finally
     {
         Localization.Culture = old;
+    }
+});
+
+Run("非英语区域下的 SQL 数据语义", () =>
+{
+    // 数据语义必须与进程区域性无关：de-DE 用逗号作小数点，tr-TR 的 i/I 大小写规则不同
+    var oldCulture = CultureInfo.CurrentCulture;
+    var oldUICulture = CultureInfo.CurrentUICulture;
+    try
+    {
+        CultureInfo.CurrentCulture = new CultureInfo("de-DE");
+        CultureInfo.CurrentUICulture = new CultureInfo("de-DE");
+
+        var dir = Path.Combine(temp, "cult");
+        using var conn = new NovaConnection { ConnectionString = $"Data Source={dir}" };
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "CREATE TABLE t_cult (id INT PRIMARY KEY, amount DOUBLE)";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = "INSERT INTO t_cult VALUES (1, 2.5), (2, 3.75)";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = "SELECT SUM(amount) FROM t_cult";
+        if (Convert.ToDouble(cmd.ExecuteScalar(), CultureInfo.InvariantCulture) != 6.25) throw new Exception("德文区域下浮点字面量解析错误");
+
+        CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+        cmd.CommandText = "SELECT UPPER('i')";
+        if (cmd.ExecuteScalar() as String != "I") throw new Exception("土耳其区域下 UPPER 结果错误");
+    }
+    finally
+    {
+        CultureInfo.CurrentCulture = oldCulture;
+        CultureInfo.CurrentUICulture = oldUICulture;
     }
 });
 
