@@ -1,4 +1,5 @@
-﻿using NewLife.NovaDb.Core;
+﻿using System.Globalization;
+using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Storage;
 
@@ -104,7 +105,7 @@ public class TableFileManager
             var fileName = Path.GetFileNameWithoutExtension(file);
             // fileName 格式：{TableName}_{ShardId}
             var parts = fileName.Split('_');
-            if (parts.Length >= 2 && Int32.TryParse(parts[^1], out var shardId))
+            if (parts.Length >= 2 && Int32.TryParse(parts[^1], NumberStyles.Integer, CultureInfo.InvariantCulture, out var shardId))
             {
                 shardIds.Add(shardId);
             }
@@ -136,7 +137,7 @@ public class TableFileManager
             if (parts.Length >= 1)
             {
                 // 检查第一部分是否为数字（分片 ID）
-                if (Int32.TryParse(parts[0], out _))
+                if (Int32.TryParse(parts[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
                 {
                     // {TableName}_{ShardId}_{IndexName} - 提取索引名（剩余部分）
                     if (parts.Length >= 2)

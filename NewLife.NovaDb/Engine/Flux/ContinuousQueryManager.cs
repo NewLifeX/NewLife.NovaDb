@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Queues;
 using NewLife.NovaDb.Sql;
@@ -260,7 +261,7 @@ public class ContinuousQueryManager : IDisposable
         var rows = _sql.Execute($"SELECT bucket_start, cnt, sum_val, min_val, max_val FROM `{target}`").Rows;
         foreach (var row in rows)
         {
-            var bucketStart = Convert.ToDateTime(row[0]).Ticks;
+            var bucketStart = Convert.ToDateTime(row[0], CultureInfo.InvariantCulture).Ticks;
             if (bucketStart < startTicks || bucketStart > endTicks) continue;
 
             var key = (bucketStart - startTicks) / bucketTicks * bucketTicks + startTicks;
@@ -270,7 +271,7 @@ public class ContinuousQueryManager : IDisposable
                 buckets[key] = acc;
             }
 
-            acc.AddAggregate(Convert.ToInt64(row[1]), Convert.ToDouble(row[2]), Convert.ToDouble(row[3]), Convert.ToDouble(row[4]));
+            acc.AddAggregate(Convert.ToInt64(row[1], CultureInfo.InvariantCulture), Convert.ToDouble(row[2], CultureInfo.InvariantCulture), Convert.ToDouble(row[3], CultureInfo.InvariantCulture), Convert.ToDouble(row[4], CultureInfo.InvariantCulture));
         }
 
         var result = new List<DownsampleResult>();
@@ -288,7 +289,7 @@ public class ContinuousQueryManager : IDisposable
     /// <returns>聚合值</returns>
     private static Double ComputeAggregate(String aggregation, BucketAccumulator acc)
     {
-        return aggregation.ToLower() switch
+        return aggregation.ToLowerInvariant() switch
         {
             "avg" or "average" => acc.Sum / acc.Count,
             "sum" => acc.Sum,
@@ -366,7 +367,7 @@ public class ContinuousQueryManager : IDisposable
         {
             if (!entry.Fields.TryGetValue(def.FieldName, out var val) || val == null) continue;
 
-            var v = Convert.ToDouble(val);
+            var v = Convert.ToDouble(val, CultureInfo.InvariantCulture);
             foreach (var granule in def.Rollups)
             {
                 var bucketStart = entry.Timestamp / granule * granule;
@@ -423,24 +424,27 @@ public class ContinuousQueryManager : IDisposable
     /// <param name="acc">聚合累计器</param>
     private void UpsertBucket(ContinuousQueryDefinition def, String target, Int64 bucketStart, BucketAccumulator acc)
     {
-        var dt = new DateTime(bucketStart, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm:ss");
+        // 拼接进 SQL 的时间与数值必须使用固定区域性，避免非英文系统把小数点写成逗号导致语法错误
+        var dt = new DateTime(bucketStart, DateTimeKind.Utc).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 
         // 查询现有桶
         var existing = _sql.Execute($"SELECT cnt, sum_val, min_val, max_val FROM `{target}` WHERE bucket_start = '{dt}'");
         if (existing.Rows.Count == 0)
         {
-            _sql.Execute($"INSERT INTO `{target}` (bucket_start, cnt, sum_val, min_val, max_val) " +
-                $"VALUES ('{dt}', {acc.Count}, {acc.Sum}, {acc.Min}, {acc.Max})");
+            _sql.Execute(String.Format(CultureInfo.InvariantCulture,
+                "INSERT INTO `{0}` (bucket_start, cnt, sum_val, min_val, max_val) VALUES ('{1}', {2}, {3}, {4}, {5})",
+                target, dt, acc.Count, acc.Sum, acc.Min, acc.Max));
         }
         else
         {
             var row = existing.Rows[0];
-            var cnt = Convert.ToInt64(row[0]) + acc.Count;
-            var sum = Convert.ToDouble(row[1]) + acc.Sum;
-            var min = Math.Min(Convert.ToDouble(row[2]), acc.Min);
-            var max = Math.Max(Convert.ToDouble(row[3]), acc.Max);
-            _sql.Execute($"UPDATE `{target}` SET cnt = {cnt}, sum_val = {sum}, min_val = {min}, max_val = {max} " +
-                $"WHERE bucket_start = '{dt}'");
+            var cnt = Convert.ToInt64(row[0], CultureInfo.InvariantCulture) + acc.Count;
+            var sum = Convert.ToDouble(row[1], CultureInfo.InvariantCulture) + acc.Sum;
+            var min = Math.Min(Convert.ToDouble(row[2], CultureInfo.InvariantCulture), acc.Min);
+            var max = Math.Max(Convert.ToDouble(row[3], CultureInfo.InvariantCulture), acc.Max);
+            _sql.Execute(String.Format(CultureInfo.InvariantCulture,
+                "UPDATE `{0}` SET cnt = {1}, sum_val = {2}, min_val = {3}, max_val = {4} WHERE bucket_start = '{5}'",
+                target, cnt, sum, min, max, dt));
         }
     }
 

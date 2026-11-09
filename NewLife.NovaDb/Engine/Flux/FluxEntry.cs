@@ -1,4 +1,5 @@
-﻿using NewLife;
+﻿using System.Globalization;
+using NewLife;
 
 namespace NewLife.NovaDb.Engine.Flux;
 
@@ -19,7 +20,7 @@ public class FluxEntry
 
     /// <summary>获取消息 ID，格式为 "timestamp-seq"</summary>
     /// <returns>消息 ID 字符串</returns>
-    public String GetMessageId() => $"{Timestamp}-{SequenceId}";
+    public String GetMessageId() => String.Format(CultureInfo.InvariantCulture, "{0}-{1}", Timestamp, SequenceId);
 
     /// <summary>解析消息 ID</summary>
     /// <param name="id">消息 ID 字符串</param>
@@ -33,8 +34,8 @@ public class FluxEntry
             throw new FormatException(L.T("Invalid message ID format: '{0}'", id));
 
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        var timestamp = Int64.Parse(id.AsSpan(0, dashIndex));
-        var seq = Int32.Parse(id.AsSpan(dashIndex + 1));
+        var timestamp = Int64.Parse(id.AsSpan(0, dashIndex), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        var seq = Int32.Parse(id.AsSpan(dashIndex + 1), NumberStyles.Integer, CultureInfo.InvariantCulture);
         return (timestamp, seq);
 #else
         var timestamp = id[..dashIndex].ToLong();

@@ -1,4 +1,5 @@
-﻿using NewLife.Buffers;
+﻿using System.Globalization;
+using NewLife.Buffers;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
 using NewLife.NovaDb.Tx;
@@ -794,7 +795,7 @@ public partial class NovaTable : IDisposable
             if (row[ord] != null)
             {
                 if (sb.Length > 0) sb.Append(' ');
-                sb.Append(Convert.ToString(row[ord]));
+                sb.Append(Convert.ToString(row[ord], CultureInfo.InvariantCulture));
             }
         }
         return sb.ToString();

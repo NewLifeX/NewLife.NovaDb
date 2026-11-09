@@ -1,3 +1,4 @@
+using System.Globalization;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Engine.Flux;
@@ -131,7 +132,8 @@ public partial class FluxEngine : IDisposable
         // 按分片粒度对齐小时
         var alignedHour = dt.Hour / hours * hours;
         var aligned = new DateTime(dt.Year, dt.Month, dt.Day, alignedHour, 0, 0, DateTimeKind.Utc);
-        return aligned.ToString("yyyyMMddHH");
+        // 分区键参与 Ordinal 字符串比较，必须用固定区域性格式化，避免非公历区域性（如 ar-SA）改变年月表示
+        return aligned.ToString("yyyyMMddHH", CultureInfo.InvariantCulture);
     }
 
     /// <summary>删除过期分区</summary>
@@ -142,7 +144,7 @@ public partial class FluxEngine : IDisposable
         if (ttlSeconds <= 0) return 0;
 
         var cutoff = DateTime.UtcNow.AddSeconds(-ttlSeconds);
-        var cutoffKey = cutoff.ToString("yyyyMMddHH");
+        var cutoffKey = cutoff.ToString("yyyyMMddHH", CultureInfo.InvariantCulture);
         var toRemove = new List<String>();
 
         lock (_lock)
@@ -259,11 +261,11 @@ public partial class FluxEngine : IDisposable
                 buckets[bucketStart] = list;
             }
 
-            list.Add(Convert.ToDouble(val));
+            list.Add(Convert.ToDouble(val, CultureInfo.InvariantCulture));
         }
 
         // 执行聚合
-        var agg = aggregation.ToLower();
+        var agg = aggregation.ToLowerInvariant();
         var results = new List<DownsampleResult>();
 
         foreach (var kvp in buckets)
@@ -308,7 +310,7 @@ public partial class FluxEngine : IDisposable
         var entries = QueryRange(startTicks, endTicks);
         if (entries.Count == 0) return [];
 
-        var agg = aggregation.ToLower();
+        var agg = aggregation.ToLowerInvariant();
         var results = new List<DownsampleResult>();
 
         // 每个窗口起点按步长推进，窗口范围 [ws, ws+window)
@@ -323,7 +325,7 @@ public partial class FluxEngine : IDisposable
                 if (entry.Timestamp < ws || entry.Timestamp >= we) continue;
 
                 if (entry.Fields.TryGetValue(fieldName, out var val) && val != null)
-                    values.Add(Convert.ToDouble(val));
+                    values.Add(Convert.ToDouble(val, CultureInfo.InvariantCulture));
             }
 
             // 空窗口：默认不输出，保持与滚动窗口一致

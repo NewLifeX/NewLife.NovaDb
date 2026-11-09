@@ -1,4 +1,5 @@
-﻿using NewLife.Log;
+﻿using System.Globalization;
+using NewLife.Log;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.WAL;
 using NewLife.Remoting;
@@ -451,7 +452,7 @@ public class ReplicationManager : IDisposable
             var dot = fileName.LastIndexOf('.');
             if (dot < 0) continue;
             var indexStr = fileName.Substring(dot + 1);
-            if (!Int32.TryParse(indexStr, out var fileIndex)) continue;
+            if (!Int32.TryParse(indexStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var fileIndex)) continue;
 
             var events = _binlogWriter.ReadEvents(fileIndex);
             foreach (var evt in events)

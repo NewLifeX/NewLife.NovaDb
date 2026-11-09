@@ -1,4 +1,5 @@
-﻿using NewLife;
+﻿using System.Globalization;
+using NewLife;
 
 namespace NewLife.NovaDb.Engine.Flux;
 
@@ -40,7 +41,7 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
 
     /// <summary>转换为字符串，格式为 "timestamp-sequence"</summary>
     /// <returns>消息 ID 字符串</returns>
-    public override String ToString() => $"{Timestamp}-{Sequence}";
+    public override String ToString() => String.Format(CultureInfo.InvariantCulture, "{0}-{1}", Timestamp, Sequence);
 
     /// <summary>解析消息 ID 字符串</summary>
     /// <param name="value">消息 ID 字符串</param>
@@ -54,8 +55,8 @@ public class MessageId : IComparable<MessageId>, IEquatable<MessageId>
             throw new FormatException(L.T("Invalid MessageId format: '{0}'", value));
 
 #if NETSTANDARD2_1_OR_GREATER || NETCOREAPP3_1_OR_GREATER
-        var timestamp = Int64.Parse(value.AsSpan(0, dashIndex));
-        var sequence = Int32.Parse(value.AsSpan(dashIndex + 1));
+        var timestamp = Int64.Parse(value.AsSpan(0, dashIndex), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        var sequence = Int32.Parse(value.AsSpan(dashIndex + 1), NumberStyles.Integer, CultureInfo.InvariantCulture);
         return new MessageId(timestamp, sequence);
 #else
         var timestamp = value[..dashIndex].ToLong();

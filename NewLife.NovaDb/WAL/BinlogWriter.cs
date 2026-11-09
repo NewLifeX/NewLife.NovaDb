@@ -1,5 +1,6 @@
 ﻿using System.Buffers;
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using NewLife;
 using NewLife.Buffers;
@@ -126,7 +127,7 @@ public class BinlogWriter : IDisposable
                 if (dot >= 0)
                 {
                     var indexStr = name.Substring(dot + 1);
-                    if (Int32.TryParse(indexStr, out var idx) && idx > maxIndex)
+                    if (Int32.TryParse(indexStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var idx) && idx > maxIndex)
                         maxIndex = idx;
                 }
             }
