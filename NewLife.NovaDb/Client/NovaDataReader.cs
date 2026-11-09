@@ -2,6 +2,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using NewLife;
 
 namespace NewLife.NovaDb.Client;
@@ -168,17 +169,17 @@ public class NovaDataReader : DbDataReader
     /// <summary>获取 DateTime 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>日期时间值</returns>
-    public override DateTime GetDateTime(Int32 ordinal) => Convert.ToDateTime(GetValue(ordinal));
+    public override DateTime GetDateTime(Int32 ordinal) => Convert.ToDateTime(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取 Decimal 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>Decimal 值</returns>
-    public override Decimal GetDecimal(Int32 ordinal) => Convert.ToDecimal(GetValue(ordinal));
+    public override Decimal GetDecimal(Int32 ordinal) => Convert.ToDecimal(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取 Double 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>Double 值</returns>
-    public override Double GetDouble(Int32 ordinal) => Convert.ToDouble(GetValue(ordinal));
+    public override Double GetDouble(Int32 ordinal) => Convert.ToDouble(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取字段类型</summary>
     /// <param name="ordinal">列索引</param>
@@ -200,7 +201,7 @@ public class NovaDataReader : DbDataReader
     /// <summary>获取 Float 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>Float 值</returns>
-    public override Single GetFloat(Int32 ordinal) => Convert.ToSingle(GetValue(ordinal));
+    public override Single GetFloat(Int32 ordinal) => Convert.ToSingle(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取 Guid 值</summary>
     /// <param name="ordinal">列索引</param>
@@ -210,22 +211,23 @@ public class NovaDataReader : DbDataReader
     /// <summary>获取 Int16 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>Int16 值</returns>
-    public override Int16 GetInt16(Int32 ordinal) => Convert.ToInt16(GetValue(ordinal));
+    public override Int16 GetInt16(Int32 ordinal) => Convert.ToInt16(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取 Int32 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>Int32 值</returns>
-    public override Int32 GetInt32(Int32 ordinal) => Convert.ToInt32(GetValue(ordinal));
+    public override Int32 GetInt32(Int32 ordinal) => Convert.ToInt32(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取 Int64 值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>Int64 值</returns>
-    public override Int64 GetInt64(Int32 ordinal) => Convert.ToInt64(GetValue(ordinal));
+    public override Int64 GetInt64(Int32 ordinal) => Convert.ToInt64(GetValue(ordinal), CultureInfo.InvariantCulture);
 
     /// <summary>获取字符串值</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>字符串值</returns>
-    public override String GetString(Int32 ordinal) => GetValue(ordinal).ToString()!;
+    // 数值/日期转文本按固定区域性，避免 de-DE 输出 "2,5" 这类不可回读的表示
+    public override String GetString(Int32 ordinal) => Convert.ToString(GetValue(ordinal), CultureInfo.InvariantCulture)!;
 
     /// <summary>获取列数据类型名称</summary>
     /// <param name="ordinal">列索引</param>

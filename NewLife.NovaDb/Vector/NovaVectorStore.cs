@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using NewLife;
@@ -211,7 +212,7 @@ public class NovaVectorStoreCollection : IVectorStoreCollection
         cmd.Parameters.Add(new NovaParameter { ParameterName = "@table", Value = _tableName });
         cmd.Parameters.Add(new NovaParameter { ParameterName = "@k", Value = top });
 
-        var text = Convert.ToString(cmd.ExecuteScalar());
+        var text = Convert.ToString(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
         var result = new List<VectorSearchResult>();
         if (text.IsNullOrEmpty()) return result;
 
@@ -223,7 +224,7 @@ public class NovaVectorStoreCollection : IVectorStoreCollection
             if (idx <= 0) continue;
 
             var id = pair[..idx];
-            if (!Double.TryParse(pair[(idx + 1)..], out var score)) continue;
+            if (!Double.TryParse(pair[(idx + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out var score)) continue;
 
             if (score < minScore) continue;
 
@@ -270,7 +271,7 @@ public class NovaVectorStoreCollection : IVectorStoreCollection
 
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = $"Select Count(*) From `{_tableName}`";
-        var value = Convert.ToInt64(cmd.ExecuteScalar());
+        var value = Convert.ToInt64(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
 
         return Task.FromResult(value);
     }

@@ -1,4 +1,5 @@
 ﻿using System.Data.Common;
+using System.Globalization;
 using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Client;
@@ -23,7 +24,7 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
     /// <summary>端口</summary>
     public Int32 Port
     {
-        get => Int32.TryParse(this[nameof(Port)]?.ToString(), out var p) ? p : 3306;
+        get => Int32.TryParse(this[nameof(Port)]?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var p) ? p : 3306;
         set => this[nameof(Port)] = value;
     }
 
@@ -33,14 +34,14 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
     /// <summary>连接超时（秒）</summary>
     public Int32 ConnectionTimeout
     {
-        get => Int32.TryParse(this[nameof(ConnectionTimeout)]?.ToString(), out var v) ? v : 15;
+        get => Int32.TryParse(this[nameof(ConnectionTimeout)]?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 15;
         set => this[nameof(ConnectionTimeout)] = value;
     }
 
     /// <summary>命令超时（秒）</summary>
     public Int32 CommandTimeout
     {
-        get => Int32.TryParse(this[nameof(CommandTimeout)]?.ToString(), out var v) ? v : 30;
+        get => Int32.TryParse(this[nameof(CommandTimeout)]?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 30;
         set => this[nameof(CommandTimeout)] = value;
     }
 
@@ -115,7 +116,7 @@ public class NovaConnectionStringBuilder : DbConnectionStringBuilder
         set
         {
             // 替换为标准键名
-            var kw = keyword.ToLower();
+            var kw = keyword.ToLowerInvariant();
             foreach (var kv in _options)
             {
                 if (kv.Value.Contains(kw))
