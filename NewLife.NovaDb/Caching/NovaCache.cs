@@ -370,9 +370,9 @@ public class NovaCache : Cache
     /// <param name="topic">主题</param>
     /// <param name="clientId">客户标识</param>
     /// <returns>事件总线实例</returns>
-    // 同 GetQueue：基类签名无裁剪注解，重写方法不允许声明更严格约束（IL2095）
-    [UnconditionalSuppressMessage("Trimming", "IL2091", Justification = "基类签名无裁剪注解，无法在重写方法约束 TEvent")]
-    public override IEventBus<TEvent> CreateEventBus<TEvent>(String topic, String clientId = "")
+    // 基类 Cache.CreateEventBus 已声明 Dam.Serialize 注解，重写必须保持一致（IL2095），
+    // 且与 NovaEventBus<TEvent> 的注解完全一致，保证事件类型成员在裁剪后仍可 JSON 序列化
+    public override IEventBus<TEvent> CreateEventBus<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicParameterlessConstructor | DynamicallyAccessedMemberTypes.PublicFields | DynamicallyAccessedMemberTypes.PublicProperties)] TEvent>(String topic, String clientId = "")
     {
         if (_fluxEngine == null) return base.CreateEventBus<TEvent>(topic, clientId);
 
