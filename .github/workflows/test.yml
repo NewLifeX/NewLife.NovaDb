@@ -240,7 +240,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
     - name: Check English messages
       shell: pwsh
       run: pwsh -File ./tools/check-english-exceptions.ps1 -Dir NewLife.NovaDb
