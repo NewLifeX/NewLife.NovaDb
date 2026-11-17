@@ -21,11 +21,9 @@ jobs:
       uses: actions/setup-dotnet@v6
       with:
         dotnet-version: |
-          6.x
-          7.x
           8.x
-          9.x
           10.x
+          11.x
     - name: Get Version
       # tag 推送以 tag 为准（v1.0.2026.1024 → 1.0.2026.1024），手工触发使用当天 beta 版本
       run: |

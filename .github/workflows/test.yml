@@ -11,7 +11,7 @@ jobs:
   # 全解决方案编译校验（含 NovaServer/AotSmoke/Benchmark 等非测试工程），与测试矩阵并行运行
   build:
     name: build solution
-    # 解决方案多目标 net45~net10，Linux 由 SDK 自动引用 .NET Framework 参考程序集，优先使用 Ubuntu
+    # 解决方案多目标 net45~net11，Linux 由 SDK 自动引用 .NET Framework 参考程序集，优先使用 Ubuntu
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -20,10 +20,11 @@ jobs:
     - name: Setup dotNET
       uses: actions/setup-dotnet@v6
       with:
-        # 解决方案多目标 net45~net10，net45/net461 由 SDK 自动引用参考程序集包
+        # 解决方案多目标 net45~net11，net45/net461 由 SDK 自动引用参考程序集包
         dotnet-version: |
           8.x
           10.x
+          11.x
         cache: true
         cache-dependency-path: '**/*.csproj'
     - name: Build
@@ -51,6 +52,10 @@ jobs:
             os: windows-latest
             framework: net10.0
             dotnet: 10.x
+          - name: win-x64-net11.0
+            os: windows-latest
+            framework: net11.0
+            dotnet: 11.x
           # ================= Linux x64 =================
           - name: linux-x64-net8.0
             os: ubuntu-latest
@@ -62,6 +67,10 @@ jobs:
             os: ubuntu-latest
             framework: net10.0
             dotnet: 10.x
+          - name: linux-x64-net11.0
+            os: ubuntu-latest
+            framework: net11.0
+            dotnet: 11.x
           # ================= Linux arm64 =================
           - name: linux-arm64-net8.0
             os: ubuntu-24.04-arm
@@ -73,6 +82,10 @@ jobs:
             os: ubuntu-24.04-arm
             framework: net10.0
             dotnet: 10.x
+          - name: linux-arm64-net11.0
+            os: ubuntu-24.04-arm
+            framework: net11.0
+            dotnet: 11.x
 
     steps:
     - uses: actions/checkout@v7
