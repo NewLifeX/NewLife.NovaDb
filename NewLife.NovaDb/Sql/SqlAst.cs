@@ -197,6 +197,9 @@ public class SqlColumnDef
     /// <summary>是否自增列（MySQL AUTO_INCREMENT）</summary>
     public Boolean IsAutoIncrement { get; set; }
 
+    /// <summary>是否为列级唯一约束（建表时转换为唯一索引）</summary>
+    public Boolean IsUnique { get; set; }
+
     /// <summary>默认值字面量文本（如 0、'abc'、CURRENT_TIMESTAMP）</summary>
     public String? DefaultValue { get; set; }
 

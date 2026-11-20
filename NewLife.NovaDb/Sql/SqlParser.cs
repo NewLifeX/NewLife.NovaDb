@@ -444,10 +444,32 @@ public class SqlParser
             }
         }
 
+        // 列级 UNIQUE 约束转换为唯一索引（MySQL 约定：索引名取列名）
+        foreach (var col in stmt.Columns)
+        {
+            if (col.IsUnique)
+                stmt.Indexes.Add(new SqlIndexDef { Name = col.Name, Columns = [col.Name], IsUnique = true });
+        }
+
         // 解析表级选项：ENGINE 和 COMMENT
         ParseTableOptions(stmt);
 
         return stmt;
+    }
+
+    /// <summary>跳过可选的括号参数（如 CURRENT_TIMESTAMP(3)、索引前缀 name(20)）</summary>
+    private void SkipOptionalParens()
+    {
+        if (Peek().Type != SqlTokenType.LeftParen) return;
+
+        var depth = 0;
+        do
+        {
+            if (Peek().Type == SqlTokenType.LeftParen) depth++;
+            else if (Peek().Type == SqlTokenType.RightParen) depth--;
+            Advance();
+        }
+        while (depth > 0 && Peek().Type != SqlTokenType.Eof);
     }
 
     /// <summary>解析表内索引定义</summary>
@@ -469,6 +491,8 @@ public class SqlParser
         do
         {
             index.Columns.Add(ExpectIdentifier());
+            // 兼容索引前缀长度，如 name(20)
+            SkipOptionalParens();
         }
         while (TryConsume(SqlTokenType.Comma));
         Expect(SqlTokenType.RightParen);
@@ -525,6 +549,42 @@ public class SqlParser
                 // MySQL 兼容：自增列
                 Advance();
                 col.IsAutoIncrement = true;
+            }
+            else if (next.Type == SqlTokenType.Unique)
+            {
+                // MySQL 兼容：列级唯一约束，建表时转换为唯一索引
+                Advance();
+                col.IsUnique = true;
+            }
+            else if (next.Type == SqlTokenType.Identifier &&
+                (next.Value.EqualIgnoreCase("UNSIGNED") || next.Value.EqualIgnoreCase("SIGNED") || next.Value.EqualIgnoreCase("ZEROFILL")))
+            {
+                // MySQL 数值列修饰符，Nova 不做无符号语义，忽略
+                Advance();
+            }
+            else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("COLLATE"))
+            {
+                // COLLATE <name>
+                Advance();
+                Advance();
+            }
+            else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("CHARACTER"))
+            {
+                // CHARACTER SET <name>
+                Advance();
+                TryConsume(SqlTokenType.Set);
+                if (Peek().Type == SqlTokenType.Identifier) Advance();
+            }
+            else if (next.Type == SqlTokenType.On)
+            {
+                // ON UPDATE CURRENT_TIMESTAMP[(n)]，Nova 无自动更新语义，忽略
+                Advance();
+                TryConsume(SqlTokenType.Update);
+                if (Peek().Type == SqlTokenType.Identifier || Peek().Type == SqlTokenType.LeftParen)
+                {
+                    if (Peek().Type == SqlTokenType.Identifier) Advance();
+                    SkipOptionalParens();
+                }
             }
             else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("DEFAULT"))
             {
@@ -592,6 +652,8 @@ public class SqlParser
         do
         {
             stmt.Columns.Add(ExpectIdentifier());
+            // 兼容索引前缀长度，如 name(20)
+            SkipOptionalParens();
         }
         while (TryConsume(SqlTokenType.Comma));
 
@@ -1287,6 +1349,17 @@ public class SqlParser
             return;
 
         stmt.ForUpdate = true;
+
+        // 可选 OF table_list
+        if (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("OF"))
+        {
+            Advance();
+            while (Peek().Type == SqlTokenType.Identifier)
+            {
+                Advance();
+                if (!TryConsume(SqlTokenType.Comma)) break;
+            }
+        }
 
         // 可选 NOWAIT / SKIP LOCKED
         var tail = Peek();
