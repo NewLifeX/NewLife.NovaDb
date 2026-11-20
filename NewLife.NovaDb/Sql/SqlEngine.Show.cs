@@ -276,7 +276,7 @@ public partial class SqlEngine
                     col.Nullable ? "YES" : "NO",               // 2: Null
                     col.IsPrimaryKey ? "PRI" : String.Empty,   // 3: Key
                     (Object?)DBNull.Value,                     // 4: Default
-                    String.Empty,                              // 5: Extra
+                    col.IsAutoIncrement ? "auto_increment" : String.Empty, // 5: Extra
                     col.Comment ?? String.Empty                // 6: Comment
                 ]);
             }
@@ -310,16 +310,38 @@ public partial class SqlEngine
         };
     }
 
-    /// <summary>SQL LIKE 模式匹配（% 匹配任意字符串，_ 匹配单个字符）</summary>
+    /// <summary>SQL LIKE 模式匹配（% 匹配任意字符串，_ 匹配单个字符，\ 转义下一个字符）</summary>
     private static Boolean MatchLike(String value, String? pattern)
     {
         if (pattern.IsNullOrEmpty()) return true;
 
-        // 转换为正则表达式简单实现：将 % 换为 .*，_ 换为 .
-        var regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
-            .Replace("%", ".*")
-            .Replace("_", ".") + "$";
-        return System.Text.RegularExpressions.Regex.IsMatch(value, regexPattern,
+        return System.Text.RegularExpressions.Regex.IsMatch(value, LikeToRegex(pattern),
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>将 LIKE 模式转换为正则表达式（% 任意串，_ 单字符，反斜杠转义后续字符）</summary>
+    /// <param name="pattern">LIKE 模式</param>
+    /// <returns>锚定首尾的正则表达式</returns>
+    private static String LikeToRegex(String pattern)
+    {
+        var sb = new System.Text.StringBuilder("^");
+        for (var i = 0; i < pattern.Length; i++)
+        {
+            var ch = pattern[i];
+            if (ch == '\\' && i + 1 < pattern.Length)
+            {
+                // 转义字符按字面量匹配：\% 与 \_ 不再是通配符
+                sb.Append(System.Text.RegularExpressions.Regex.Escape(pattern[i + 1].ToString()));
+                i++;
+            }
+            else if (ch == '%')
+                sb.Append(".*");
+            else if (ch == '_')
+                sb.Append('.');
+            else
+                sb.Append(System.Text.RegularExpressions.Regex.Escape(ch.ToString()));
+        }
+        sb.Append('$');
+        return sb.ToString();
     }
 }

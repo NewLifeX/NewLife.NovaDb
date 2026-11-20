@@ -323,9 +323,20 @@ partial class SqlEngine
 
             // 字符串函数
             case "CONCAT":
+                if (args.Count == 0) return null;
+                // MySQL 语义：任一参数为 NULL 则结果 NULL
+                foreach (var concatArg in args)
+                {
+                    if (concatArg == null) return null;
+                }
                 return String.Concat(args.Select(a => Convert.ToString(a, CultureInfo.InvariantCulture) ?? String.Empty));
 
             case "LENGTH" or "LEN":
+                // MySQL 语义：UTF-8 字节数
+                return args.Count > 0 && args[0] != null ? System.Text.Encoding.UTF8.GetByteCount(Convert.ToString(args[0], CultureInfo.InvariantCulture)!) : (Object?)null;
+
+            case "CHAR_LENGTH" or "CHARACTER_LENGTH":
+                // MySQL 语义：字符数
                 return args.Count > 0 && args[0] != null ? Convert.ToString(args[0], CultureInfo.InvariantCulture)!.Length : (Object?)null;
 
             case "SUBSTRING" or "SUBSTR":
@@ -379,8 +390,22 @@ partial class SqlEngine
                 if (args.Count < 2 || args[0] == null || args[1] == null) return 0;
                 var ciNeedle = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
                 var ciHaystack = Convert.ToString(args[1], CultureInfo.InvariantCulture)!;
-                var ciIdx = ciHaystack.IndexOf(ciNeedle, StringComparison.OrdinalIgnoreCase);
+                var ciStart = args.Count >= 3 && args[2] != null ? Convert.ToInt32(args[2], CultureInfo.InvariantCulture) : 1;
+                if (ciStart < 1) ciStart = 1;
+                if (ciStart - 1 > ciHaystack.Length) return 0;
+                var ciIdx = ciHaystack.IndexOf(ciNeedle, ciStart - 1, StringComparison.OrdinalIgnoreCase);
                 return ciIdx >= 0 ? ciIdx + 1 : 0; // 1-based
+
+            // LOCATE(substr, str[, pos]) — MySQL 语义，pos 从 1 开始
+            case "LOCATE":
+                if (args.Count < 2 || args[0] == null || args[1] == null) return 0;
+                var locNeedle = Convert.ToString(args[0], CultureInfo.InvariantCulture)!;
+                var locHaystack = Convert.ToString(args[1], CultureInfo.InvariantCulture)!;
+                var locStart = args.Count >= 3 && args[2] != null ? Convert.ToInt32(args[2], CultureInfo.InvariantCulture) : 1;
+                if (locStart < 1) locStart = 1;
+                if (locStart - 1 > locHaystack.Length) return 0;
+                var locIdx = locHaystack.IndexOf(locNeedle, locStart - 1, StringComparison.OrdinalIgnoreCase);
+                return locIdx >= 0 ? locIdx + 1 : 0; // 1-based
 
             // INSTR(haystack, needle) — MySQL 语义，参数顺序与 CHARINDEX 相反
             case "INSTR":
@@ -465,6 +490,9 @@ partial class SqlEngine
             // 日期时间函数
             case "NOW" or "GETDATE" or "CURRENT_TIMESTAMP":
                 return DateTime.Now;
+
+            case "UTC_TIMESTAMP":
+                return DateTime.UtcNow;
 
             case "YEAR":
                 return args.Count > 0 && args[0] != null ? Convert.ToDateTime(args[0], CultureInfo.InvariantCulture).Year : (Object?)null;
@@ -623,7 +651,7 @@ partial class SqlEngine
             // 条件函数
             case "IF" or "IIF":
                 if (args.Count < 3) return null;
-                var condResult = args[0] is Boolean bv ? bv : Convert.ToBoolean(args[0]);
+                var condResult = args[0] != null && ToBooleanValue(args[0]!);
                 return condResult ? args[1] : args[2];
 
             // 系统函数
@@ -840,7 +868,7 @@ partial class SqlEngine
             "FLOAT" or "DOUBLE" or "REAL" => Convert.ToDouble(value, CultureInfo.InvariantCulture),
             "DECIMAL" or "NUMERIC" => Convert.ToDecimal(value, CultureInfo.InvariantCulture),
             "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" or "CHAR" => Convert.ToString(value, CultureInfo.InvariantCulture),
-            "BOOL" or "BOOLEAN" => Convert.ToBoolean(value),
+            "BOOL" or "BOOLEAN" or "BIT" => ToBooleanValue(value),
             "DATETIME" or "TIMESTAMP" or "DATE" => Convert.ToDateTime(value, CultureInfo.InvariantCulture),
             _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown CAST target type: {0}", typeName)
         };

@@ -108,6 +108,12 @@ partial class SqlEngine
             rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
         }
 
+        // 聚合查询（COUNT/SUM/AVG 等），系统视图同样支持，便于 ORM 做存在性检查
+        if (stmt.GroupBy is { Count: > 0 })
+            return ExecuteGroupBy(stmt, rows, schema, parameters);
+        if (HasAggregateFunction(stmt))
+            return ExecuteAggregate(stmt, rows, schema, parameters);
+
         // ORDER BY
         if (stmt.OrderBy != null)
         {
@@ -368,6 +374,12 @@ partial class SqlEngine
         if (stmt.Where != null)
             rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
 
+        // 聚合查询（COUNT/SUM/AVG 等），information_schema 同样支持，便于 ORM 做存在性检查
+        if (stmt.GroupBy is { Count: > 0 })
+            return ExecuteGroupBy(stmt, rows, schema, parameters);
+        if (HasAggregateFunction(stmt))
+            return ExecuteAggregate(stmt, rows, schema, parameters);
+
         if (stmt.OrderBy != null)
             rows = ApplyOrderBy(rows, stmt.OrderBy, schema);
 
@@ -445,7 +457,7 @@ partial class SqlEngine
                     (Object?)(scale.HasValue ? scale.Value : DBNull.Value),         // NUMERIC_SCALE
                     columnType,                                             // COLUMN_TYPE
                     col.IsPrimaryKey ? "PRI" : String.Empty,                // COLUMN_KEY
-                    String.Empty,                                           // EXTRA
+                    col.IsAutoIncrement ? "auto_increment" : String.Empty,  // EXTRA
                     col.Comment ?? String.Empty                             // COLUMN_COMMENT
                 ]);
             }

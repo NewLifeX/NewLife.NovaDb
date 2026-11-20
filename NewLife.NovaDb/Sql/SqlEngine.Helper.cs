@@ -208,7 +208,7 @@ partial class SqlEngine
     {
         return typeName.ToUpperInvariant() switch
         {
-            "BOOL" or "BOOLEAN" => DataType.Boolean,
+            "BOOL" or "BOOLEAN" or "BIT" => DataType.Boolean,
             "TINYINT" or "SMALLINT" or "MEDIUMINT" or "INT" or "INT32" or "INTEGER" => DataType.Int32,
             "BIGINT" or "INT64" or "LONG" => DataType.Int64,
             "FLOAT" or "DOUBLE" or "REAL" => DataType.Double,
@@ -237,7 +237,7 @@ partial class SqlEngine
     {
         return targetType switch
         {
-            DataType.Boolean => Convert.ToBoolean(value),
+            DataType.Boolean => ToBooleanValue(value),
             DataType.Int32 => Convert.ToInt32(value, CultureInfo.InvariantCulture),
             DataType.Int64 => Convert.ToInt64(value, CultureInfo.InvariantCulture),
             DataType.Double => Convert.ToDouble(value, CultureInfo.InvariantCulture),
@@ -257,12 +257,62 @@ partial class SqlEngine
         if (left == null) return -1;
         if (right == null) return 1;
 
+        // 布尔按 0/1 参与数值比较（MySQL 兼容：bool列 = 1、bool列 = '1'）
+        if (left is Boolean || right is Boolean)
+        {
+            if (TryGetNumber(left, out var leftNumber) && TryGetNumber(right, out var rightNumber))
+                return leftNumber.CompareTo(rightNumber);
+        }
+
         // 尝试数值比较
         if (IsNumeric(left) && IsNumeric(right))
             return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(Convert.ToDouble(right, CultureInfo.InvariantCulture));
 
         // 字符串比较
         return String.Compare(Convert.ToString(left, CultureInfo.InvariantCulture), Convert.ToString(right, CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>尝试把值转换为数值，布尔按 1/0 处理</summary>
+    /// <param name="value">源值</param>
+    /// <param name="number">转换结果</param>
+    /// <returns>是否转换成功</returns>
+    private static Boolean TryGetNumber(Object? value, out Double number)
+    {
+        number = 0;
+        if (value == null) return false;
+
+        if (value is Boolean b)
+        {
+            number = b ? 1d : 0d;
+            return true;
+        }
+
+        if (IsNumeric(value))
+        {
+            number = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            return true;
+        }
+
+        return value is String s && Double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out number);
+    }
+
+    /// <summary>将值转换为布尔，兼容 true/false 文本与 1/0 数字</summary>
+    /// <param name="value">源值</param>
+    /// <returns>布尔值</returns>
+    private static Boolean ToBooleanValue(Object value)
+    {
+        if (value is Boolean b) return b;
+
+        if (value is String s)
+        {
+            var text = s.Trim();
+            if (text.EqualIgnoreCase("true") || text == "1") return true;
+            if (text.EqualIgnoreCase("false") || text == "0" || text.Length == 0) return false;
+        }
+
+        if (IsNumeric(value)) return Convert.ToDouble(value, CultureInfo.InvariantCulture) != 0;
+
+        return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
     }
 
     private static Boolean IsNumeric(Object? value) =>
@@ -432,12 +482,7 @@ partial class SqlEngine
         var str = Convert.ToString(left, CultureInfo.InvariantCulture)!;
         var pattern = Convert.ToString(right, CultureInfo.InvariantCulture)!;
 
-        // 简单 LIKE 实现：% 匹配任意字符序列, _ 匹配单个字符
-        var regex = "^" + System.Text.RegularExpressions.Regex.Escape(pattern)
-            .Replace("%", ".*")
-            .Replace("_", ".") + "$";
-
-        return System.Text.RegularExpressions.Regex.IsMatch(str, regex, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return System.Text.RegularExpressions.Regex.IsMatch(str, LikeToRegex(pattern), System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
     private static List<Object?[]> ApplyOrderBy(List<Object?[]> rows, List<OrderByClause> orderBy, TableSchema schema)
