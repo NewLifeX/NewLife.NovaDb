@@ -153,7 +153,7 @@ internal class SchemaProvider(NovaConnection connection)
     /// <summary>添加数据类型行到 SchemaCollection</summary>
     private static void AddDataTypeRow(SchemaCollection collection, String typeName, Int32 providerDbType,
         Int64 columnSize = 0, String? createFormat = null, String? createParameters = null,
-        String? dataType = null, Boolean isAutoincrementable = false, Boolean isBestMatch = true,
+        String? dataType = null, Boolean isAutoincrementable = false, Boolean isBestMatch = false,
         Boolean isCaseSensitive = false, Boolean isFixedLength = false, Boolean isFixedPrecisionScale = true,
         Boolean isLong = false, Boolean isNullable = true, Boolean isSearchable = true,
         Boolean isSearchableWithLike = false, Object? isUnsigned = null,
@@ -213,6 +213,18 @@ internal class SchemaProvider(NovaConnection connection)
         collection.AddColumn("LiteralPrefix", typeof(String));
         collection.AddColumn("LiteralSuffix", typeof(String));
         collection.AddColumn("NativeDataType", typeof(String));
+
+        // 规范类型名（10 种）。其余条目均为只做输入解析的别名
+        AddDataTypeRow(collection, "BOOL", 16, createFormat: "BOOL", dataType: "System.Boolean", isFixedLength: true, isBestMatch: true);
+        AddDataTypeRow(collection, "INT", 3, createFormat: "INT", dataType: "System.Int32", isAutoincrementable: true, isFixedLength: true, isBestMatch: true);
+        AddDataTypeRow(collection, "BIGINT", 8, createFormat: "BIGINT", dataType: "System.Int64", isAutoincrementable: true, isFixedLength: true, isBestMatch: true);
+        AddDataTypeRow(collection, "DOUBLE", 5, createFormat: "DOUBLE", dataType: "System.Double", isFixedLength: true, isBestMatch: true);
+        AddDataTypeRow(collection, "DECIMAL", 246, createFormat: "DECIMAL", dataType: "System.Decimal", isFixedLength: true, isBestMatch: true);
+        AddDataTypeRow(collection, "DATETIME", 12, createFormat: "DATETIME", dataType: "System.DateTime", isFixedLength: true, isBestMatch: true);
+        AddDataTypeRow(collection, "STRING", 15, createFormat: "STRING({0})", createParameters: "length", dataType: "System.String", isSearchableWithLike: true, isBestMatch: true);
+        AddDataTypeRow(collection, "BINARY", 252, createFormat: "BINARY({0})", createParameters: "length", dataType: "System.Byte[]", isLong: true, literalPrefix: "0x", isBestMatch: true);
+        AddDataTypeRow(collection, "GEOPOINT", 700, createFormat: "GEOPOINT", dataType: "NewLife.NovaDb.Core.GeoPoint", isBestMatch: true);
+        AddDataTypeRow(collection, "VECTOR", 701, createFormat: "VECTOR({0})", createParameters: "dimension", dataType: "System.Single[]", isBestMatch: true);
 
         // BIT
         AddDataTypeRow(collection, "BIT", 16, columnSize: 64, createFormat: "BIT", dataType: "System.UInt64");

@@ -70,22 +70,40 @@ public static class DataTypeExtensions
         if (type == null)
             throw new ArgumentNullException(nameof(type));
 
+        if (TryFromClrType(type, out var dataType)) return dataType;
+
+        throw new NotSupportedException(L.T("Unsupported CLR type: {0}", type.FullName));
+    }
+
+    /// <summary>尝试从 C# 类型获取数据类型</summary>
+    /// <param name="type">C# 类型</param>
+    /// <param name="dataType">数据类型</param>
+    /// <returns>是否支持</returns>
+    public static Boolean TryFromClrType(Type? type, out DataType dataType)
+    {
+        dataType = default;
+        if (type == null) return false;
+
         // 处理可空类型
         if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Nullable<>))
             type = Nullable.GetUnderlyingType(type)!;
 
-        if (type == typeof(Boolean)) return DataType.Boolean;
-        if (type == typeof(Int32)) return DataType.Int32;
-        if (type == typeof(Int64)) return DataType.Int64;
-        if (type == typeof(Double)) return DataType.Double;
-        if (type == typeof(Decimal)) return DataType.Decimal;
-        if (type == typeof(DateTime)) return DataType.DateTime;
-        if (type == typeof(String)) return DataType.String;
-        if (type == typeof(Byte[])) return DataType.Binary;
-        if (type == typeof(GeoPoint)) return DataType.GeoPoint;
-        if (type == typeof(Single[])) return DataType.Vector;
+        switch (Type.GetTypeCode(type))
+        {
+            case TypeCode.Boolean: dataType = DataType.Boolean; return true;
+            case TypeCode.Int32: dataType = DataType.Int32; return true;
+            case TypeCode.Int64: dataType = DataType.Int64; return true;
+            case TypeCode.Double: dataType = DataType.Double; return true;
+            case TypeCode.Decimal: dataType = DataType.Decimal; return true;
+            case TypeCode.DateTime: dataType = DataType.DateTime; return true;
+            case TypeCode.String: dataType = DataType.String; return true;
+        }
 
-        throw new NotSupportedException(L.T("Unsupported CLR type: {0}", type.FullName));
+        if (type == typeof(Byte[])) { dataType = DataType.Binary; return true; }
+        if (type == typeof(GeoPoint)) { dataType = DataType.GeoPoint; return true; }
+        if (type == typeof(Single[])) { dataType = DataType.Vector; return true; }
+
+        return false;
     }
 }
 

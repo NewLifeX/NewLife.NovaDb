@@ -4,6 +4,7 @@ using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using NewLife;
+using NewLife.NovaDb.Core;
 
 namespace NewLife.NovaDb.Client;
 
@@ -232,7 +233,12 @@ public class NovaDataReader : DbDataReader
     /// <summary>获取列数据类型名称</summary>
     /// <param name="ordinal">列索引</param>
     /// <returns>类型名称</returns>
-    public override String GetDataTypeName(Int32 ordinal) => GetFieldType(ordinal).Name;
+    public override String GetDataTypeName(Int32 ordinal)
+    {
+        var clrType = GetFieldType(ordinal);
+
+        return DataTypeExtensions.TryFromClrType(clrType, out var dataType) ? DataTypeNames.GetName(dataType) : clrType.Name;
+    }
 
     /// <summary>获取枚举器</summary>
     /// <returns>枚举器</returns>
