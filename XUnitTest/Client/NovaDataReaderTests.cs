@@ -392,14 +392,14 @@ public class NovaDataReaderTests
         Assert.Equal(typeof(String), reader.GetFieldType(1));
     }
 
-    [Fact(DisplayName = "Reader-GetDataTypeName返回类型名")]
+    [Fact(DisplayName = "Reader-GetDataTypeName返回规范类型名")]
     public void GetDataTypeName_ReturnsTypeName()
     {
         var reader = CreateTestReader();
         reader.Read();
 
-        Assert.Equal("Int32", reader.GetDataTypeName(0));
-        Assert.Equal("String", reader.GetDataTypeName(1));
+        Assert.Equal("INT", reader.GetDataTypeName(0));
+        Assert.Equal("STRING", reader.GetDataTypeName(1));
     }
 
     #endregion

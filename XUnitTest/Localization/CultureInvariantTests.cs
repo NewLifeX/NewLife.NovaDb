@@ -107,8 +107,8 @@ public class CultureInvariantTests : IDisposable
         var result = WithCulture("tr-TR", () => _engine.Execute("SHOW COLUMNS FROM t_show"));
         var type = result.Rows.First(r => r[0] as String == "id")[1];
 
-        // 非不变小写会得到土耳其语无点 i：ınt32
-        Assert.Equal("int32", type);
+        // 非不变小写会得到土耳其语无点 i：ınt
+        Assert.Equal("int", type);
     }
 
     [Fact(DisplayName = "德文区域下 GeoPoint 文本解析使用固定区域性")]
