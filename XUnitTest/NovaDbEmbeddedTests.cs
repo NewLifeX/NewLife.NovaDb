@@ -113,7 +113,7 @@ public class NovaDbEmbeddedTests
         var list = Role.FindAll();
         Assert.Equal(4, list.Count);
 
-        var list2 = Role.FindAll(Role._.Name == "管理员");
+        var list2 = Role.FindAllByName("管理员");
         Assert.Single(list2);
 
         var list3 = Role.Search("用户", null);
@@ -145,7 +145,7 @@ public class NovaDbEmbeddedTests
         var list = Role.FindAll();
         Assert.Equal(4, list.Count);
 
-        var list2 = Role.FindAll(Role._.Name == "管理员");
+        var list2 = Role.FindAllByName("管理员");
         Assert.Single(list2);
 
         var list3 = Role.Search("用户", null);
@@ -171,7 +171,7 @@ public class NovaDbEmbeddedTests
         var list = Role.FindAll();
         Assert.Equal(4, list.Count);
 
-        var list2 = Role.FindAll(Role._.Name == "管理员");
+        var list2 = Role.FindAllByName("管理员");
         Assert.Single(list2);
 
         var list3 = Role.Search("用户", null);
