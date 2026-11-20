@@ -49,11 +49,11 @@
 | الفئة | نوع SQL | مقابل C# | الوصف |
 |----------|----------|------------|-------------|
 | منطقي | `BOOL` | `Boolean` | بايت واحد |
-| صحيح | `INT` / `LONG` | `Int32` / `Int64` | 4/8 بايت |
+| صحيح | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8 بايت |
 | عائم | `DOUBLE` | `Double` | 8 بايت |
 | عشري | `DECIMAL` | `Decimal` | 128 بت، دقة موحّدة |
-| نصي | `STRING(n)` / `STRING` | `String` | UTF-8، ويمكن تحديد الطول |
-| ثنائي | `BINARY(n)` / `BLOB` | `Byte[]` | يمكن تحديد الطول |
+| نصي | `STRING` / `STRING(n)` | `String` | UTF-8؛ `(n)` هو الحد الأقصى للأحرف، يُفحص عند الكتابة |
+| ثنائي | `BINARY` / `BINARY(n)` | `Byte[]` | طول متغير؛ `(n)` هو الحد الأقصى للبايتات، يُفحص عند الكتابة |
 | تاريخ ووقت | `DATETIME` | `DateTime` | دقة حتى Ticks (100 نانوثانية) |
 | نقطة جغرافية | `GEOPOINT` | بنية مخصّصة | إحداثيات خط العرض/الطول، مع استعلامات المسافة/المضلّع |
 | متجه | `VECTOR(n)` | `Single[]` | بحث متجهات الذكاء الاصطناعي، مع استعلامات KNN لأقرب جار |
@@ -448,7 +448,7 @@ client.Open();
 
 // إنشاء جدول KV (TTL الافتراضي 7200 ثانية = ساعتان)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 

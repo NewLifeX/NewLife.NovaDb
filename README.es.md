@@ -49,11 +49,11 @@ Una base de datos híbrida de tamaño mediano a grande implementada en **C#**, e
 | Categoría | Tipo SQL | Mapeo C# | Descripción |
 |-----------|----------|----------|-------------|
 | Boolean | `BOOL` | `Boolean` | 1 byte |
-| Integer | `INT` / `LONG` | `Int32` / `Int64` | 4/8 bytes |
+| Integer | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8 bytes |
 | Float | `DOUBLE` | `Double` | 8 bytes |
 | Decimal | `DECIMAL` | `Decimal` | 128 bits, precisión unificada |
-| String | `STRING(n)` / `STRING` | `String` | UTF-8, la longitud se puede especificar |
-| Binary | `BINARY(n)` / `BLOB` | `Byte[]` | La longitud se puede especificar |
+| String | `STRING` / `STRING(n)` | `String` | UTF-8; `(n)` = máximo de caracteres, validado al escribir |
+| Binary | `BINARY` / `BINARY(n)` | `Byte[]` | Longitud variable; `(n)` = máximo de bytes, validado al escribir |
 | DateTime | `DATETIME` | `DateTime` | Precisión hasta Ticks (100 nanosegundos) |
 | GeoPoint | `GEOPOINT` | Estructura personalizada | Coordenadas latitud/longitud, con consultas de distancia/polígono |
 | Vector | `VECTOR(n)` | `Single[]` | Búsqueda de vectores AI, con consultas KNN de vecino más cercano |
@@ -448,7 +448,7 @@ client.Open();
 
 // Crear una tabla KV (TTL predeterminado 7200 segundos = 2 horas)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 

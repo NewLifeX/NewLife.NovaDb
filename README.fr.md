@@ -49,11 +49,11 @@ Une base de données hybride de moyenne à grande taille implémentée en **C#**
 | Catégorie | Type SQL | Mapping C# | Description |
 |-----------|----------|------------|-------------|
 | Booléen | `BOOL` | `Boolean` | 1 octet |
-| Entier | `INT` / `LONG` | `Int32` / `Int64` | 4/8 octets |
+| Entier | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8 octets |
 | Flottant | `DOUBLE` | `Double` | 8 octets |
 | Décimal | `DECIMAL` | `Decimal` | 128 bits, précision unifiée |
-| Chaîne | `STRING(n)` / `STRING` | `String` | UTF-8, la longueur peut être spécifiée |
-| Binaire | `BINARY(n)` / `BLOB` | `Byte[]` | La longueur peut être spécifiée |
+| Chaîne | `STRING` / `STRING(n)` | `String` | UTF-8 ; `(n)` = nombre max de caractères, vérifié à l'écriture |
+| Binaire | `BINARY` / `BINARY(n)` | `Byte[]` | Longueur variable ; `(n)` = octets max, vérifié à l'écriture |
 | DateTime | `DATETIME` | `DateTime` | Précision en Ticks (100 nanosecondes) |
 | GeoPoint | `GEOPOINT` | Structure personnalisée | Coordonnées latitude/longitude, avec requêtes de distance/polygone |
 | Vecteur | `VECTOR(n)` | `Single[]` | Recherche vectorielle IA, avec requêtes de plus proches voisins KNN |
@@ -448,7 +448,7 @@ client.Open();
 
 // Créer une table KV (TTL par défaut 7200 secondes = 2 heures)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 

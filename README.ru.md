@@ -49,11 +49,11 @@
 | Категория | Тип SQL | Соответствие C# | Описание |
 |-----------|---------|-----------------|----------|
 | Boolean | `BOOL` | `Boolean` | 1 байт |
-| Integer | `INT` / `LONG` | `Int32` / `Int64` | 4/8 байт |
+| Integer | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8 байт |
 | Float | `DOUBLE` | `Double` | 8 байт |
 | Decimal | `DECIMAL` | `Decimal` | 128 бит, единая точность |
-| String | `STRING(n)` / `STRING` | `String` | UTF-8, длина может быть указана |
-| Binary | `BINARY(n)` / `BLOB` | `Byte[]` | Длина может быть указана |
+| String | `STRING` / `STRING(n)` | `String` | UTF-8; `(n)` - максимум символов, проверяется при записи |
+| Binary | `BINARY` / `BINARY(n)` | `Byte[]` | Переменная длина; `(n)` - максимум байт, проверяется при записи |
 | DateTime | `DATETIME` | `DateTime` | Точность до Ticks (100 наносекунд) |
 | GeoPoint | `GEOPOINT` | Пользовательская структура | Координаты широты/долготы, с запросами расстояния/полигона |
 | Vector | `VECTOR(n)` | `Single[]` | Поиск AI-векторов, с запросами ближайших соседей KNN |
@@ -447,7 +447,7 @@ client.Open();
 
 // Создание KV-таблицы (TTL по умолчанию 7200 секунд = 2 часа)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 

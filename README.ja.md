@@ -49,11 +49,11 @@
 | カテゴリ | SQL型 | C# マッピング | 説明 |
 |---------|-------|--------------|------|
 | Boolean | `BOOL` | `Boolean` | 1バイト |
-| Integer | `INT` / `LONG` | `Int32` / `Int64` | 4/8バイト |
+| Integer | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8バイト |
 | Float | `DOUBLE` | `Double` | 8バイト |
 | Decimal | `DECIMAL` | `Decimal` | 128ビット、統一精度 |
-| String | `STRING(n)` / `STRING` | `String` | UTF-8、長さ指定可能 |
-| Binary | `BINARY(n)` / `BLOB` | `Byte[]` | 長さ指定可能 |
+| String | `STRING` / `STRING(n)` | `String` | UTF-8；`(n)` は最大文字数（書き込み時に検証） |
+| Binary | `BINARY` / `BINARY(n)` | `Byte[]` | 可変長；`(n)` は最大バイト数（書き込み時に検証） |
 | DateTime | `DATETIME` | `DateTime` | Ticks（100ナノ秒）の精度 |
 | GeoPoint | `GEOPOINT` | カスタム構造 | 緯度/経度座標、距離/ポリゴンクエリに対応 |
 | Vector | `VECTOR(n)` | `Single[]` | AI ベクトル検索、KNN 近傍クエリに対応 |
@@ -448,7 +448,7 @@ client.Open();
 
 // KV テーブルを作成（デフォルト TTL 7200 秒 = 2 時間）
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 

@@ -47,7 +47,7 @@
 | `COUNT` | `COUNT(*)` | INT | 所有行（含 NULL） | ✅ |
 | `COUNT` | `COUNT(expr)` | INT | 非 NULL 行数 | ✅ |
 | `COUNT` | `COUNT(DISTINCT expr)` | INT | 不同非 NULL 值数 | ✅ |
-| `SUM` | `SUM(expr)` | DECIMAL/DOUBLE/LONG | 全 NULL → NULL | ✅ |
+| `SUM` | `SUM(expr)` | DECIMAL/DOUBLE/BIGINT | 全 NULL → NULL | ✅ |
 | `AVG` | `AVG(expr)` | DOUBLE | 全 NULL → NULL | ✅ |
 | `MIN` | `MIN(expr)` | 与 expr 同类 | 全 NULL → NULL | ✅ |
 | `MAX` | `MAX(expr)` | 与 expr 同类 | 全 NULL → NULL | ✅ |
@@ -94,7 +94,7 @@
 | `HOUR` | — | `HOUR(dt)` | INT | 0~23 | ✅ |
 | `MINUTE` | — | `MINUTE(dt)` | INT | 0~59 | ✅ |
 | `SECOND` | — | `SECOND(dt)` | INT | 0~59 | ✅ |
-| `DATEDIFF` | — | `DATEDIFF(dt1, dt2)` | LONG | 日期差（天），MySQL 风格 | ✅ |
+| `DATEDIFF` | — | `DATEDIFF(dt1, dt2)` | BIGINT | 日期差（天），MySQL 风格 | ✅ |
 | `DATEADD` | — | `DATEADD(part, n, dt)` | DATETIME | SQL Server 风格 | ✅ |
 | `DATE_ADD` | — | `DATE_ADD(dt, INTERVAL n unit)` | DATETIME | MySQL 风格 | ✅ |
 | `DATE_SUB` | — | `DATE_SUB(dt, INTERVAL n unit)` | DATETIME | MySQL 风格 | ✅ |

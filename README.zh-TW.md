@@ -49,11 +49,11 @@
 | 類別 | SQL 類型 | C# 對映 | 說明 |
 |------|----------|---------|------|
 | 布林 | `BOOL` | `Boolean` | 1 位元組 |
-| 整數 | `INT` / `LONG` | `Int32` / `Int64` | 4/8 位元組 |
+| 整數 | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8 位元組 |
 | 浮點 | `DOUBLE` | `Double` | 8 位元組 |
 | 定點 | `DECIMAL` | `Decimal` | 128 位元，統一精度 |
-| 字串 | `STRING(n)` / `STRING` | `String` | UTF-8，可指定長度 |
-| 二進位 | `BINARY(n)` / `BLOB` | `Byte[]` | 可指定長度 |
+| 字串 | `STRING` / `STRING(n)` | `String` | UTF-8；`(n)` 為最大字元數，寫入校驗 |
+| 二進位 | `BINARY` / `BINARY(n)` | `Byte[]` | 變長；`(n)` 為最大位元組數，寫入校驗 |
 | 時間 | `DATETIME` | `DateTime` | 精確到 Ticks（100 奈秒） |
 | 地理編碼 | `GEOPOINT` | 自訂結構 | 經緯度座標（規劃中） |
 | 向量 | `VECTOR(n)` | `Single[]` | AI 向量檢索（規劃中） |
@@ -448,7 +448,7 @@ client.Open();
 
 // 建立 KV 表（指定預設 TTL 為 7200 秒 = 2 小時）
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 

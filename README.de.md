@@ -49,11 +49,11 @@ Eine in **C#** implementierte mittelgroße bis große Hybrid-Datenbank, die auf 
 | Kategorie | SQL-Typ | C#-Mapping | Beschreibung |
 |-----------|---------|------------|--------------|
 | Boolean | `BOOL` | `Boolean` | 1 Byte |
-| Integer | `INT` / `LONG` | `Int32` / `Int64` | 4/8 Bytes |
+| Integer | `INT` / `BIGINT` | `Int32` / `Int64` | 4/8 Bytes |
 | Float | `DOUBLE` | `Double` | 8 Bytes |
 | Decimal | `DECIMAL` | `Decimal` | 128-Bit, einheitliche Präzision |
-| String | `STRING(n)` / `STRING` | `String` | UTF-8, Länge kann angegeben werden |
-| Binary | `BINARY(n)` / `BLOB` | `Byte[]` | Länge kann angegeben werden |
+| String | `STRING` / `STRING(n)` | `String` | UTF-8; `(n)` = maximale Zeichen, beim Schreiben geprüft |
+| Binary | `BINARY` / `BINARY(n)` | `Byte[]` | Variabel; `(n)` = maximale Bytes, beim Schreiben geprüft |
 | DateTime | `DATETIME` | `DateTime` | Präzision auf Ticks (100 Nanosekunden) |
 | GeoPoint | `GEOPOINT` | Benutzerdefinierte Struktur | Breiten-/Längenkoordinaten, mit Distanz-/Polygonabfragen |
 | Vector | `VECTOR(n)` | `Single[]` | AI-Vektorsuche, mit KNN-Nachbarschaftsabfragen |
@@ -448,7 +448,7 @@ client.Open();
 
 // KV-Tabelle erstellen (Standard-TTL 7200 Sekunden = 2 Stunden)
 await client.ExecuteAsync(@"CREATE TABLE IF NOT EXISTS session_cache (
-    Key STRING(200) PRIMARY KEY, Value BLOB, TTL DATETIME
+    Key STRING(200) PRIMARY KEY, Value BINARY, TTL DATETIME
 ) ENGINE=KV DEFAULT_TTL=7200");
 ```
 
