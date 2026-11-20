@@ -49,6 +49,8 @@ public enum SqlStatementType
     PurgeBinlogs,
     /// <summary>FLUSH BINLOGS</summary>
     FlushBinlogs,
+    /// <summary>RENAME TABLE</summary>
+    RenameTable,
 }
 
 /// <summary>SHOW 命令子类型</summary>
@@ -284,12 +286,16 @@ public enum AlterTableAction
     AddColumn,
     /// <summary>修改列</summary>
     ModifyColumn,
+    /// <summary>重命名并修改列（MySQL CHANGE [COLUMN]）</summary>
+    ChangeColumn,
     /// <summary>删除列</summary>
     DropColumn,
     /// <summary>添加表注释</summary>
     AddTableComment,
     /// <summary>添加列注释</summary>
-    AddColumnComment
+    AddColumnComment,
+    /// <summary>重命名表（ALTER TABLE ... RENAME [TO|AS]）</summary>
+    RenameTable
 }
 
 /// <summary>ALTER TABLE 语句</summary>
@@ -307,11 +313,24 @@ public class AlterTableStatement : SqlStatement
     /// <summary>列定义（ADD COLUMN / MODIFY COLUMN 时使用）</summary>
     public SqlColumnDef? ColumnDef { get; set; }
 
-    /// <summary>列名（DROP COLUMN 时使用）</summary>
+    /// <summary>列名（DROP COLUMN 时为待删除列；CHANGE COLUMN 时为原列名）</summary>
     public String? ColumnName { get; set; }
+
+    /// <summary>新表名（RENAME TABLE 时使用）</summary>
+    public String? NewTableName { get; set; }
 
     /// <summary>注释内容</summary>
     public String? Comment { get; set; }
+}
+
+/// <summary>RENAME TABLE 语句，支持一次重命名多张表（MySQL 兼容）</summary>
+public class RenameTableStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.RenameTable;
+
+    /// <summary>重命名列表：旧表名 → 新表名，按书写顺序依次执行</summary>
+    public List<(String From, String To)> Items { get; set; } = [];
 }
 
 /// <summary>INSERT 语句</summary>
@@ -451,6 +470,9 @@ public class SelectStatement : SqlStatement
 
     /// <summary>OFFSET</summary>
     public Int32? OffsetValue { get; set; }
+
+    /// <summary>是否带行锁提示（FOR UPDATE / FOR SHARE / LOCK IN SHARE MODE）。MVCC 下仅记录语法，不加锁</summary>
+    public Boolean ForUpdate { get; set; }
 
     /// <summary>是否为 SELECT *</summary>
     public Boolean IsSelectAll => Columns.Count == 1 && Columns[0].IsWildcard;

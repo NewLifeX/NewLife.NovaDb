@@ -44,6 +44,7 @@ public class SqlParser
             _ when String.Equals(token.Value, "REPLACE", StringComparison.OrdinalIgnoreCase) => ParseReplace(),
             _ when String.Equals(token.Value, "PURGE", StringComparison.OrdinalIgnoreCase) => ParsePurgeBinlogs(),
             _ when String.Equals(token.Value, "FLUSH", StringComparison.OrdinalIgnoreCase) => ParseFlushBinlogs(),
+            _ when String.Equals(token.Value, "RENAME", StringComparison.OrdinalIgnoreCase) => ParseRenameTable(),
             _ => throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}")
         };
 
@@ -390,7 +391,7 @@ public class SqlParser
             stmt.IfNotExists = true;
         }
 
-        stmt.TableName = ExpectIdentifier();
+        stmt.TableName = ParseTableName();
         Expect(SqlTokenType.LeftParen);
 
         // 解析列定义
@@ -543,7 +544,7 @@ public class SqlParser
         Expect(SqlTokenType.Index);
         stmt.IndexName = ExpectIdentifier();
         Expect(SqlTokenType.On);
-        stmt.TableName = ExpectIdentifier();
+        stmt.TableName = ParseTableName();
         Expect(SqlTokenType.LeftParen);
 
         do
@@ -659,7 +660,7 @@ public class SqlParser
             stmt.IfExists = true;
         }
 
-        stmt.TableName = ExpectIdentifier();
+        stmt.TableName = ParseTableName();
         return stmt;
     }
 
@@ -673,7 +674,7 @@ public class SqlParser
         };
 
         Expect(SqlTokenType.On);
-        stmt.TableName = ExpectIdentifier();
+        stmt.TableName = ParseTableName();
         return stmt;
     }
 
@@ -701,7 +702,7 @@ public class SqlParser
 
         var stmt = new AlterTableStatement
         {
-            TableName = ExpectIdentifier()
+            TableName = ParseTableName()
         };
 
         var next = Peek();
@@ -730,6 +731,25 @@ public class SqlParser
             stmt.Action = AlterTableAction.DropColumn;
             stmt.ColumnName = ExpectIdentifier();
         }
+        // ALTER TABLE t CHANGE [COLUMN] old_col new_col_def
+        else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("CHANGE"))
+        {
+            Advance();
+            TryConsume(SqlTokenType.Column);
+            stmt.Action = AlterTableAction.ChangeColumn;
+            stmt.ColumnName = ExpectIdentifier();
+            stmt.ColumnDef = ParseColumnDef();
+        }
+        // ALTER TABLE t RENAME [TO|AS] new_name
+        else if (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("RENAME"))
+        {
+            Advance();
+            if (Peek().Type == SqlTokenType.As ||
+                (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("TO")))
+                Advance();
+            stmt.Action = AlterTableAction.RenameTable;
+            stmt.NewTableName = ParseTableName();
+        }
         // ALTER TABLE t COMMENT 'xxx' (表注释)
         else if (next.Type == SqlTokenType.Comment)
         {
@@ -740,8 +760,36 @@ public class SqlParser
         }
         else
         {
-            throw SyntaxError($"Expected ADD, MODIFY, DROP or COMMENT after ALTER TABLE, got '{next.Value}'");
+            throw SyntaxError($"Expected ADD, MODIFY, CHANGE, DROP, COMMENT or RENAME after ALTER TABLE, got '{next.Value}'");
         }
+
+        return stmt;
+    }
+
+    /// <summary>解析 RENAME TABLE old TO new [, old2 TO new2]</summary>
+    /// <returns>重命名语句</returns>
+    private RenameTableStatement ParseRenameTable()
+    {
+        // RENAME 未纳入 SqlTokenType（避免与同名列冲突），按值判断
+        var token = Advance();
+        if (!String.Equals(token.Value, "RENAME", StringComparison.OrdinalIgnoreCase))
+            throw SyntaxError($"Expected 'RENAME' but got '{token.Value}' at position {token.Position}");
+
+        Expect(SqlTokenType.Table);
+
+        var stmt = new RenameTableStatement();
+        do
+        {
+            var from = ParseTableName();
+            // TO 未纳入关键字表，按值消费
+            if (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("TO"))
+                Advance();
+            else
+                throw SyntaxError($"Expected TO after '{from}', got '{Peek().Value}' at position {Peek().Position}");
+
+            stmt.Items.Add((from, ParseTableName()));
+        }
+        while (TryConsume(SqlTokenType.Comma));
 
         return stmt;
     }
@@ -753,7 +801,7 @@ public class SqlParser
 
         return new TruncateTableStatement
         {
-            TableName = ExpectIdentifier()
+            TableName = ParseTableName()
         };
     }
 
@@ -769,7 +817,7 @@ public class SqlParser
             throw SyntaxError($"Expected 'REPLACE' but got '{token.Value}' at position {token.Position}");
         Expect(SqlTokenType.Into);
 
-        var tableName = ExpectIdentifier();
+        var tableName = ParseTableName();
 
         // 可选的列名列表
         List<String>? columns = null;
@@ -827,7 +875,7 @@ public class SqlParser
         }
         Expect(SqlTokenType.Into);
 
-        var tableName = ExpectIdentifier();
+        var tableName = ParseTableName();
 
         // 可选的列名列表
         List<String>? columns = null;
@@ -907,7 +955,7 @@ public class SqlParser
         Expect(SqlTokenType.Merge);
         Expect(SqlTokenType.Into);
 
-        var tableName = ExpectIdentifier();
+        var tableName = ParseTableName();
 
         // 可选的列名列表
         List<String>? columns = null;
@@ -959,7 +1007,7 @@ public class SqlParser
 
         var stmt = new UpdateStatement
         {
-            TableName = ExpectIdentifier()
+            TableName = ParseTableName()
         };
 
         Expect(SqlTokenType.Set);
@@ -990,7 +1038,7 @@ public class SqlParser
 
         var stmt = new DeleteStatement
         {
-            TableName = ExpectIdentifier()
+            TableName = ParseTableName()
         };
 
         if (Peek().Type == SqlTokenType.Where)
@@ -1031,26 +1079,19 @@ public class SqlParser
         if (Peek().Type == SqlTokenType.From)
         {
             Advance();
-            stmt.TableName = ExpectIdentifier();
-
-            // 支持点号分隔的表名（如 _sys.tables）
-            while (Peek().Type == SqlTokenType.Dot)
-            {
-                Advance();
-                stmt.TableName += "." + ExpectIdentifier();
-            }
+            stmt.TableName = ParseTableName();
 
             // 可选表别名
             if (Peek().Type == SqlTokenType.As)
             {
                 Advance();
-                stmt.TableAlias = ExpectIdentifier();
+                stmt.TableAlias = ExpectAlias();
             }
             else if (Peek().Type == SqlTokenType.Identifier)
             {
-                // 无 AS 的表别名（需排除后续关键字）
+                // 无 AS 的表别名（排除行锁提示，避免 LOCK/FOR 被当成别名）
                 var next = Peek();
-                if (!IsClauseKeyword(next.Type))
+                if (!IsClauseKeyword(next.Type) && !IsLockingHintAhead())
                     stmt.TableAlias = ExpectIdentifier();
             }
 
@@ -1139,10 +1180,19 @@ public class SqlParser
         }
 
         // LIMIT
+        // LIMIT count [OFFSET offset] 或 MySQL 逗号分页 LIMIT offset,count
         if (Peek().Type == SqlTokenType.Limit)
         {
             Advance();
-            stmt.Limit = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            var first = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            if (Peek().Type == SqlTokenType.Comma)
+            {
+                Advance();
+                stmt.OffsetValue = first;
+                stmt.Limit = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            }
+            else
+                stmt.Limit = first;
         }
 
         // OFFSET
@@ -1152,7 +1202,82 @@ public class SqlParser
             stmt.OffsetValue = Int32.Parse(Expect(SqlTokenType.IntegerLiteral).Value, NumberStyles.Integer, CultureInfo.InvariantCulture);
         }
 
+        // 行锁提示：语法接受，MVCC Read Committed 不提供悲观锁
+        ParseLockingClause(stmt);
+
         return stmt;
+    }
+
+    /// <summary>解析行锁提示（FOR UPDATE / FOR SHARE / LOCK IN SHARE MODE）</summary>
+    /// <remarks>仅记录语法以兼容 ORM 自动追加的锁定子句，执行层不加行锁</remarks>
+    /// <param name="stmt">查询语句</param>
+    private void ParseLockingClause(SelectStatement stmt)
+    {
+        var token = Peek();
+        if (token.Type != SqlTokenType.Identifier) return;
+
+        if (token.Value.EqualIgnoreCase("FOR"))
+        {
+            if (_pos + 1 >= _tokens.Count) return;
+
+            // UPDATE 是关键字 token，SHARE 是普通标识符
+            var next = _tokens[_pos + 1];
+            if (next.Type != SqlTokenType.Update &&
+                (next.Type != SqlTokenType.Identifier || !next.Value.EqualIgnoreCase("SHARE")))
+                return;
+
+            Advance();
+            Advance();
+        }
+        else if (token.Value.EqualIgnoreCase("LOCK"))
+        {
+            // LOCK IN SHARE MODE
+            if (_pos + 2 >= _tokens.Count) return;
+            if (_tokens[_pos + 1].Type != SqlTokenType.In) return;
+            if (_tokens[_pos + 2].Type != SqlTokenType.Identifier || !_tokens[_pos + 2].Value.EqualIgnoreCase("SHARE")) return;
+
+            Advance();
+            Advance();
+            Advance();
+            if (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("MODE")) Advance();
+        }
+        else
+            return;
+
+        stmt.ForUpdate = true;
+
+        // 可选 NOWAIT / SKIP LOCKED
+        var tail = Peek();
+        if (tail.Type != SqlTokenType.Identifier) return;
+
+        if (tail.Value.EqualIgnoreCase("NOWAIT"))
+            Advance();
+        else if (tail.Value.EqualIgnoreCase("SKIP"))
+        {
+            Advance();
+            if (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("LOCKED")) Advance();
+        }
+    }
+
+    /// <summary>当前位置是否紧跟行锁提示，避免把 FOR / LOCK 误解析成表别名</summary>
+    /// <returns>是否为行锁提示</returns>
+    private Boolean IsLockingHintAhead()
+    {
+        var token = Peek();
+        if (token.Type != SqlTokenType.Identifier) return false;
+
+        var next = PeekAt(1);
+        if (token.Value.EqualIgnoreCase("FOR"))
+            return next.Type == SqlTokenType.Update ||
+                (next.Type == SqlTokenType.Identifier && next.Value.EqualIgnoreCase("SHARE"));
+
+        if (token.Value.EqualIgnoreCase("LOCK") && next.Type == SqlTokenType.In)
+        {
+            var next2 = PeekAt(2);
+            return next2.Type == SqlTokenType.Identifier && next2.Value.EqualIgnoreCase("SHARE");
+        }
+
+        return false;
     }
 
     private SelectColumn ParseSelectColumn()
@@ -1171,16 +1296,16 @@ public class SqlParser
             col.Expression = ParseExpression();
         }
 
-        // 别名
+        // 别名（AS 后可跟字符串字面量，兼容系统视图内省 SQL）
         if (Peek().Type == SqlTokenType.As)
         {
             Advance();
-            col.Alias = ExpectIdentifier();
+            col.Alias = ExpectAlias();
         }
-        else if (Peek().Type == SqlTokenType.Identifier)
+        else if (Peek().Type == SqlTokenType.Identifier || Peek().Type == SqlTokenType.StringLiteral)
         {
             // 无 AS 关键字的别名
-            col.Alias = ExpectIdentifier();
+            col.Alias = ExpectAlias();
         }
 
         return col;
@@ -1225,14 +1350,14 @@ public class SqlParser
         var clause = new JoinClause
         {
             Type = joinType,
-            TableName = ExpectIdentifier()
+            TableName = ParseTableName()
         };
 
         // 可选别名
         if (Peek().Type == SqlTokenType.As)
         {
             Advance();
-            clause.Alias = ExpectIdentifier();
+            clause.Alias = ExpectAlias();
         }
         else if (Peek().Type == SqlTokenType.Identifier && !IsClauseKeyword(Peek().Type) && Peek().Type != SqlTokenType.On)
         {
@@ -1554,14 +1679,8 @@ public class SqlParser
                 {
                     return ParseScalarFunction(token.Value);
                 }
-                // 检查表名前缀 table.column
-                if (Peek().Type == SqlTokenType.Dot)
-                {
-                    Advance();
-                    var colName = ExpectIdentifier();
-                    return new ColumnRefExpression { TablePrefix = token.Value, ColumnName = colName };
-                }
-                return new ColumnRefExpression { ColumnName = token.Value };
+                // 表名前缀 table.column 或 库.table.column
+                return ParseColumnRef(token.Value);
 
             default:
                 // 软关键字（STATUS/COLUMNS/FULL/DATABASES 等）在表达式上下文中作为列名
@@ -1570,16 +1689,29 @@ public class SqlParser
                     Advance();
                     if (Peek().Type == SqlTokenType.LeftParen)
                         return ParseScalarFunction(token.Value);
-                    if (Peek().Type == SqlTokenType.Dot)
-                    {
-                        Advance();
-                        var colName = ExpectIdentifier();
-                        return new ColumnRefExpression { TablePrefix = token.Value, ColumnName = colName };
-                    }
-                    return new ColumnRefExpression { ColumnName = token.Value };
+                    return ParseColumnRef(token.Value);
                 }
                 throw SyntaxError($"Unexpected token '{token.Value}' at position {token.Position}");
         }
+    }
+
+    /// <summary>解析列引用，支持 table.column 与 库.table.column 两种限定写法</summary>
+    /// <param name="name">已消费的首段名称</param>
+    /// <returns>列引用表达式</returns>
+    private ColumnRefExpression ParseColumnRef(String name)
+    {
+        if (Peek().Type != SqlTokenType.Dot) return new ColumnRefExpression { ColumnName = name };
+
+        Advance();
+        var second = ExpectIdentifier();
+        if (Peek().Type == SqlTokenType.Dot)
+        {
+            // 库.table.column：单库模型丢弃库限定符
+            Advance();
+            return new ColumnRefExpression { TablePrefix = second, ColumnName = ExpectIdentifier() };
+        }
+
+        return new ColumnRefExpression { TablePrefix = name, ColumnName = second };
     }
 
     /// <summary>解析标量函数调用</summary>
@@ -1741,6 +1873,50 @@ public class SqlParser
 
         Advance();
         return token.Value;
+    }
+
+    /// <summary>解析表名，兼容 `库`.`表` 与 .`表` 写法</summary>
+    /// <remarks>单库模型：丢弃库限定符只取表名；_sys. 与 information_schema. 系统视图前缀原样保留</remarks>
+    /// <returns>表名</returns>
+    private String ParseTableName()
+    {
+        // 容忍空的库限定符，如 .`t`
+        if (Peek().Type == SqlTokenType.Dot)
+        {
+            Advance();
+            return ExpectIdentifier();
+        }
+
+        var name = ExpectIdentifier();
+        if (Peek().Type != SqlTokenType.Dot) return name;
+
+        var parts = new List<String> { name };
+        while (Peek().Type == SqlTokenType.Dot)
+        {
+            Advance();
+            parts.Add(ExpectIdentifier());
+        }
+
+        // 系统视图两段名保持原样
+        if (parts.Count == 2 &&
+            (parts[0].EqualIgnoreCase("_sys") || parts[0].EqualIgnoreCase("information_schema")))
+            return parts[0] + "." + parts[1];
+
+        return parts[^1];
+    }
+
+    /// <summary>解析列别名，兼容 `AS 'xxx'` 字符串字面量写法（FreeSql 等 ORM 的系统视图内省 SQL）</summary>
+    /// <returns>别名</returns>
+    private String ExpectAlias()
+    {
+        var token = Peek();
+        if (token.Type == SqlTokenType.StringLiteral)
+        {
+            Advance();
+            return token.Value;
+        }
+
+        return ExpectIdentifier();
     }
 
     /// <summary>判断关键字是否可作为标识符（软关键字）</summary>

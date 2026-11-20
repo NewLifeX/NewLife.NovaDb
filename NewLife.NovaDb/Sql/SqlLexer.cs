@@ -213,7 +213,8 @@ public class SqlLexer
 
         while (_pos < _sql.Length)
         {
-            if (_sql[_pos] == '\'')
+            var ch = _sql[_pos];
+            if (ch == '\'')
             {
                 // 处理转义的单引号
                 if (_pos + 1 < _sql.Length && _sql[_pos + 1] == '\'')
@@ -226,7 +227,32 @@ public class SqlLexer
                 _pos++; // skip closing quote
                 return new SqlToken(SqlTokenType.StringLiteral, sb.ToString(), start);
             }
-            sb.Append(_sql[_pos]);
+
+            // 反斜杠转义：识别标准序列，未知序列原样保留（保护 Windows 路径等含单个反斜杠的字面量）
+            if (ch == '\\' && _pos + 1 < _sql.Length)
+            {
+                var next = _sql[_pos + 1];
+                switch (next)
+                {
+                    case '\\': sb.Append('\\'); _pos += 2; continue;
+                    case '\'': sb.Append('\''); _pos += 2; continue;
+                    case '"': sb.Append('"'); _pos += 2; continue;
+                    case 'n': sb.Append('\n'); _pos += 2; continue;
+                    case 'r': sb.Append('\r'); _pos += 2; continue;
+                    case 't': sb.Append('\t'); _pos += 2; continue;
+                    case '0': sb.Append('\0'); _pos += 2; continue;
+                    case 'b': sb.Append('\b'); _pos += 2; continue;
+                    case 'Z': sb.Append('\u001A'); _pos += 2; continue;
+                    case '%':
+                    case '_':
+                        // LIKE 通配符转义：保留反斜杠，由 LIKE 匹配器按字面量处理
+                        sb.Append(ch).Append(next);
+                        _pos += 2;
+                        continue;
+                }
+            }
+
+            sb.Append(ch);
             _pos++;
         }
 
