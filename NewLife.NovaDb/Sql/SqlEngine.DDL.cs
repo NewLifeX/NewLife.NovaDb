@@ -40,7 +40,31 @@ partial class SqlEngine
                 schema.AddColumn(column);
             }
 
+            // 表内索引（MySQL CREATE TABLE 内联 UNIQUE KEY / KEY）
             var table = new NovaTable(schema, _dbPath, _options, _txManager);
+
+            // 表对象创建后再登记索引，避免构造函数的索引恢复流程提前注册同名索引
+            if (stmt.Indexes.Count > 0)
+            {
+                var tx = _txManager.BeginTransaction();
+                try
+                {
+                    foreach (var idx in stmt.Indexes)
+                    {
+                        var indexDef = new IndexDefinition(idx.Name, [.. idx.Columns], idx.IsUnique);
+                        schema.AddIndex(indexDef);
+                        table.CreateSecondaryIndex(indexDef, tx);
+                    }
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    table.Dispose();
+                    new TableFileManager(_dbPath, stmt.TableName, _options).DeleteAllFiles();
+                    throw;
+                }
+            }
 
             _schemas[stmt.TableName] = schema;
             _tables[stmt.TableName] = table;

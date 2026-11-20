@@ -405,9 +405,24 @@ public class SqlParser
                 Expect(SqlTokenType.Key);
                 Expect(SqlTokenType.LeftParen);
                 primaryKeyColumn = ExpectIdentifier();
+                if (Peek().Type == SqlTokenType.Comma)
+                    throw new NovaException(ErrorCode.NotSupported, "Composite primary key is not supported, use a single-column surrogate key instead");
                 Expect(SqlTokenType.RightParen);
                 continue;
             }
+
+            // 表内索引：UNIQUE [KEY|INDEX] [name] (cols) / KEY|INDEX [name] (cols)
+            if (Peek().Type is SqlTokenType.Unique or SqlTokenType.Key or SqlTokenType.Index)
+            {
+                stmt.Indexes.Add(ParseTableIndexDef());
+                continue;
+            }
+
+            // 外键与约束不支持，给出明确提示而不是含糊的语法错误
+            if (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("FOREIGN"))
+                throw new NovaException(ErrorCode.NotSupported, "FOREIGN KEY is not supported, enforce referential integrity in the application layer");
+            if (Peek().Type == SqlTokenType.Identifier && Peek().Value.EqualIgnoreCase("CONSTRAINT"))
+                throw new NovaException(ErrorCode.NotSupported, "Named CONSTRAINT is not supported");
 
             var colDef = ParseColumnDef();
             stmt.Columns.Add(colDef);
@@ -435,6 +450,34 @@ public class SqlParser
         return stmt;
     }
 
+    /// <summary>解析表内索引定义</summary>
+    /// <remarks>支持 UNIQUE [KEY|INDEX] [name] (cols) 与 KEY|INDEX [name] (cols)，未命名时取首列名（MySQL 约定）</remarks>
+    /// <returns>索引定义</returns>
+    private SqlIndexDef ParseTableIndexDef()
+    {
+        var index = new SqlIndexDef { IsUnique = TryConsume(SqlTokenType.Unique) };
+
+        // 可选 KEY / INDEX 关键字
+        if (Peek().Type == SqlTokenType.Key || Peek().Type == SqlTokenType.Index)
+            Advance();
+
+        // 可选索引名
+        if (Peek().Type != SqlTokenType.LeftParen)
+            index.Name = ExpectIdentifier();
+
+        Expect(SqlTokenType.LeftParen);
+        do
+        {
+            index.Columns.Add(ExpectIdentifier());
+        }
+        while (TryConsume(SqlTokenType.Comma));
+        Expect(SqlTokenType.RightParen);
+
+        if (index.Name.IsNullOrEmpty()) index.Name = index.Columns[0];
+
+        return index;
+    }
+
     private SqlColumnDef ParseColumnDef()
     {
         var col = new SqlColumnDef
@@ -442,7 +485,6 @@ public class SqlParser
             Name = ExpectIdentifier(),
             DataTypeName = ExpectIdentifier()
         };
-
         // 跳过可选的类型长度参数，如 VARCHAR(255)、DECIMAL(10,2)
         if (Peek().Type == SqlTokenType.LeftParen)
         {

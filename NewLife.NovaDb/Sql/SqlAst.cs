@@ -159,8 +159,24 @@ public class CreateTableStatement : SqlStatement
     /// <summary>存储引擎名称（默认 Nova）</summary>
     public String? EngineName { get; set; }
 
+    /// <summary>表内索引定义（MySQL CREATE TABLE 中的 UNIQUE KEY / KEY / INDEX）</summary>
+    public List<SqlIndexDef> Indexes { get; set; } = [];
+
     /// <summary>表注释</summary>
     public String? Comment { get; set; }
+}
+
+/// <summary>SQL 索引定义（表内索引约束）</summary>
+public class SqlIndexDef
+{
+    /// <summary>索引名称，未指定时取首列名（MySQL 约定）</summary>
+    public String Name { get; set; } = String.Empty;
+
+    /// <summary>索引列</summary>
+    public List<String> Columns { get; set; } = [];
+
+    /// <summary>是否唯一索引</summary>
+    public Boolean IsUnique { get; set; }
 }
 
 /// <summary>SQL 列定义</summary>
