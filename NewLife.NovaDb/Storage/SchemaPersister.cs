@@ -22,6 +22,7 @@ public static class SchemaPersister
         public Boolean IsAutoIncrement { get; set; }
         public Object? DefaultValue { get; set; }
         public String? Comment { get; set; }
+        public Int32 Length { get; set; }
     }
 
     /// <summary>索引定义的序列化模型</summary>
@@ -82,6 +83,7 @@ public static class SchemaPersister
                 IsAutoIncrement = c.IsAutoIncrement,
                 DefaultValue = c.DefaultValue,
                 Comment = c.Comment,
+                Length = c.Length,
             })],
             Indexes = [.. schema.Indexes.Select(i => new IndexDto
             {
@@ -139,7 +141,7 @@ public static class SchemaPersister
 
                 foreach (var col in dto.Columns)
                 {
-                    var column = new ColumnDefinition(col.Name, col.DataType, col.Nullable, col.IsPrimaryKey)
+                    var column = new ColumnDefinition(col.Name, col.DataType, col.Nullable, col.IsPrimaryKey, col.Length)
                     {
                         IsAutoIncrement = col.IsAutoIncrement,
                         DefaultValue = col.DefaultValue,

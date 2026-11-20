@@ -53,17 +53,22 @@ public class ColumnDefinition
     /// <summary>默认值</summary>
     public Object? DefaultValue { get; set; }
 
+    /// <summary>长度约束。字符串为最大字符数，二进制为最大字节数，向量为维度；0 表示未声明</summary>
+    public Int32 Length { get; set; }
+
     /// <summary>创建列定义</summary>
     /// <param name="name">列名</param>
     /// <param name="dataType">数据类型</param>
     /// <param name="nullable">是否允许为空</param>
     /// <param name="isPrimaryKey">是否为主键</param>
-    public ColumnDefinition(String name, DataType dataType, Boolean nullable = true, Boolean isPrimaryKey = false)
+    /// <param name="length">长度约束，0 表示未声明</param>
+    public ColumnDefinition(String name, DataType dataType, Boolean nullable = true, Boolean isPrimaryKey = false, Int32 length = 0)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         DataType = dataType;
         Nullable = nullable;
         IsPrimaryKey = isPrimaryKey;
+        Length = length;
     }
 }
 
@@ -180,7 +185,8 @@ public class TableSchema
     /// <param name="newDataType">新数据类型</param>
     /// <param name="nullable">是否允许为空</param>
     /// <param name="comment">列注释</param>
-    public void ModifyColumn(String columnName, DataType newDataType, Boolean nullable, String? comment = null)
+    /// <param name="length">长度约束，0 表示未声明</param>
+    public void ModifyColumn(String columnName, DataType newDataType, Boolean nullable, String? comment = null, Int32 length = 0)
     {
         if (columnName == null) throw new ArgumentNullException(nameof(columnName));
 
@@ -190,6 +196,7 @@ public class TableSchema
         var column = _columns[index];
         column.DataType = newDataType;
         column.Nullable = nullable;
+        column.Length = length;
         if (comment != null)
             column.Comment = comment;
     }

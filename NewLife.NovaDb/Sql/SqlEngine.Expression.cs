@@ -861,17 +861,10 @@ partial class SqlEngine
     {
         if (value == null) return null;
 
-        return typeName.ToUpperInvariant() switch
-        {
-            "INT" or "INT32" or "INTEGER" => Convert.ToInt32(value, CultureInfo.InvariantCulture),
-            "BIGINT" or "INT64" or "LONG" => Convert.ToInt64(value, CultureInfo.InvariantCulture),
-            "FLOAT" or "DOUBLE" or "REAL" => Convert.ToDouble(value, CultureInfo.InvariantCulture),
-            "DECIMAL" or "NUMERIC" => Convert.ToDecimal(value, CultureInfo.InvariantCulture),
-            "VARCHAR" or "TEXT" or "STRING" or "NVARCHAR" or "CHAR" => Convert.ToString(value, CultureInfo.InvariantCulture),
-            "BOOL" or "BOOLEAN" or "BIT" => ToBooleanValue(value),
-            "DATETIME" or "TIMESTAMP" or "DATE" => Convert.ToDateTime(value, CultureInfo.InvariantCulture),
-            _ => throw new NovaException(ErrorCode.InvalidArgument, "Unknown CAST target type: {0}", typeName)
-        };
+        if (!DataTypeNames.TryParse(typeName, out var targetType))
+            throw new NovaException(ErrorCode.InvalidArgument, "Unknown CAST target type: {0}", typeName);
+
+        return ConvertValue(value, targetType);
     }
 
     /// <summary>计算 IN / NOT IN 表达式</summary>

@@ -204,23 +204,12 @@ partial class SqlEngine
         return schema;
     }
 
-    private static DataType ParseDataType(String typeName)
-    {
-        return typeName.ToUpperInvariant() switch
-        {
-            "BOOL" or "BOOLEAN" or "BIT" => DataType.Boolean,
-            "TINYINT" or "SMALLINT" or "MEDIUMINT" or "INT" or "INT32" or "INTEGER" => DataType.Int32,
-            "BIGINT" or "INT64" or "LONG" => DataType.Int64,
-            "FLOAT" or "DOUBLE" or "REAL" => DataType.Double,
-            "DECIMAL" or "NUMERIC" => DataType.Decimal,
-            "CHAR" or "NCHAR" or "VARCHAR" or "NVARCHAR" or "TEXT" or "TINYTEXT" or "MEDIUMTEXT" or "LONGTEXT" or "STRING" or "JSON" or "ENUM" or "SET" => DataType.String,
-            "BINARY" or "VARBINARY" or "BYTES" or "BLOB" or "TINYBLOB" or "MEDIUMBLOB" or "LONGBLOB" => DataType.Binary,
-            "DATETIME" or "TIMESTAMP" or "DATE" or "TIME" or "YEAR" => DataType.DateTime,
-            "GEOPOINT" => DataType.GeoPoint,
-            "VECTOR" => DataType.Vector,
-            _ => throw new NovaException(ErrorCode.SyntaxError, "Unknown data type: {0}", typeName)
-        };
-    }
+    /// <summary>取列长度声明。只有字符串、二进制、向量保留长度，其余类型的括号参数（显示宽度、精度标度）忽略</summary>
+    /// <param name="colDef">列定义</param>
+    /// <param name="dataType">已解析的数据类型</param>
+    /// <returns>长度，0 表示未声明</returns>
+    private static Int32 GetColumnLength(SqlColumnDef colDef, DataType dataType) =>
+        colDef.Length > 0 && DataTypeNames.SupportsLength(dataType) ? colDef.Length : 0;
 
     private static void ConvertRowTypes(Object?[] row, TableSchema schema)
     {
@@ -230,6 +219,27 @@ partial class SqlEngine
 
             var colDef = schema.Columns[i];
             row[i] = ConvertValue(row[i]!, colDef.DataType);
+
+            ValidateColumnValue(row[i]!, colDef);
+        }
+    }
+
+    /// <summary>校验列长度约束。字符串按字符数，二进制按字节数，向量按维度</summary>
+    /// <param name="value">已转换的值</param>
+    /// <param name="colDef">列定义</param>
+    private static void ValidateColumnValue(Object value, ColumnDefinition colDef)
+    {
+        var max = colDef.Length;
+        if (max <= 0) return;
+
+        switch (colDef.DataType)
+        {
+            case DataType.String when value is String str && str.Length > max:
+                throw new NovaException(ErrorCode.ConstraintViolation, "Value too long for column '{0}': {1} > {2}", colDef.Name, str.Length, max);
+            case DataType.Binary when value is Byte[] buf && buf.Length > max:
+                throw new NovaException(ErrorCode.ConstraintViolation, "Value too long for column '{0}': {1} > {2}", colDef.Name, buf.Length, max);
+            case DataType.Vector when value is Single[] vec && vec.Length != max:
+                throw new NovaException(ErrorCode.ConstraintViolation, "Vector dimensions mismatch: {0} vs {1}", vec.Length, max);
         }
     }
 

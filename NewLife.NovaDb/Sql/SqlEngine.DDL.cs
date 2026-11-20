@@ -29,8 +29,8 @@ partial class SqlEngine
 
             foreach (var colDef in stmt.Columns)
             {
-                var dataType = ParseDataType(colDef.DataTypeName);
-                var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey)
+                var dataType = DataTypeNames.Parse(colDef.DataTypeName);
+                var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey, GetColumnLength(colDef, dataType))
                 {
                     IsAutoIncrement = colDef.IsAutoIncrement,
                     DefaultValue = colDef.DefaultValue
@@ -215,8 +215,8 @@ partial class SqlEngine
                 case AlterTableAction.AddColumn:
                     {
                         var colDef = stmt.ColumnDef!;
-                        var dataType = ParseDataType(colDef.DataTypeName);
-                        var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey)
+                        var dataType = DataTypeNames.Parse(colDef.DataTypeName);
+                        var column = new ColumnDefinition(colDef.Name, dataType, !colDef.NotNull, colDef.IsPrimaryKey, GetColumnLength(colDef, dataType))
                         {
                             IsAutoIncrement = colDef.IsAutoIncrement,
                             DefaultValue = colDef.DefaultValue
@@ -230,17 +230,17 @@ partial class SqlEngine
                 case AlterTableAction.ModifyColumn:
                     {
                         var colDef = stmt.ColumnDef!;
-                        var dataType = ParseDataType(colDef.DataTypeName);
-                        schema.ModifyColumn(colDef.Name, dataType, !colDef.NotNull, colDef.Comment);
+                        var dataType = DataTypeNames.Parse(colDef.DataTypeName);
+                        schema.ModifyColumn(colDef.Name, dataType, !colDef.NotNull, colDef.Comment, GetColumnLength(colDef, dataType));
                         break;
                     }
 
                 case AlterTableAction.ChangeColumn:
                     {
                         var colDef = stmt.ColumnDef!;
-                        var dataType = ParseDataType(colDef.DataTypeName);
+                        var dataType = DataTypeNames.Parse(colDef.DataTypeName);
                         schema.RenameColumn(stmt.ColumnName!, colDef.Name);
-                        schema.ModifyColumn(colDef.Name, dataType, !colDef.NotNull, colDef.Comment);
+                        schema.ModifyColumn(colDef.Name, dataType, !colDef.NotNull, colDef.Comment, GetColumnLength(colDef, dataType));
                         break;
                     }
 

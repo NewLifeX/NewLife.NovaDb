@@ -509,12 +509,24 @@ public class SqlParser
             Name = ExpectIdentifier(),
             DataTypeName = ExpectIdentifier()
         };
-        // 跳过可选的类型长度参数，如 VARCHAR(255)、DECIMAL(10,2)
+        // 解析可选的类型参数，如 VARCHAR(255)、DECIMAL(10,2)、VECTOR(768)
         if (Peek().Type == SqlTokenType.LeftParen)
         {
             Advance();
+            var count = 0;
             while (Peek().Type != SqlTokenType.RightParen && Peek().Type != SqlTokenType.Eof)
+            {
+                if (Peek().Type == SqlTokenType.IntegerLiteral &&
+                    Int32.TryParse(Peek().Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+                {
+                    if (count == 0)
+                        col.Length = number;
+                    else if (count == 1)
+                        col.Scale = number;
+                    count++;
+                }
                 Advance();
+            }
             Expect(SqlTokenType.RightParen);
         }
 

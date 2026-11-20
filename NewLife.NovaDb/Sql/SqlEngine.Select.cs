@@ -205,7 +205,7 @@ partial class SqlEngine
                 {
                     rows.Add(
                     [
-                        tableName, col.Name, col.DataType.ToString(), col.Nullable, col.IsPrimaryKey, col.Ordinal
+                        tableName, col.Name, DataTypeNames.Format(col.DataType, col.Length), col.Nullable, col.IsPrimaryKey, col.Ordinal
                     ]);
                 }
             }
@@ -442,7 +442,7 @@ partial class SqlEngine
             for (var i = 0; i < ts.Columns.Count; i++)
             {
                 var col = ts.Columns[i];
-                var (dataType, columnType, precision, scale, maxLength) = MapToMySqlType(col.DataType);
+                var (dataType, columnType, precision, scale, maxLength) = MapToSchemaType(col);
                 rows.Add(
                 [
                     dbName,                                                 // TABLE_SCHEMA
@@ -499,23 +499,25 @@ partial class SqlEngine
         return (schema, rows);
     }
 
-    /// <summary>将 NovaDb 数据类型映射为 MySQL 兼容的元数据描述</summary>
-    private static (String DataType, String ColumnType, Int32? Precision, Int32? Scale, Int64? MaxLength) MapToMySqlType(DataType type)
+    /// <summary>把列类型映射为 information_schema 展示用的元数据。类型名使用规范名，长度为真实声明值</summary>
+    /// <param name="col">列定义</param>
+    /// <returns>规范类型名、带长度的类型名、数值精度、数值标度、字符/字节最大长度</returns>
+    private static (String DataType, String ColumnType, Int32? Precision, Int32? Scale, Int64? MaxLength) MapToSchemaType(ColumnDefinition col)
     {
-        return type switch
+        var (precision, scale) = col.DataType switch
         {
-            DataType.Boolean => ("tinyint", "tinyint(1)", 3, 0, null),
-            DataType.Int32 => ("int", "int(11)", 10, 0, null),
-            DataType.Int64 => ("bigint", "bigint(20)", 19, 0, null),
-            DataType.Double => ("double", "double", 22, null, null),
-            DataType.Decimal => ("decimal", "decimal(18,4)", 18, 4, null),
-            DataType.String => ("varchar", "varchar(255)", null, null, 255L),
-            DataType.Binary => ("blob", "blob", null, null, 65535L),
-            DataType.DateTime => ("datetime", "datetime", null, null, null),
-            DataType.GeoPoint => ("varchar", "varchar(64)", null, null, 64L),
-            DataType.Vector => ("longtext", "longtext", null, null, null),
-            _ => ("varchar", "varchar(255)", null, null, 255L)
+            DataType.Boolean => ((Int32?)3, (Int32?)0),
+            DataType.Int32 => (10, 0),
+            DataType.Int64 => (19, 0),
+            DataType.Double => (22, null),
+            // DECIMAL 固定 128 位，(18,4) 只为与 ORM 默认值对齐，避免每次同步产生 ALTER
+            DataType.Decimal => (18, 4),
+            _ => (null, null)
         };
+
+        var maxLength = col.Length > 0 && col.DataType is DataType.String or DataType.Binary ? (Int64?)col.Length : null;
+
+        return (DataTypeNames.GetName(col.DataType).ToLowerInvariant(), DataTypeNames.Format(col.DataType, col.Length), precision, scale, maxLength);
     }
 
     #endregion

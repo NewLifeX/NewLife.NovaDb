@@ -188,6 +188,12 @@ public class SqlColumnDef
     /// <summary>数据类型名称</summary>
     public String DataTypeName { get; set; } = String.Empty;
 
+    /// <summary>类型长度。字符串为最大字符数，二进制为最大字节数，向量为维度；0 表示未声明</summary>
+    public Int32 Length { get; set; }
+
+    /// <summary>小数位数。仅为吃掉 DECIMAL(p,s) 语法，NovaDb 的 DECIMAL 固定 128 位</summary>
+    public Int32 Scale { get; set; }
+
     /// <summary>是否为主键</summary>
     public Boolean IsPrimaryKey { get; set; }
 
