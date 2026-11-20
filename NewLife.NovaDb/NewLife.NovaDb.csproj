@@ -54,8 +54,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="NewLife.Core" Version="12.0.2026.1109-beta0553" />
-    <PackageReference Include="NewLife.Remoting" Version="4.0.2026.1109-beta0753" />
+    <PackageReference Include="NewLife.Core" Version="12.0.2026.1119-beta1418" />
+    <PackageReference Include="NewLife.Remoting" Version="4.0.2026.1116-beta1043" />
   </ItemGroup>
 
   <ItemGroup>
