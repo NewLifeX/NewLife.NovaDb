@@ -71,8 +71,9 @@
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN（Nested Loop），支援表別名 |
 | 參數化 | ✅ | @param 佔位符 |
 | 交易 | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| SQL 函數 | ✅ | 字串/數值/日期/轉換/條件/雜湊（60+ 函數） |
+| SQL 函數 | ✅ | 字串/數值/日期/轉換/條件/雜湊（80+ 函數） |
 | 子查詢 | ✅ | IN/EXISTS 子查詢 |
+| MySQL 方言 | ✅ | 反斜線轉義、`庫.表` 限定符、`BIT` 類型、`bool列 = 0/1`、`information_schema` 中繼資料、`FOR UPDATE`（語法接受，不加鎖） |
 | 全文檢索 | ✅ | 全文索引 + BM25 評分，Top-K 結果，支援 RAG 混合檢索 |
 | 進階 | ❌ | 無視圖/觸發器/儲存程序/視窗函數 |
 

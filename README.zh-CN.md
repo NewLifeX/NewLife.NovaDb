@@ -66,15 +66,16 @@
 
 | 功能 | 状态 | 说明 |
 |------|------|------|
-| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE，ALTER TABLE（ADD/MODIFY/DROP COLUMN、COMMENT），含 IF NOT EXISTS、PRIMARY KEY、UNIQUE、ENGINE |
+| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE，ALTER TABLE（ADD/MODIFY/CHANGE/DROP COLUMN、COMMENT、RENAME），RENAME TABLE，含 IF NOT EXISTS、PRIMARY KEY、UNIQUE、ENGINE |
 | DML | ✅ | INSERT（多行）、UPDATE、DELETE、UPSERT（ON DUPLICATE KEY UPDATE）、TRUNCATE TABLE |
-| 查询 | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
+| 查询 | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET（含 `LIMIT m,n` 逗号分页） |
 | 聚合 | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN（Nested Loop），支持表别名 |
 | 参数化 | ✅ | @param 占位符 |
 | 事务 | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| SQL 函数 | ✅ | 字符串/数值/日期/转换/条件/哈希（60+ 函数） |
+| SQL 函数 | ✅ | 字符串/数值/日期/转换/条件/哈希（80+ 函数） |
 | 子查询 | ✅ | IN/EXISTS 子查询 |
+| MySQL 方言 | ✅ | 反斜杠转义、`库.表` 限定符、`BIT` 类型、`bool列 = 0/1`、`information_schema` 元数据、`FOR UPDATE`（语法接受，不加锁） |
 | 全文检索 | ✅ | 全文索引 + BM25 评分，Top-K 结果，支持 RAG 混合检索 |
 | 高级 | ❌ | 无视图/触发器/存储过程/窗口函数 |
 

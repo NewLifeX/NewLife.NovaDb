@@ -71,8 +71,9 @@ Subconjunto SQL padrão implementado, cobrindo aproximadamente 60% dos cenários
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), suporta aliases de tabela |
 | Parametrização | ✅ | Placeholders @param |
 | Transação | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| Funções SQL | ✅ | Funções de string/numérica/data/conversão/condicional/hash (60+ funções) |
+| Funções SQL | ✅ | Funções de string/numérica/data/conversão/condicional/hash (80+ funções) |
 | Subconsulta | ✅ | Subconsultas IN/EXISTS |
+| Dialeto MySQL | ✅ | Escapes com barra invertida, qualificadores `bd.tabela`, tipo `BIT`, `coluna bool = 0/1`, metadados `information_schema`, `FOR UPDATE` (sintaxe aceita, sem bloqueio) |
 | Pesquisa de texto completo | ✅ | Índice de texto completo com pontuação BM25, resultados Top-K para recuperação híbrida RAG |
 | Avançado | ❌ | Sem views/triggers/procedimentos armazenados/funções de janela |
 

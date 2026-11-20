@@ -59,8 +59,9 @@
 
 | 函数 | 别名 | 签名 | 返回类型 | 说明 | 状态 |
 |------|------|------|---------|------|------|
-| `CONCAT` | — | `CONCAT(s1, s2, ...)` | STRING | 参数 ≥ 1 | ✅ |
-| `LENGTH` | `LEN` | `LENGTH(s)` | INT | UTF-8 字节数 | ✅ |
+| `CONCAT` | — | `CONCAT(s1, s2, ...)` | STRING | 参数 ≥ 1；任一参数为 NULL → NULL（MySQL 语义） | ✅ |
+| `LENGTH` | `LEN` | `LENGTH(s)` | INT | UTF-8 字节数（如 `LENGTH('中文')=6`） | ✅ |
+| `CHAR_LENGTH` | `CHARACTER_LENGTH` | `CHAR_LENGTH(s)` | INT | 字符数（如 `CHAR_LENGTH('中文')=2`） | ✅ |
 | `SUBSTRING` | `SUBSTR` | `SUBSTRING(s, pos, len)` | STRING | pos 从 1 开始 | ✅ |
 | `UPPER` | `UCASE` | `UPPER(s)` | STRING | 转大写 | ✅ |
 | `LOWER` | `LCASE` | `LOWER(s)` | STRING | 转小写 | ✅ |
@@ -86,6 +87,7 @@
 | 函数 | 别名 | 签名 | 返回类型 | 说明 | 状态 |
 |------|------|------|---------|------|------|
 | `NOW` | `GETDATE`, `CURRENT_TIMESTAMP` | `NOW()` | DATETIME | 非确定性 | ✅ |
+| `UTC_TIMESTAMP` | — | `UTC_TIMESTAMP()` | DATETIME | 非确定性，返回 UTC 时间 | ✅ |
 | `YEAR` | — | `YEAR(dt)` | INT | 提取年份 | ✅ |
 | `MONTH` | — | `MONTH(dt)` | INT | 1~12 | ✅ |
 | `DAY` | `DAYOFMONTH` | `DAY(dt)` | INT | 1~31 | ✅ |
@@ -127,8 +129,9 @@
 
 | 函数 | 签名 | 说明 | 状态 |
 |------|------|------|------|
-| `CHARINDEX` | `CHARINDEX(substr, s [, start])` | 子串位置（0=不存在），SQL Server 风格 | ✅ |
+| `CHARINDEX` | `CHARINDEX(substr, s [, start])` | 子串位置（0=不存在），SQL Server 风格，start 从 1 开始 | ✅ |
 | `INSTR` | `INSTR(s, substr)` | 子串位置，MySQL 风格 | ✅ |
+| `LOCATE` | `LOCATE(substr, s [, pos])` | 子串位置（0=不存在），MySQL 风格，pos 从 1 开始 | ✅ |
 | `CHAR` | `CHAR(num)` | ASCII/Unicode 码转字符 | ✅ |
 | `ASCII` | `ASCII(s)` | 首字符 ASCII 码 | ✅ |
 
@@ -256,10 +259,10 @@
 
 | 优先级 | 总数 | 已实现 | 未实现 | 完成率 |
 |--------|------|--------|--------|--------|
-| P0 | 38 | 38 | 0 | 100% |
-| P1 | 27 | 27 | 0 | 100% |
+| P0 | 40 | 40 | 0 | 100% |
+| P1 | 28 | 28 | 0 | 100% |
 | P2 | 14 | 14 | 0 | 100% |
-| **合计** | **79** | **79** | **0** | **100%** |
+| **合计** | **82** | **82** | **0** | **100%** |
 
 ### 待实现函数清单
 
@@ -283,10 +286,10 @@
 ## 7. 兼容性说明
 
 ### 7.1 字符串长度
-`LENGTH/LEN` 返回 UTF-8 **字节数**。后续可引入 `CHAR_LENGTH` 返回字符数。
+`LENGTH/LEN` 返回 UTF-8 **字节数**（与 MySQL 一致）；`CHAR_LENGTH/CHARACTER_LENGTH` 返回字符数。
 
 ### 7.2 类型转换失败
-`CAST`/`CONVERT` 转换失败返回 NULL。
+`CAST`/`CONVERT` 转换失败返回 NULL；布尔转换接受 `true/false` 文本与 `1/0` 数字。
 
 ### 7.3 多数据库迁移
 - 优先兼容 SQL-92 标准

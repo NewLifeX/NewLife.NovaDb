@@ -71,8 +71,9 @@
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN(Nested Loop), 테이블 별칭 지원 |
 | 매개변수화 | ✅ | @param 플레이스홀더 |
 | 트랜잭션 | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| SQL 함수 | ✅ | 문자열/숫자/날짜/변환/조건/해시 함수(60개 이상) |
+| SQL 함수 | ✅ | 문자열/숫자/날짜/변환/조건/해시 함수(80개 이상) |
 | 서브쿼리 | ✅ | IN/EXISTS 서브쿼리 |
+| MySQL 방언 | ✅ | 백슬래시 이스케이프, `db.테이블` 한정자, `BIT` 타입, `bool 열 = 0/1`, `information_schema` 메타데이터, `FOR UPDATE`(구문만 허용, 잠금 없음) |
 | 전문 검색 | ✅ | BM25 스코어링 전체 텍스트 인덱스, RAG 하이브리드 검색을 위한 Top-K 결과 |
 | 고급 | ❌ | 뷰/트리거/저장 프로시저/윈도우 함수 없음 |
 

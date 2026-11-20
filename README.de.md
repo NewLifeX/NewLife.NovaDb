@@ -71,8 +71,9 @@ Implementierte Standard-SQL-Teilmenge, die etwa 60% der gängigen Geschäftsszen
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), unterstützt Tabellenaliase |
 | Parametrisierung | ✅ | @param-Platzhalter |
 | Transaktion | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| SQL-Funktionen | ✅ | String-/Numerische/Datum-/Konvertierungs-/Bedingte/Hash-Funktionen (60+ Funktionen) |
+| SQL-Funktionen | ✅ | String-/Numerische/Datum-/Konvertierungs-/Bedingte/Hash-Funktionen (80+ Funktionen) |
 | Unterabfrage | ✅ | IN/EXISTS-Unterabfragen |
+| MySQL-Dialekt | ✅ | Backslash-Escapes, `db.tabelle`-Qualifizierer, `BIT`-Typ, `boolspalte = 0/1`, `information_schema`-Metadaten, `FOR UPDATE` (Syntax akzeptiert, kein Locking) |
 | Volltextsuche | ✅ | Volltextindex mit BM25-Bewertung, Top-K-Ergebnisse für hybride RAG-Abfrage |
 | Erweitert | ❌ | Keine Views/Trigger/Gespeicherte Prozeduren/Fensterfunktionen |
 

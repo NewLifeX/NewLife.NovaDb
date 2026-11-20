@@ -62,15 +62,16 @@ Implemented standard SQL subset, covering approximately 60% of common business s
 
 | Feature | Status | Description |
 |---------|--------|-------------|
-| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE, ALTER TABLE (ADD/MODIFY/DROP COLUMN, COMMENT), with IF NOT EXISTS, PRIMARY KEY, UNIQUE, ENGINE |
+| DDL | ✅ | CREATE/DROP TABLE/INDEX/DATABASE, ALTER TABLE (ADD/MODIFY/CHANGE/DROP COLUMN, COMMENT, RENAME), RENAME TABLE, with IF NOT EXISTS, PRIMARY KEY, UNIQUE, ENGINE |
 | DML | ✅ | INSERT (multiple rows), UPDATE, DELETE, UPSERT (ON DUPLICATE KEY UPDATE), TRUNCATE TABLE |
-| Query | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET |
+| Query | ✅ | SELECT/WHERE/ORDER BY/GROUP BY/HAVING/LIMIT/OFFSET (including MySQL `LIMIT m,n`) |
 | Aggregation | ✅ | COUNT/SUM/AVG/MIN/MAX |
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), supports table aliases |
 | Parameterization | ✅ | @param placeholders |
 | Transaction | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| SQL Functions | ✅ | String/numeric/date/conversion/conditional/hash (60+ functions) |
+| SQL Functions | ✅ | String/numeric/date/conversion/conditional/hash (80+ functions) |
 | Subquery | ✅ | IN/EXISTS subqueries |
+| MySQL Dialect | ✅ | Backslash escapes, `db.table` qualifiers, `BIT` type, `boolcol = 0/1`, `information_schema` metadata, `FOR UPDATE` (parsed, no locking) |
 | Full-Text Search | ✅ | Full-text index with BM25 scoring, Top-K results for RAG hybrid retrieval |
 | Advanced | ❌ | No views/triggers/stored procedures/window functions |
 

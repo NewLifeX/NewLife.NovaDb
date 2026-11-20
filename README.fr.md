@@ -71,8 +71,9 @@ Sous-ensemble SQL standard implémenté, couvrant environ 60% des scénarios com
 | JOIN | ✅ | INNER/LEFT/RIGHT JOIN (Nested Loop), prend en charge les alias de table |
 | Paramétrage | ✅ | Espaces réservés @param |
 | Transaction | ✅ | MVCC, Read Committed, COMMIT/ROLLBACK |
-| Fonctions SQL | ✅ | Fonctions de chaîne/numérique/date/conversion/conditionnelle/hachage (60+ fonctions) |
+| Fonctions SQL | ✅ | Fonctions de chaîne/numérique/date/conversion/conditionnelle/hachage (80+ fonctions) |
 | Sous-requête | ✅ | Sous-requêtes IN/EXISTS |
+| Dialecte MySQL | ✅ | Échappements par barre oblique inverse, qualificateurs `bd.table`, type `BIT`, `colonne bool = 0/1`, métadonnées `information_schema`, `FOR UPDATE` (syntaxe acceptée, sans verrou) |
 | Recherche plein texte | ✅ | Index de texte intégral avec score BM25, résultats Top-K pour la récupération hybride RAG |
 | Avancé | ❌ | Pas de vues/déclencheurs/procédures stockées/fonctions de fenêtre |
 
