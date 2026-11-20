@@ -312,6 +312,31 @@ public class MySqlCompatibilityTests : IClassFixture<MySqlCompatibilityFixture>
         Assert.Equal(0, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM _sys.tables WHERE name = 'mysql_bad_idx'")));
     }
 
+    [Fact(DisplayName = "MySQL兼容-列修饰符与列级唯一约束")]
+    public void ColumnModifiers_AreTolerated()
+    {
+        using var conn = OpenConnection();
+        conn.ExecuteNonQuery("CREATE TABLE mysql_colmod (" +
+            "id INT UNSIGNED NOT NULL AUTO_INCREMENT, " +
+            "email VARCHAR(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci UNIQUE, " +
+            "score INT ZEROFILL, " +
+            "created DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, " +
+            "PRIMARY KEY (id))");
+
+        conn.ExecuteNonQuery("INSERT INTO mysql_colmod (email, score) VALUES ('a@x.com', 1)");
+        conn.ExecuteNonQuery("INSERT INTO mysql_colmod (email, score) VALUES ('b@x.com', 2)");
+        Assert.Equal(2, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM mysql_colmod")));
+        Assert.Equal("a@x.com", Scalar(conn, "SELECT email FROM mysql_colmod WHERE id = 1"));
+
+        // 列级 UNIQUE 转成唯一索引后生效
+        Assert.ThrowsAny<Exception>(() => conn.ExecuteNonQuery("INSERT INTO mysql_colmod (email, score) VALUES ('a@x.com', 3)"));
+
+        // 索引前缀长度写法
+        conn.ExecuteNonQuery("CREATE TABLE mysql_prefix_idx (id INT PRIMARY KEY, name STRING(50), KEY ix_name (name(10)))");
+        conn.ExecuteNonQuery("INSERT INTO mysql_prefix_idx VALUES (1, 'abc')");
+        Assert.Equal(1, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM mysql_prefix_idx WHERE name = 'abc'")));
+    }
+
     [Fact(DisplayName = "MySQL兼容-FOR UPDATE 语法可执行")]
     public void ForUpdate_IsAccepted()
     {
