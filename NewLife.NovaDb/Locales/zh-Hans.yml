@@ -193,6 +193,7 @@
 "Column '{0}.{1}' not found": "列“{0}.{1}”不存在"
 "Unknown data type: {0}": "未知的数据类型：{0}"
 "Vector dimensions mismatch: {0} vs {1}": "向量维度不匹配：{0} vs {1}"
+"Value too long for column '{0}': {1} > {2}": "列“{0}”的值超长：{1} > {2}"
 "VECTOR_NEAREST requires at least 3 arguments (query, table, k)": "VECTOR_NEAREST 至少需要 3 个参数（query, table, k）"
 "VECTOR_NEAREST k must be positive": "VECTOR_NEAREST 的 k 必须为正数"
 "Table '{0}' has no Vector column": "表“{0}”没有 Vector 列"

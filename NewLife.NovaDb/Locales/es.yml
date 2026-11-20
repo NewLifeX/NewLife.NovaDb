@@ -193,6 +193,7 @@
 "Column '{0}.{1}' not found": "No se encontró la columna '{0}.{1}'"
 "Unknown data type: {0}": "Tipo de datos desconocido: {0}"
 "Vector dimensions mismatch: {0} vs {1}": "Las dimensiones del vector no coinciden: {0} frente a {1}"
+"Value too long for column '{0}': {1} > {2}": "Valor demasiado largo para la columna '{0}': {1} > {2}"
 "VECTOR_NEAREST requires at least 3 arguments (query, table, k)": "VECTOR_NEAREST requiere al menos 3 argumentos (query, table, k)"
 "VECTOR_NEAREST k must be positive": "El valor k de VECTOR_NEAREST debe ser positivo"
 "Table '{0}' has no Vector column": "La tabla '{0}' no tiene ninguna columna Vector"

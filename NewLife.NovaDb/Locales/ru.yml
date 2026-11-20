@@ -193,6 +193,7 @@
 "Column '{0}.{1}' not found": "Столбец '{0}.{1}' не найден"
 "Unknown data type: {0}": "Неизвестный тип данных: {0}"
 "Vector dimensions mismatch: {0} vs {1}": "Несовпадение размерности векторов: {0} и {1}"
+"Value too long for column '{0}': {1} > {2}": "Слишком длинное значение для столбца '{0}': {1} > {2}"
 "VECTOR_NEAREST requires at least 3 arguments (query, table, k)": "VECTOR_NEAREST требует не менее 3 аргументов (query, table, k)"
 "VECTOR_NEAREST k must be positive": "k в VECTOR_NEAREST должен быть положительным"
 "Table '{0}' has no Vector column": "Таблица '{0}' не содержит столбца Vector"
