@@ -146,6 +146,35 @@ public class TableSchema
         RebuildColumnIndexes();
     }
 
+    /// <summary>重命名列，并同步索引定义中的列名</summary>
+    /// <remarks>行数据按列序号存放，改名不影响已有数据</remarks>
+    /// <param name="oldName">原列名</param>
+    /// <param name="newName">新列名</param>
+    public void RenameColumn(String oldName, String newName)
+    {
+        if (oldName == null) throw new ArgumentNullException(nameof(oldName));
+        if (newName == null) throw new ArgumentNullException(nameof(newName));
+        if (String.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (!_columnIndexes.TryGetValue(oldName, out var index))
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' not found", oldName);
+
+        if (_columnIndexes.ContainsKey(newName))
+            throw new NovaException(ErrorCode.InvalidArgument, "Column '{0}' already exists", newName);
+
+        _columns[index].Name = newName;
+        RebuildColumnIndexes();
+
+        foreach (var idx in _indexes)
+        {
+            for (var i = 0; i < idx.Columns.Count; i++)
+            {
+                if (String.Equals(idx.Columns[i], oldName, StringComparison.OrdinalIgnoreCase))
+                    idx.Columns[i] = newName;
+            }
+        }
+    }
+
     /// <summary>修改列定义</summary>
     /// <param name="columnName">列名</param>
     /// <param name="newDataType">新数据类型</param>

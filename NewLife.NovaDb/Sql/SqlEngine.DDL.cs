@@ -211,8 +211,21 @@ partial class SqlEngine
                         break;
                     }
 
+                case AlterTableAction.ChangeColumn:
+                    {
+                        var colDef = stmt.ColumnDef!;
+                        var dataType = ParseDataType(colDef.DataTypeName);
+                        schema.RenameColumn(stmt.ColumnName!, colDef.Name);
+                        schema.ModifyColumn(colDef.Name, dataType, !colDef.NotNull, colDef.Comment);
+                        break;
+                    }
+
                 case AlterTableAction.DropColumn:
                     schema.RemoveColumn(stmt.ColumnName!);
+                    break;
+
+                case AlterTableAction.RenameTable:
+                    RenameTableCore(stmt.TableName, stmt.NewTableName!);
                     break;
 
                 case AlterTableAction.AddTableComment:
@@ -246,6 +259,81 @@ partial class SqlEngine
         table.Truncate();
 
         return new SqlResult { AffectedRows = 0 };
+    }
+
+    private SqlResult ExecuteRenameTable(RenameTableStatement stmt)
+    {
+        using var _ = _metaLock.AcquireWrite();
+        foreach (var (from, to) in stmt.Items)
+        {
+            RenameTableCore(from, to);
+        }
+
+        return new SqlResult { AffectedRows = 0 };
+    }
+
+    /// <summary>重命名单张表：迁移文件组、更新元数据并重建表对象</summary>
+    /// <remarks>调用方必须已持有元数据写锁</remarks>
+    /// <param name="from">旧表名</param>
+    /// <param name="to">新表名</param>
+    private void RenameTableCore(String from, String to)
+    {
+        if (!_schemas.TryGetValue(from, out var schema))
+            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", from);
+
+        if (String.Equals(from, to, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (_schemas.ContainsKey(to))
+            throw new NovaException(ErrorCode.TableExists, "Table '{0}' already exists", to);
+
+        // 先关闭旧表对象，释放数据文件句柄
+        if (_tables.TryGetValue(from, out var table))
+        {
+            table.Dispose();
+            _tables.Remove(from);
+        }
+
+        // 迁移 {旧表名}.xxx / {旧表名}_xxx 文件组（data/idx/wal/二级索引/schema）
+        foreach (var path in Directory.GetFiles(_dbPath))
+        {
+            var name = Path.GetFileName(path);
+            if (!name.StartsWith(from, StringComparison.OrdinalIgnoreCase) || name.Length <= from.Length + 1) continue;
+
+            var sep = name[from.Length];
+            if (sep != '.' && sep != '_') continue;
+
+            var tail = name.Substring(from.Length + 1);
+            if (!IsTableFileTail(tail)) continue;
+
+            // 避免误伤同名表的文件，如重命名 a 时跳过 a_1 表
+            var leaf = Path.GetFileNameWithoutExtension(name);
+            if (leaf.Length > from.Length && _schemas.ContainsKey(leaf)) continue;
+
+            File.Move(path, Path.Combine(_dbPath, to + name.Substring(from.Length)));
+        }
+
+        _schemas.Remove(from);
+        schema.TableName = to;
+        _schemas[to] = schema;
+
+        _tables[to] = new NovaTable(schema, _dbPath, _options, _txManager);
+
+        // 持久化新表名，旧 schema 文件已随文件组迁移为同名文件
+        SchemaPersister.Save(_dbPath, schema);
+    }
+
+    /// <summary>判断文件名的尾部是否为表文件形态（data/idx/wal/rlog/schema，含分片与二级索引）</summary>
+    /// <param name="tail">去掉“表名”和分隔符后的尾部</param>
+    /// <returns>是否属于表文件</returns>
+    private static Boolean IsTableFileTail(String tail)
+    {
+        if (tail is "data" or "idx" or "wal" or "rlog" or "schema") return true;
+
+        // 分片或二级索引：{分片号|索引名}.{data|idx|wal}
+        var dot = tail.LastIndexOf('.');
+        if (dot <= 0) return false;
+
+        return tail.Substring(dot + 1) is "data" or "idx" or "wal";
     }
 
     #endregion

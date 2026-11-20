@@ -360,6 +360,7 @@ public partial class SqlEngine : IDisposable
             CreateTableStatement create => TrackDdl(ExecuteCreateTable(create), sql),
             DropTableStatement drop => TrackDdl(ExecuteDropTable(drop), sql),
             AlterTableStatement alter => TrackDdl(ExecuteAlterTable(alter), sql),
+            RenameTableStatement renameTable => TrackDdl(ExecuteRenameTable(renameTable), sql),
             TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate), sql),
             CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx), sql),
             DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx), sql),
