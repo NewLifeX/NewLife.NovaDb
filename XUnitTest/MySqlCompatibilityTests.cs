@@ -290,6 +290,28 @@ public class MySqlCompatibilityTests : IClassFixture<MySqlCompatibilityFixture>
         Assert.Equal(2, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM mysql_rename_alter")));
     }
 
+    [Fact(DisplayName = "MySQL兼容-建表内联索引")]
+    public void CreateTable_InlineIndex()
+    {
+        using var conn = OpenConnection();
+        conn.ExecuteNonQuery("CREATE TABLE mysql_inline_idx (id INT PRIMARY KEY, uid INT NOT NULL, name STRING(20), UNIQUE KEY uk_uid (uid), KEY ix_name (name))");
+        conn.ExecuteNonQuery("INSERT INTO mysql_inline_idx VALUES (1, 10, 'a'), (2, 20, 'b')");
+
+        // 唯一索引生效
+        Assert.ThrowsAny<Exception>(() => conn.ExecuteNonQuery("INSERT INTO mysql_inline_idx VALUES (3, 10, 'c')"));
+
+        // 普通索引可用于等值查询
+        Assert.Equal(1, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM mysql_inline_idx WHERE name = 'b'")));
+
+        // 索引写入元数据：PRIMARY + uk_uid + ix_name
+        Assert.Equal(3, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM information_schema.statistics WHERE table_name = 'mysql_inline_idx'")));
+        Assert.Equal(0, Convert.ToInt32(Scalar(conn, "SELECT non_unique FROM information_schema.statistics WHERE table_name = 'mysql_inline_idx' AND index_name = 'uk_uid'")));
+
+        // 索引列不存在时建表失败且不留残余表
+        Assert.ThrowsAny<Exception>(() => conn.ExecuteNonQuery("CREATE TABLE mysql_bad_idx (id INT PRIMARY KEY, KEY ix_missing (nope))"));
+        Assert.Equal(0, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM _sys.tables WHERE name = 'mysql_bad_idx'")));
+    }
+
     [Fact(DisplayName = "MySQL兼容-FOR UPDATE 语法可执行")]
     public void ForUpdate_IsAccepted()
     {
