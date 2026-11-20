@@ -187,6 +187,10 @@ public class TableFileManager
         {
             File.Delete(file);
         }
+
+        // 删除行日志文件，避免同名表重建后回放出旧行
+        var rowLog = Path.Combine(_databasePath, $"{_tableName}.rlog");
+        if (File.Exists(rowLog)) File.Delete(rowLog);
     }
 
     /// <summary>检查表文件是否存在</summary>
