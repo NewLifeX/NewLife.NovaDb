@@ -99,7 +99,12 @@ public partial class NovaTable
             foreach (var bucket in buckets)
             {
                 if (AppendSecondaryIndexDelta(bucket.Key, bucket.Value))
+                {
+                    // 增量已落盘，同步推进哈希索引的已应用偏移
+                    if (_secondaryIndexes.TryGetValue(bucket.Key, out var idx)) idx.Commit(_rowLogLength);
+
                     CheckSecondaryIndexDeltaThreshold(bucket.Key);
+                }
             }
         }
     }
@@ -276,7 +281,11 @@ public partial class NovaTable
             ResetSecondaryIndexDelta(indexName);
 
             if (_secondaryIndexes.TryGetValue(indexName, out var idx))
-                _secondaryIndexBaselineCounts[indexName] = idx.Count;
+            {
+                idx.CompactIfNeeded(_rowLogLength);
+                idx.Commit(_rowLogLength);
+                _secondaryIndexBaselineCounts[indexName] = (Int32)idx.KeyCount;
+            }
         }
     }
 
@@ -311,11 +320,11 @@ public partial class NovaTable
 
     #region 启动回放
 
-    /// <summary>回放二级索引增量日志</summary>
+    /// <summary>回放二级索引增量日志到哈希字典</summary>
     /// <param name="indexDef">索引定义</param>
-    /// <param name="idx">基线加载得到的索引</param>
+    /// <param name="idx">目标索引</param>
     /// <returns>回放的记录数；增量文件缺失返回 0；头部或尾部记录损坏返回 -1（调用方应回退全表重建）</returns>
-    private Int32 ReplaySecondaryIndexDelta(IndexDefinition indexDef, SkipList<ComparableObject, List<ComparableObject>> idx)
+    private Int32 ReplaySecondaryIndexDelta(IndexDefinition indexDef, NovaSecondaryIndex idx)
     {
         var path = _fileManager.GetSecondaryIndexDeltaFilePath(indexDef.IndexName);
         if (!File.Exists(path)) return 0;
@@ -364,12 +373,10 @@ public partial class NovaTable
 
                 if (key == null || pk == null) return -1;
 
-                var indexKey = new ComparableObject(key);
-                var primaryKey = new ComparableObject(pk);
                 if (recordType == SecondaryIndexDeltaRecordPut)
-                    AddIndexEntry(idx, indexKey, primaryKey);
+                    idx.Add(key, pk);
                 else if (recordType == SecondaryIndexDeltaRecordDelete)
-                    RemoveIndexEntry(idx, indexKey, primaryKey);
+                    idx.Remove(key, pk);
                 else
                     return -1;
 
@@ -405,49 +412,6 @@ public partial class NovaTable
         {
             return false;
         }
-    }
-
-    /// <summary>把主键加入索引键对应的列表（回放专用，可重复应用）</summary>
-    /// <param name="idx">索引</param>
-    /// <param name="key">索引键</param>
-    /// <param name="pk">主键</param>
-    private static void AddIndexEntry(SkipList<ComparableObject, List<ComparableObject>> idx, ComparableObject key, ComparableObject pk)
-    {
-        if (!idx.TryGetValue(key, out var pkList))
-        {
-            pkList = [];
-            idx.Insert(key, pkList);
-        }
-        else
-        {
-            // 基线重写后若增量未及时清理会重复回放，这里去重保证幂等
-            foreach (var existing in pkList!)
-            {
-                if (CompareKeys(existing, pk) == 0) return;
-            }
-        }
-
-        pkList!.Add(pk);
-    }
-
-    /// <summary>从索引键对应的列表移除主键（回放专用，可重复应用）</summary>
-    /// <param name="idx">索引</param>
-    /// <param name="key">索引键</param>
-    /// <param name="pk">主键</param>
-    private static void RemoveIndexEntry(SkipList<ComparableObject, List<ComparableObject>> idx, ComparableObject key, ComparableObject pk)
-    {
-        if (!idx.TryGetValue(key, out var pkList)) return;
-
-        for (var i = pkList!.Count - 1; i >= 0; i--)
-        {
-            if (CompareKeys(pkList[i], pk) == 0)
-            {
-                pkList.RemoveAt(i);
-                break;
-            }
-        }
-
-        if (pkList.Count == 0) idx.Remove(key);
     }
 
     #endregion

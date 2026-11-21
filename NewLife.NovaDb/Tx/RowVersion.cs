@@ -22,6 +22,9 @@ public class RowVersion
     /// <summary>行数据负载在行日志文件中的字节长度</summary>
     public Int32 DataLength { get; set; }
 
+    /// <summary>主键索引中的值节点偏移（0 表示尚未进入磁盘索引）</summary>
+    internal Int64 IndexValueOffset { get; set; }
+
     /// <summary>创建新的行版本</summary>
     /// <param name="createdByTx">创建事务 ID</param>
     /// <param name="key">主键值</param>

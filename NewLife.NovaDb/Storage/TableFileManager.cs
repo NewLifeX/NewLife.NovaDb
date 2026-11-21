@@ -62,6 +62,30 @@ public class TableFileManager
         return Path.Combine(_databasePath, fileName);
     }
 
+    /// <summary>获取主键哈希索引文件路径</summary>
+    /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
+    /// <returns>哈希索引文件完整路径</returns>
+    public String GetPrimaryHashIndexFilePath(Int32? shardId = null)
+    {
+        var fileName = shardId.HasValue
+            ? $"{_tableName}_{shardId.Value}.hidx"
+            : $"{_tableName}.hidx";
+
+        return Path.Combine(_databasePath, fileName);
+    }
+
+    /// <summary>获取主键有序索引文件路径</summary>
+    /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
+    /// <returns>有序索引文件完整路径</returns>
+    public String GetPrimaryOrderedIndexFilePath(Int32? shardId = null)
+    {
+        var fileName = shardId.HasValue
+            ? $"{_tableName}_{shardId.Value}.oidx"
+            : $"{_tableName}.oidx";
+
+        return Path.Combine(_databasePath, fileName);
+    }
+
     /// <summary>获取二级索引文件路径</summary>
     /// <param name="indexName">索引名称</param>
     /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
@@ -74,6 +98,22 @@ public class TableFileManager
         var fileName = shardId.HasValue
             ? $"{_tableName}_{shardId.Value}_{indexName}.idx"
             : $"{_tableName}_{indexName}.idx";
+
+        return Path.Combine(_databasePath, fileName);
+    }
+
+    /// <summary>获取二级索引哈希字典文件路径</summary>
+    /// <param name="indexName">索引名称</param>
+    /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
+    /// <returns>二级索引哈希文件完整路径</returns>
+    public String GetSecondaryHashIndexFilePath(String indexName, Int32? shardId = null)
+    {
+        if (String.IsNullOrWhiteSpace(indexName))
+            throw new ArgumentException("Index name cannot be empty", nameof(indexName));
+
+        var fileName = shardId.HasValue
+            ? $"{_tableName}_{shardId.Value}_{indexName}.hidx"
+            : $"{_tableName}_{indexName}.hidx";
 
         return Path.Combine(_databasePath, fileName);
     }
@@ -195,6 +235,18 @@ public class TableFileManager
         // 删除索引文件（主键和二级索引）
         var indexPattern = $"{_tableName}*.idx";
         foreach (var file in Directory.GetFiles(_databasePath, indexPattern))
+        {
+            File.Delete(file);
+        }
+
+        // 删除主键哈希/有序索引文件
+        var hashIndexPattern = $"{_tableName}*.hidx";
+        foreach (var file in Directory.GetFiles(_databasePath, hashIndexPattern))
+        {
+            File.Delete(file);
+        }
+        var orderedIndexPattern = $"{_tableName}*.oidx";
+        foreach (var file in Directory.GetFiles(_databasePath, orderedIndexPattern))
         {
             File.Delete(file);
         }

@@ -37,7 +37,7 @@ partial class NovaTable
             var stats = new TableStatistics
             {
                 TableName = _schema.TableName,
-                EntryCount = _primaryIndex.Count,
+                EntryCount = (Int32)(_primaryIndex.KeyCount + _pendingIndex.Count),
                 DataVersion = DataVersion,
                 SchemaSignature = TableStatistics.BuildSchemaSignature(_schema),
                 AnalyzedAt = DateTime.Now,
@@ -102,7 +102,7 @@ partial class NovaTable
                 {
                     if (!_secondaryIndexes.TryGetValue(indexDef.IndexName, out var index)) continue;
 
-                    var keyCount = index.Count;
+                    var keyCount = (Int32)index.KeyCount;
                     stats.Indexes[indexDef.IndexName] = new IndexStatistics
                     {
                         IndexName = indexDef.IndexName,
@@ -115,7 +115,7 @@ partial class NovaTable
                     var column = _schema.GetColumn(indexDef.Columns[0]);
                     if (stats.Columns.ContainsKey(column.Name)) continue;
 
-                    stats.Columns[column.Name] = BuildIndexColumnStatistics(column, index, keyCount);
+                    stats.Columns[column.Name] = BuildIndexColumnStatistics(column, index.EnsureOrdered(), keyCount);
                 }
 
                 // 非索引列：按采样值估算 NDV 与直方图
@@ -140,38 +140,34 @@ partial class NovaTable
         }
     }
 
-    /// <summary>扫描主键索引并逐个回调可见行，分块持锁避免长时间阻塞写入</summary>
+    /// <summary>扫描主键索引并逐个回调可见行</summary>
     /// <param name="tx">事务</param>
     /// <param name="onVisible">可见行回调（主键键、行版本）</param>
     /// <returns>可见行数</returns>
     private Int64 ScanPrimaryIndex(Transaction tx, Action<ComparableObject, RowVersion>? onVisible)
     {
         var count = 0L;
-        ComparableObject? from = null;
-        var includeFrom = true;
 
-        while (true)
+        lock (_lock)
         {
-            List<KeyValuePair<ComparableObject, List<RowVersion>>> chunk;
-            lock (_lock)
+            if (_pendingIndex.Count == 0)
             {
-                chunk = _primaryIndex.GetRange(from, includeFrom, null, true, StatisticsChunkSize);
-                if (chunk.Count == 0) break;
-
-                foreach (var entry in chunk)
+                _primaryIndex.Scan(null, true, null, true, false, 0, (key, version) =>
                 {
-                    var version = FindVisibleVersion(entry.Value, tx.TxId);
-                    if (version == null) continue;
-
                     count++;
-                    onVisible?.Invoke(entry.Key, version);
-                }
+                    onVisible?.Invoke(new ComparableObject(key), version);
 
-                from = chunk[chunk.Count - 1].Key;
-                includeFrom = false;
+                    return true;
+                });
             }
-
-            if (chunk.Count < StatisticsChunkSize) break;
+            else
+            {
+                foreach (var (key, version) in CollectVisibleVersions(tx, null, true, null, true, false))
+                {
+                    count++;
+                    onVisible?.Invoke(new ComparableObject(key), version);
+                }
+            }
         }
 
         return count;
@@ -289,19 +285,6 @@ partial class NovaTable
             Buckets = builder.Buckets,
             IsSampled = !exact,
         };
-    }
-
-    /// <summary>查找对指定事务可见的首个行版本</summary>
-    private RowVersion? FindVisibleVersion(List<RowVersion>? versions, UInt64 txId)
-    {
-        if (versions == null) return null;
-
-        foreach (var version in versions)
-        {
-            if (version.IsVisible(_txManager, txId)) return version;
-        }
-
-        return null;
     }
 
     /// <summary>等深直方图流式构建器：按键升序输入，按位次切分桶</summary>

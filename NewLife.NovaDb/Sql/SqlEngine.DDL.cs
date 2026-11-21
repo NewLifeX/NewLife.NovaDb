@@ -267,6 +267,13 @@ partial class SqlEngine
                     throw new NovaException(ErrorCode.NotSupported, "Unsupported ALTER TABLE action: {0}", stmt.Action);
             }
 
+            // 主键列类型变化时索引键编码随之改变，按新类型重建主键索引
+            if (_tables.TryGetValue(stmt.TableName, out var changedTable))
+            {
+                changedTable.ReopenPrimaryIndexForSchemaChange();
+                changedTable.ReopenSecondaryIndexesForSchemaChange();
+            }
+
             // 表结构变更，持久化更新
             SchemaPersister.Save(_dbPath, schema);
 
@@ -346,18 +353,18 @@ partial class SqlEngine
         SchemaPersister.Save(_dbPath, schema);
     }
 
-    /// <summary>判断文件名的尾部是否为表文件形态（data/idx/idxl/wal/rlog/schema，含分片与二级索引）</summary>
+    /// <summary>判断文件名的尾部是否为表文件形态（data/idx/idxl/hidx/oidx/wal/rlog/schema，含分片与二级索引）</summary>
     /// <param name="tail">去掉“表名”和分隔符后的尾部</param>
     /// <returns>是否属于表文件</returns>
     private static Boolean IsTableFileTail(String tail)
     {
-        if (tail is "data" or "idx" or "idxl" or "wal" or "rlog" or "schema") return true;
+        if (tail is "data" or "idx" or "idxl" or "hidx" or "oidx" or "wal" or "rlog" or "schema") return true;
 
         // 分片或二级索引：{分片号|索引名}.{data|idx|idxl|wal}
         var dot = tail.LastIndexOf('.');
         if (dot <= 0) return false;
 
-        return tail.Substring(dot + 1) is "data" or "idx" or "idxl" or "wal";
+        return tail.Substring(dot + 1) is "data" or "idx" or "idxl" or "hidx" or "oidx" or "wal";
     }
 
     #endregion
