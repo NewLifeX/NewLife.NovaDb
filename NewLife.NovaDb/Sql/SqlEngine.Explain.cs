@@ -1,4 +1,4 @@
-﻿namespace NewLife.NovaDb.Sql;
+namespace NewLife.NovaDb.Sql;
 
 /// <summary>EXPLAIN 查询计划执行器</summary>
 public partial class SqlEngine
@@ -15,16 +15,16 @@ public partial class SqlEngine
         switch (inner)
         {
             case SelectStatement select:
-                ExplainSelect(select, plan);
+                ExplainSelect(select, plan, parameters);
                 break;
             case InsertStatement insert:
                 ExplainInsert(insert, plan);
                 break;
             case UpdateStatement update:
-                ExplainUpdate(update, plan);
+                ExplainUpdate(update, plan, parameters);
                 break;
             case DeleteStatement delete:
-                ExplainDelete(delete, plan);
+                ExplainDelete(delete, plan, parameters);
                 break;
             default:
                 plan.Add(["1", "DDL", inner.StatementType.ToString(), "", "", "DDL statement, no query plan"]);
@@ -39,11 +39,11 @@ public partial class SqlEngine
     }
 
     /// <summary>生成 SELECT 查询计划</summary>
-    private void ExplainSelect(SelectStatement select, List<Object?[]> plan)
+    private void ExplainSelect(SelectStatement select, List<Object?[]> plan, Dictionary<String, Object?>? parameters)
     {
         var stepId = 1;
 
-        // 主表扫描
+        // 主表扫描：与真实执行共用同一套访问计划推导，保证 EXPLAIN 结果可信
         var tableName = select.TableName ?? "";
         var scanType = "FULL SCAN";
         var key = "";
@@ -55,22 +55,19 @@ public partial class SqlEngine
             using var rl = _metaLock.AcquireRead();
             if (_schemas.TryGetValue(tableName, out var schema))
             {
-                // 检查 WHERE 条件是否可以使用主键
-                var pkCol = schema.GetPrimaryKeyColumn();
-                if (pkCol != null && select.Where != null && IsPrimaryKeyLookup(select.Where, pkCol.Name))
-                {
-                    scanType = "PK LOOKUP";
-                    key = $"PRIMARY({pkCol.Name})";
-                    estimatedRows = "1";
-                }
-                else
-                {
-                    scanType = "FULL SCAN";
-                    key = "";
-                    // 估算行数
-                    if (_tables.TryGetValue(tableName, out _))
-                        estimatedRows = "?";
-                }
+                _tables.TryGetValue(tableName, out var table);
+
+                var access = BuildTableAccessPlan(table, tableName, select.TableAlias, schema, select.Where, parameters);
+                scanType = access.PlanType;
+                key = access.KeyText;
+
+                if (access.EstimatedRows.HasValue)
+                    estimatedRows = access.EstimatedRows.Value.ToString();
+                else if (table != null)
+                    estimatedRows = table.RowCount.ToString();
+
+                if (!access.CoversWhere)
+                    extra = "Residual WHERE filter";
             }
         }
         else if (String.IsNullOrEmpty(tableName))
@@ -138,19 +135,6 @@ public partial class SqlEngine
         }
     }
 
-    /// <summary>检查 WHERE 条件是否为主键等值查找</summary>
-    private static Boolean IsPrimaryKeyLookup(SqlExpression where, String pkName)
-    {
-        if (where is BinaryExpression bin && bin.Operator == BinaryOperator.Equal)
-        {
-            if (bin.Left is ColumnRefExpression col && String.Equals(col.ColumnName, pkName, StringComparison.OrdinalIgnoreCase))
-                return true;
-            if (bin.Right is ColumnRefExpression col2 && String.Equals(col2.ColumnName, pkName, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
     /// <summary>生成 INSERT 计划</summary>
     private void ExplainInsert(InsertStatement insert, List<Object?[]> plan)
     {
@@ -159,45 +143,60 @@ public partial class SqlEngine
     }
 
     /// <summary>生成 UPDATE 计划</summary>
-    private void ExplainUpdate(UpdateStatement update, List<Object?[]> plan)
+    private void ExplainUpdate(UpdateStatement update, List<Object?[]> plan, Dictionary<String, Object?>? parameters)
     {
         var scanType = update.Where != null ? "FILTERED SCAN" : "FULL SCAN";
+        var key = "";
+        var estimatedRows = "?";
 
-        // 检查是否为主键更新
+        // UPDATE 只复用主键访问路径，与执行阶段保持一致
         if (update.Where != null)
         {
             using var rl = _metaLock.AcquireRead();
             if (_schemas.TryGetValue(update.TableName, out var schema))
             {
-                var pkCol = schema.GetPrimaryKeyColumn();
-                if (pkCol != null && IsPrimaryKeyLookup(update.Where, pkCol.Name))
+                _tables.TryGetValue(update.TableName, out var table);
+
+                var access = BuildTableAccessPlan(table, update.TableName, null, schema, update.Where, parameters, allowSecondaryIndex: false);
+                if (access.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange)
                 {
-                    scanType = "PK LOOKUP";
+                    scanType = access.PlanType;
+                    key = access.KeyText;
+                    if (access.EstimatedRows.HasValue)
+                        estimatedRows = access.EstimatedRows.Value.ToString();
                 }
             }
         }
 
-        plan.Add(["1", scanType, update.TableName, "", "?", $"Update {update.SetClauses?.Count ?? 0} column(s)"]);
+        plan.Add(["1", scanType, update.TableName, key, estimatedRows, $"Update {update.SetClauses?.Count ?? 0} column(s)"]);
     }
 
     /// <summary>生成 DELETE 计划</summary>
-    private void ExplainDelete(DeleteStatement delete, List<Object?[]> plan)
+    private void ExplainDelete(DeleteStatement delete, List<Object?[]> plan, Dictionary<String, Object?>? parameters)
     {
         var scanType = delete.Where != null ? "FILTERED SCAN" : "FULL SCAN";
+        var key = "";
+        var estimatedRows = "?";
 
+        // DELETE 只复用主键访问路径，与执行阶段保持一致
         if (delete.Where != null)
         {
             using var rl = _metaLock.AcquireRead();
             if (_schemas.TryGetValue(delete.TableName, out var schema))
             {
-                var pkCol = schema.GetPrimaryKeyColumn();
-                if (pkCol != null && IsPrimaryKeyLookup(delete.Where, pkCol.Name))
+                _tables.TryGetValue(delete.TableName, out var table);
+
+                var access = BuildTableAccessPlan(table, delete.TableName, null, schema, delete.Where, parameters, allowSecondaryIndex: false);
+                if (access.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange)
                 {
-                    scanType = "PK LOOKUP";
+                    scanType = access.PlanType;
+                    key = access.KeyText;
+                    if (access.EstimatedRows.HasValue)
+                        estimatedRows = access.EstimatedRows.Value.ToString();
                 }
             }
         }
 
-        plan.Add(["1", scanType, delete.TableName, "", "?", "Soft delete (mark version)"]);
+        plan.Add(["1", scanType, delete.TableName, key, estimatedRows, "Soft delete (mark version)"]);
     }
 }

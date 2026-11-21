@@ -350,23 +350,44 @@ public List<Dictionary<String, Object?>> Query(String sql,
 
 ### 9.2 索引利用
 
+单表查询由 `SqlEngine.Plan.cs` 推导访问计划（SELECT / UPDATE / DELETE / EXPLAIN 共用同一条推导，保证 EXPLAIN 与实际执行一致）：
+
+| WHERE 形态 | 访问路径 | 实现 |
+|---|---|---|
+| `pk = v`、`pk IN (v...)` | `PK LOOKUP` | `NovaTable.Get` 逐键点查 |
+| `pk > v`、`pk BETWEEN...` 等范围（数值/日期类型） | `PK RANGE` | `NovaTable.GetRange` 走 SkipList 范围定位，只反序列化范围内行 |
+| `indexed_col = v`、`indexed_col IN (v...)`（单列索引） | `INDEX LOOKUP` | `NovaTable.LookupByIndex` 取主键后回表 |
+| 其他（`LIKE`、函数、`OR`、未建索引列） | `FULL SCAN` | `GetAll` 顺序扫描 |
+
+选择规则：
+- 索引只负责缩小候选集，**最终结果始终再走一遍完整 WHERE 复核**，语义与全表扫描一致。
+- 字符串索引键在写入时统一大写，与 SQL 大小写不敏感的 `=` 语义对齐（`.idx` 文件版本 2；旧版本文件启动时自动从行数据重建）。
+- 命中行数超过全表 1/4 且超过 32 行时，回退全表扫描：随机回表比顺序扫描更慢。
+- 字符串主键不做范围下推：SkipList 的字符串排序是区域性敏感比较，与 SQL 的大小写不敏感比较不一致，下推可能漏行。
+
 ```csharp
-// WHERE id = 123 → 使用主键索引直接查找
-if (whereClause is BinaryExpression { Op: Operator.Equals } binExpr
-    && binExpr.Left is ColumnExpression { ColumnName: "id" })
-{
-    var primaryKey = Evaluate(binExpr.Right);
-    return table.Get(primaryKey, tx);
-}
+// 执行阶段的形态
+var plan = BuildTableAccessPlan(table, tableName, alias, schema, stmt.Where, parameters);
+var rows = FetchPlanRows(plan, table, tx, maxRows);
+if (stmt.Where != null)
+    rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
 ```
 
-### 9.3 谓词下推
+**已知限制**：二级索引是内存驻留并按写入即时维护的，未像主键索引那样按 MVCC 版本化。并发未提交的删除/更新期间，索引查询拿到的候选行可能与全表扫描略有差异（行本身仍按可见性 + WHERE 复核，不会返回不可见行，极端情况下可能少看到仍在可见窗口内的行）。主键访问路径不受影响。
+
+### 9.3 LIMIT 下推
+
+无 `ORDER BY` / `GROUP BY` / 聚合、且 WHERE 已被访问路径完整覆盖时，把 `OFFSET + LIMIT` 压到取数阶段：全表扫描与主键范围都只反序列化需要的行，`SELECT ... LIMIT 10` 不再反序列化整表。二级索引路径因索引未版本化（见 9.2 已知限制）不做 LIMIT 提前截断。
+
+### 9.4 谓词下推
 
 ```csharp
 // 先过滤再 JOIN,减少数据量
 var filteredLeft = leftRows.Where(row => EvaluateWhere(row, whereClause));
 var joinedRows = PerformJoin(filteredLeft, rightRows, joinCondition);
 ```
+
+JOIN 的左右表仍为全表取数后嵌套循环连接；JOIN 侧索引下推（含别名解析与 ON 条件下推）尚未实现。
 
 ## 10. 设计决策
 
@@ -407,9 +428,10 @@ SELECT * FROM regional_sales WHERE total_sales > 1000;
 ```
 
 ### 11.4 执行计划优化器
-- 成本估算（基于统计信息）
+- 成本估算（基于统计信息）：当前只用“命中行数 / 表行数”做粗略选择性判断（见 9.2）
 - JOIN 顺序优化
-- 索引选择策略
+- JOIN 侧索引下推与 ON 条件下推
+- 联合索引的最左前缀匹配（当前只支持单列索引等值）
 
 ### 11.5 Hash Join / Merge Join
 - Hash Join: 适合等值连接,O(n+m) 复杂度

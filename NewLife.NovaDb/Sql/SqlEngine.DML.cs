@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
@@ -236,7 +236,12 @@ partial class SqlEngine
 
         using var localTx = tx == null ? _txManager.BeginTransaction() : null;
         var effectiveTx = tx ?? localTx!;
-        var allRows = table.GetAll(effectiveTx);
+
+        // 只复用主键访问路径：主键索引按版本维护，候选集与全表扫描完全一致
+        var plan = BuildTableAccessPlan(table, stmt.TableName, null, schema, stmt.Where, parameters, allowSecondaryIndex: false);
+        var allRows = plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange
+            ? FetchPlanRows(plan, table, effectiveTx, 0)
+            : table.GetAll(effectiveTx);
         var affectedRows = 0;
 
         foreach (var row in allRows)
@@ -276,7 +281,12 @@ partial class SqlEngine
 
         using var localTx = tx == null ? _txManager.BeginTransaction() : null;
         var effectiveTx = tx ?? localTx!;
-        var allRows = table.GetAll(effectiveTx);
+
+        // 只复用主键访问路径：主键索引按版本维护，候选集与全表扫描完全一致
+        var plan = BuildTableAccessPlan(table, stmt.TableName, null, schema, stmt.Where, parameters, allowSecondaryIndex: false);
+        var allRows = plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange
+            ? FetchPlanRows(plan, table, effectiveTx, 0)
+            : table.GetAll(effectiveTx);
         var affectedRows = 0;
 
         foreach (var row in allRows)

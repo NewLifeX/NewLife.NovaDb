@@ -39,34 +39,46 @@ partial class SqlEngine
 
         using var tx = _txManager.BeginTransaction();
 
-        // 1. 获取所有行
-        var rows = table.GetAll(tx);
+        // 1. 访问计划：能走主键/二级索引就不全表扫描
+        var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters);
 
-        // 2. WHERE 过滤
+        // LIMIT 下推：无排序/分组/聚合且条件被索引完整覆盖时，只需取 offset+limit 行
+        // 二级索引与主键索引不同步于 MVCC 可见性，故只对主键/全表扫描计划下推
+        var maxRows = 0;
+        if (stmt.Limit.HasValue && stmt.OrderBy == null && !HasAggregateFunction(stmt)
+            && (stmt.GroupBy == null || stmt.GroupBy.Count == 0)
+            && plan.CoversWhere
+            && plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange or TableAccessKind.FullScan)
+            maxRows = (stmt.OffsetValue ?? 0) + stmt.Limit.Value;
+
+        // 2. 取候选行
+        var rows = FetchPlanRows(plan, table, tx, maxRows);
+
+        // 3. WHERE 过滤（索引只缩小候选集，语义仍以条件复核为准）
         if (stmt.Where != null)
         {
             rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
         }
 
-        // 3. GROUP BY
+        // 4. GROUP BY
         if (stmt.GroupBy != null && stmt.GroupBy.Count > 0)
         {
             return ExecuteGroupBy(stmt, rows, schema, parameters);
         }
 
-        // 4. 检查是否有聚合函数（无 GROUP BY）
+        // 5. 检查是否有聚合函数（无 GROUP BY）
         if (HasAggregateFunction(stmt))
         {
             return ExecuteAggregate(stmt, rows, schema, parameters);
         }
 
-        // 5. ORDER BY
+        // 6. ORDER BY
         if (stmt.OrderBy != null)
         {
             rows = ApplyOrderBy(rows, stmt.OrderBy, schema);
         }
 
-        // 6. OFFSET / LIMIT
+        // 7. OFFSET / LIMIT
         if (stmt.OffsetValue.HasValue)
         {
             rows = rows.Skip(stmt.OffsetValue.Value).ToList();
@@ -76,7 +88,7 @@ partial class SqlEngine
             rows = rows.Take(stmt.Limit.Value).ToList();
         }
 
-        // 7. 投影
+        // 8. 投影
         return BuildSelectResult(stmt, rows, schema, parameters);
     }
 

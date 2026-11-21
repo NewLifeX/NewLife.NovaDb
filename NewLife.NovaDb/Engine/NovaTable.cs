@@ -44,6 +44,9 @@ public partial class NovaTable : IDisposable
     // 默认分片 ID
     private const Int32 DefaultShardId = 0;
 
+    // 二级索引文件格式版本。2 起索引键中的字符串统一大写，与 SQL 大小写不敏感比较语义一致
+    private const Byte SecondaryIndexFileVersion = 2;
+
     /// <summary>表架构</summary>
     public TableSchema Schema => _schema;
 
@@ -64,6 +67,9 @@ public partial class NovaTable : IDisposable
 
     /// <summary>数据版本号。每次写操作（Insert/Update/Delete）提交时递增，供物化视图增量捕获</summary>
     public Int64 DataVersion { get; private set; }
+
+    /// <summary>主键索引条目数（含未提交与历史版本的行，仅用于执行计划的粗略估算）</summary>
+    public Int32 RowCount => _primaryIndex.Count;
 
     /// <summary>数据变更事件。写操作提交后触发，参数为本次变更的主键</summary>
     public event Action<Object>? OnDataChanged;
@@ -563,6 +569,59 @@ public partial class NovaTable : IDisposable
         }
     }
 
+    /// <summary>按主键范围获取可见行，只反序列化范围内的行</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="from">下界主键值，null 表示不限</param>
+    /// <param name="includeFrom">是否包含下界</param>
+    /// <param name="to">上界主键值，null 表示不限</param>
+    /// <param name="includeTo">是否包含上界</param>
+    /// <param name="maxRows">最大返回行数，0 表示不限制</param>
+    /// <returns>按主键升序排列的行数据列表</returns>
+    public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows = 0)
+    {
+        if (tx == null)
+            throw new ArgumentNullException(nameof(tx));
+
+        lock (_lock)
+        {
+            var fromKey = from == null ? null : new ComparableObject(from);
+            var toKey = to == null ? null : new ComparableObject(to);
+
+            while (true)
+            {
+                // 先按 maxRows 截取索引条目；索引条目不一定有当前事务可见版本，截断可能少取行，此时退回不限量扫描
+                var entries = _primaryIndex.GetRange(fromKey, includeFrom, toKey, includeTo, maxRows);
+                var result = new List<Object?[]>();
+                var lost = false;
+
+                foreach (var entry in entries)
+                {
+                    var visible = false;
+                    foreach (var ver in entry.Value)
+                    {
+                        if (ver.IsVisible(_txManager, tx.TxId))
+                        {
+                            result.Add(DeserializeRow(ver.Payload!));
+                            visible = true;
+                            break;
+                        }
+                    }
+
+                    if (!visible) lost = true;
+                    if (maxRows > 0 && result.Count >= maxRows) break;
+                }
+
+                if (maxRows > 0 && result.Count < maxRows && lost && entries.Count >= maxRows)
+                {
+                    maxRows = 0;
+                    continue;
+                }
+
+                return result;
+            }
+        }
+    }
+
     /// <summary>清空表中所有数据，保留表结构</summary>
     public void Truncate()
     {
@@ -663,7 +722,11 @@ public partial class NovaTable : IDisposable
             if (!_secondaryIndexes.TryGetValue(indexName, out var idx))
                 return null;
 
-            var indexKey = new ComparableObject(indexKeyValues.Length == 1 ? indexKeyValues[0]! : indexKeyValues);
+            var values = new Object?[indexKeyValues.Length];
+            for (var i = 0; i < indexKeyValues.Length; i++)
+                values[i] = NormalizeIndexValue(indexKeyValues[i]);
+
+            var indexKey = new ComparableObject(values.Length == 1 ? values[0]! : values);
             if (!idx.TryGetValue(indexKey, out var pkList))
                 return null;
 
@@ -816,15 +879,20 @@ public partial class NovaTable : IDisposable
     private static ComparableObject BuildIndexKey(Object?[] row, Int32[] colOrdinals)
     {
         if (colOrdinals.Length == 1)
-            return new ComparableObject(row[colOrdinals[0]]!);
+            return new ComparableObject(NormalizeIndexValue(row[colOrdinals[0]]!)!);
 
         // 联合索引：用数组作为键
         var keyValues = new Object?[colOrdinals.Length];
         for (var i = 0; i < colOrdinals.Length; i++)
-            keyValues[i] = row[colOrdinals[i]];
+            keyValues[i] = NormalizeIndexValue(row[colOrdinals[i]]);
 
         return new ComparableObject(keyValues);
     }
+
+    /// <summary>规范化索引键值。字符串统一大写，使索引等值与 SQL 的大小写不敏感比较语义一致</summary>
+    /// <param name="value">原始值</param>
+    /// <returns>规范化后的值</returns>
+    private static Object? NormalizeIndexValue(Object? value) => value is String str ? str.ToUpperInvariant() : value;
 
     /// <summary>唯一性预检查：检测行在唯一二级索引中的冲突（只读，无副作用）</summary>
     /// <param name="row">待插入的行数据</param>
@@ -959,6 +1027,10 @@ public partial class NovaTable : IDisposable
             var bytes = File.ReadAllBytes(filePath);
             if (bytes.Length < FileHeader.HeaderSize + 4) return null;
 
+            // 版本 1 的索引键未做字符串规范化，与新键不兼容，直接从行数据重建
+            var header = FileHeader.Read(new ReadOnlySpan<Byte>(bytes, 0, FileHeader.HeaderSize));
+            if (header.Version != SecondaryIndexFileVersion) return null;
+
             var reader = new SpanReader(bytes, FileHeader.HeaderSize);
             var count = reader.ReadInt32();
             var idx = new SkipList<ComparableObject, List<ComparableObject>>();
@@ -1020,12 +1092,8 @@ public partial class NovaTable : IDisposable
                     pkList = [];
                     idx.Insert(indexKey, pkList);
                 }
-                else if (indexDef.IsUnique)
-                {
-                    // 重建时重复键静默跳过（历史数据可能违反唯一约束），保证表可加载
-                    break;
-                }
 
+                // 历史数据可能违反唯一约束（如仅大小写不同的重复值），这里全部保留，保证索引查询与全表扫描结果一致
                 pkList!.Add(pk);
                 break;
             }
@@ -1059,7 +1127,7 @@ public partial class NovaTable : IDisposable
             // 写入文件头
             var header = new FileHeader
             {
-                Version = 1,
+                Version = SecondaryIndexFileVersion,
                 FileType = FileType.Index,
                 PageSize = (UInt32)_options.PageSize,
                 CreateTime = DateTime.Now

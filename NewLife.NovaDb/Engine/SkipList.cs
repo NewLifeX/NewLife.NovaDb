@@ -225,6 +225,58 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         return TryGetValue(key, out _);
     }
 
+    /// <summary>按键顺序获取指定范围内的键值对</summary>
+    /// <param name="from">起始键，null 表示不限下界</param>
+    /// <param name="includeFrom">是否包含起始键</param>
+    /// <param name="to">结束键，null 表示不限上界</param>
+    /// <param name="includeTo">是否包含结束键</param>
+    /// <param name="maxCount">最大返回数量，0 表示不限制</param>
+    /// <returns>按键排序的键值对列表</returns>
+    public List<KeyValuePair<TKey, TValue>> GetRange(TKey? from, Boolean includeFrom, TKey? to, Boolean includeTo, Int32 maxCount = 0)
+    {
+        lock (_lock)
+        {
+            var result = new List<KeyValuePair<TKey, TValue>>();
+            var current = _head;
+
+            if (from != null)
+            {
+                // 定位第一个不小于 from 的节点
+                for (var i = _level; i >= 0; i--)
+                {
+                    while (current.Forward[i] != null && current.Forward[i]!.Key.CompareTo(from) < 0)
+                    {
+                        current = current.Forward[i]!;
+                    }
+                }
+
+                current = current.Forward[0]!;
+                if (!includeFrom && current != null && current.Key.CompareTo(from) == 0)
+                    current = current.Forward[0]!;
+            }
+            else
+            {
+                current = _head.Forward[0]!;
+            }
+
+            while (current != null)
+            {
+                if (to != null)
+                {
+                    var cmp = current.Key.CompareTo(to);
+                    if (cmp > 0 || (cmp == 0 && !includeTo)) break;
+                }
+
+                result.Add(new KeyValuePair<TKey, TValue>(current.Key, current.Value));
+                if (maxCount > 0 && result.Count >= maxCount) break;
+
+                current = current.Forward[0]!;
+            }
+
+            return result;
+        }
+    }
+
     /// <summary>获取所有键值对（按键排序）</summary>
     /// <returns>键值对列表</returns>
     public List<KeyValuePair<TKey, TValue>> GetAll()
