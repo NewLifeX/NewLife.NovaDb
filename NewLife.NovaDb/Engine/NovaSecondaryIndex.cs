@@ -33,6 +33,9 @@ internal sealed class NovaSecondaryIndex : IDisposable
     /// <summary>索引键数量</summary>
     public Int64 KeyCount => _hash.KeyCount;
 
+    /// <summary>索引条目数（存活值数量）</summary>
+    public Int64 LiveCount => _hash.LiveCount;
+
     /// <summary>索引文件已应用偏移</summary>
     public Int64 AppliedOffset => _hash.AppliedOffset;
 

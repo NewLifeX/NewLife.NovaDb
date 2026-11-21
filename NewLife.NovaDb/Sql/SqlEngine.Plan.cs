@@ -445,13 +445,19 @@ partial class SqlEngine
 
                 if (!ok) continue;
 
-                // 排序列必须紧跟等值前缀，且各列不可空、类型排序与 SQL 一致
+                // 排序列必须紧跟等值前缀；可空列仅在索引覆盖全部存活行（无 NULL）时才允许走索引顺序
+                var complete = table != null && table.IsIndexComplete(index.IndexName);
                 var matched = true;
                 for (var i = 0; i < order.Count && matched; i++)
                 {
                     var columnName = index.Columns[s + i];
                     if (!String.Equals(columnName, order[i].Column, StringComparison.OrdinalIgnoreCase)) matched = false;
-                    else if (!schema.HasColumn(columnName) || !CanUseOrderIndex(schema.GetColumn(columnName))) matched = false;
+                    else if (!schema.HasColumn(columnName)) matched = false;
+                    else
+                    {
+                        var column = schema.GetColumn(columnName);
+                        if (!CanUseOrderIndex(column) && !(column.Nullable && complete)) matched = false;
+                    }
                 }
                 if (!matched) continue;
 

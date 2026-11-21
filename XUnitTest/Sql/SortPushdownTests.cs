@@ -109,6 +109,49 @@ public class SortPushdownTests : IDisposable
         Assert.False(HasSortStep(descend));
     }
 
+    [Fact(DisplayName = "可空排序列无 NULL 时走索引顺序")]
+    public void NullableOrderColumnWithoutNulls_UsesIndexOrder()
+    {
+        _engine.Execute("CREATE TABLE nn (id INT PRIMARY KEY, score INT)");
+        for (var i = 1; i <= 100; i++) _engine.Execute($"INSERT INTO nn (id, score) VALUES ({i}, {i % 10})");
+        _engine.Execute("CREATE INDEX idx_nn_score ON nn (score)");
+
+        var explain = Explain("SELECT id FROM nn ORDER BY score LIMIT 10");
+        Assert.Equal("INDEX ORDER", Convert.ToString(explain.Rows[0][1]));
+        Assert.False(HasSortStep(explain));
+
+        var withIndex = Rows(_engine.Execute("SELECT id, score FROM nn ORDER BY score LIMIT 10"));
+
+        _engine.Execute("DROP INDEX idx_nn_score ON nn");
+        var fullScan = Rows(_engine.Execute("SELECT id, score FROM nn ORDER BY score LIMIT 10"));
+
+        Assert.Equal(fullScan, withIndex);
+        Assert.Equal(10, withIndex.Length);
+    }
+
+    [Fact(DisplayName = "可空排序列存在 NULL 时退回全表扫描并保留 NULL 行")]
+    public void NullableOrderColumnWithNulls_KeepsNullRows()
+    {
+        _engine.Execute("CREATE TABLE wn (id INT PRIMARY KEY, score INT)");
+        _engine.Execute("INSERT INTO wn (id, score) VALUES (1, NULL), (2, 5), (3, NULL), (4, 1), (5, 3), (6, NULL)");
+        _engine.Execute("CREATE INDEX idx_wn_score ON wn (score)");
+
+        // 索引漏掉 NULL 行，不能走索引顺序
+        var explain = Explain("SELECT id FROM wn ORDER BY score");
+        Assert.NotEqual("INDEX ORDER", Convert.ToString(explain.Rows[0][1]));
+
+        var rows = _engine.Execute("SELECT id, score FROM wn ORDER BY score").Rows;
+        Assert.Equal(6, rows.Count);
+
+        // NULL 排在最前（与逐行比较语义一致）
+        Assert.Null(rows[0][1]);
+        Assert.Null(rows[1][1]);
+        Assert.Null(rows[2][1]);
+        Assert.Equal(1, Convert.ToInt32(rows[3][1]));
+        Assert.Equal(3, Convert.ToInt32(rows[4][1]));
+        Assert.Equal(5, Convert.ToInt32(rows[5][1]));
+    }
+
     [Fact(DisplayName = "主键范围 + ORDER BY 降序 + LIMIT 反向扫描")]
     public void PrimaryKeyRange_DescendingWithLimit()
     {

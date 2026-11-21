@@ -1100,6 +1100,20 @@ public partial class NovaTable : IDisposable
         }
     }
 
+    /// <summary>判断二级索引是否覆盖全部存活行（即索引列不含 NULL）</summary>
+    /// <param name="indexName">索引名</param>
+    /// <returns>索引条目数与存活行数一致时返回 true</returns>
+    /// <remarks>可空列的 ORDER BY 只有在确认没有 NULL 时才能改走索引顺序，否则会漏掉 NULL 行</remarks>
+    public Boolean IsIndexComplete(String indexName)
+    {
+        if (String.IsNullOrEmpty(indexName)) return false;
+
+        lock (_lock)
+        {
+            return _secondaryIndexes.TryGetValue(indexName, out var idx) && idx.LiveCount == _primaryIndex.LiveCount;
+        }
+    }
+
     /// <summary>通过二级索引查询匹配的主键列表</summary>
     /// <param name="indexName">索引名</param>
     /// <param name="indexKeyValues">索引键值</param>
