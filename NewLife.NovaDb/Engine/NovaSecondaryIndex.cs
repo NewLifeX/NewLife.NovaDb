@@ -101,11 +101,12 @@ internal sealed class NovaSecondaryIndex : IDisposable
     /// <summary>加入一条索引条目</summary>
     /// <param name="key">索引键（已规范化，单列为标量、联合索引为 Object[]）</param>
     /// <param name="primaryKey">主键值</param>
-    public void Add(Object key, Object primaryKey)
+    /// <param name="dedupe">同名主键已存在时跳过；仅回放/加载需要，正常写入不必扫描值链</param>
+    public void Add(Object key, Object primaryKey, Boolean dedupe = false)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(NovaSecondaryIndex));
 
-        _hash.Apply([MmfHashChange.Add(EncodeKey(key), EncodePrimaryKey(primaryKey), unique: true)]);
+        _hash.Apply([MmfHashChange.Add(EncodeKey(key), EncodePrimaryKey(primaryKey), dedupe)]);
 
         if (_ordered != null) AddOrdered(key, primaryKey);
     }
@@ -125,14 +126,15 @@ internal sealed class NovaSecondaryIndex : IDisposable
     /// <summary>批量加入（建索引/重建用）</summary>
     /// <param name="entries">条目集合</param>
     /// <param name="appliedOffset">应用后的 rlog 偏移，-1 表示不推进</param>
-    public void AddRange(IEnumerable<(Object Key, Object PrimaryKey)> entries, Int64 appliedOffset = -1)
+    /// <param name="dedupe">同名主键已存在时跳过；回放与加载需要，重建时不需要</param>
+    public void AddRange(IEnumerable<(Object Key, Object PrimaryKey)> entries, Int64 appliedOffset = -1, Boolean dedupe = false)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(NovaSecondaryIndex));
 
         var changes = new List<MmfHashChange>(4096);
         foreach (var (key, pk) in entries)
         {
-            changes.Add(MmfHashChange.Add(EncodeKey(key), EncodePrimaryKey(pk), unique: true));
+            changes.Add(MmfHashChange.Add(EncodeKey(key), EncodePrimaryKey(pk), dedupe));
 
             if (changes.Count >= 4096)
             {

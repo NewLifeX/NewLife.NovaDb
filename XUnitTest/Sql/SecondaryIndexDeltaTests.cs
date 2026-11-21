@@ -65,6 +65,12 @@ public class SecondaryIndexDeltaTests : IDisposable
         }
     }
 
+    /// <summary>删掉二级索引哈希文件，强制走"基线 + 增量回放"这条兜底路径</summary>
+    private static void DeleteSecondaryHashFiles(String directory)
+    {
+        foreach (var file in Directory.GetFiles(directory, "*.hidx")) File.Delete(file);
+    }
+
     [Fact(DisplayName = "二级索引提交只追加增量，不重写基线")]
     public void Commit_AppendsDeltaWithoutRewritingBaseline()
     {
@@ -175,6 +181,9 @@ public class SecondaryIndexDeltaTests : IDisposable
             var deltaFile = GetDeltaPath("t4", "idx_t4_name", snapshotDir);
             Assert.True(File.Exists(deltaFile), "快照中应保留增量文件");
 
+            // 哈希文件丢失时才需要基线 + 增量，损毁的增量必须让位给全表重建
+            DeleteSecondaryHashFiles(snapshotDir);
+
             var length = new FileInfo(deltaFile).Length;
             using (var fs = new FileStream(deltaFile, FileMode.Open, FileAccess.Write, FileShare.None))
             {
@@ -264,6 +273,9 @@ public class SecondaryIndexDeltaTests : IDisposable
 
             var deltaFile = GetDeltaPath("t7", "idx_t7_name", snapshotDir);
             Assert.True(File.Exists(deltaFile), "快照中应保留增量文件");
+
+            // 哈希文件仍在时直接复用、不读增量；删掉后才是"基线 + 增量回放"路径
+            DeleteSecondaryHashFiles(snapshotDir);
 
             using var reopened = new SqlEngine(snapshotDir, new DbOptions { Path = snapshotDir, WalMode = WalMode.None });
 

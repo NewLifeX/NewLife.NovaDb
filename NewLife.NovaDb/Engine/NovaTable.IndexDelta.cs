@@ -1,7 +1,8 @@
-﻿using System.Buffers;
+using System.Buffers;
 using System.Buffers.Binary;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
+using NewLife.NovaDb.Tx;
 using NewLife.NovaDb.Utilities;
 using NewLife.Security;
 
@@ -35,7 +36,7 @@ public partial class NovaTable
     private const Byte SecondaryIndexDeltaRecordDelete = 2;
 
     /// <summary>增量压缩的阈值下限，避免条目很少的索引频繁重写基线</summary>
-    private const Int32 SecondaryIndexDeltaMinCompactionRecords = 1000;
+    private const Int32 SecondaryIndexDeltaMinCompactionRecords = 10000;
 
     // 二级索引增量：索引名 → 自上次写基线以来追加的记录数
     private readonly Dictionary<String, Int32> _secondaryIndexDeltaCounts = new(StringComparer.OrdinalIgnoreCase);
@@ -72,6 +73,56 @@ public partial class NovaTable
 
     #region 增量写入
 
+    /// <summary>取当前事务的二级索引增量收集器</summary>
+    /// <param name="tx">事务</param>
+    /// <returns>增量收集器</returns>
+    private List<SecondaryIndexDeltaEntry> GetIndexDeltas(Transaction tx)
+    {
+        if (!_txIndexDeltas.TryGetValue(tx.TxId, out var list))
+        {
+            list = [];
+            _txIndexDeltas[tx.TxId] = list;
+        }
+
+        return list;
+    }
+
+    /// <summary>注册二级索引增量的提交动作，同一事务只注册一次</summary>
+    /// <param name="tx">事务</param>
+    /// <remarks>
+    /// 逐行注册会让一次提交写出 N 次增量、刷 N 次索引文件，这里按事务聚合；
+    /// 必须在本事务的主键提交动作之后注册，保证提交时先写行日志再推进索引偏移。
+    /// </remarks>
+    private void RegisterIndexDeltaCommit(Transaction tx)
+    {
+        if (!_txIndexDeltas.ContainsKey(tx.TxId)) return;
+        if (!_txIndexDeltasRegistered.Add(tx.TxId)) return;
+
+        var txId = tx.TxId;
+        tx.RegisterCommitAction(() => CommitIndexDeltas(txId));
+        tx.RegisterRollbackAction(() => DiscardIndexDeltas(txId));
+    }
+
+    /// <summary>提交指定事务收集的二级索引增量</summary>
+    /// <param name="txId">事务编号</param>
+    private void CommitIndexDeltas(UInt64 txId)
+    {
+        if (!_txIndexDeltas.TryGetValue(txId, out var entries)) return;
+
+        _txIndexDeltas.Remove(txId);
+        _txIndexDeltasRegistered.Remove(txId);
+
+        CommitSecondaryIndexDeltas(entries);
+    }
+
+    /// <summary>丢弃指定事务收集的二级索引增量（回滚或提交后清理）</summary>
+    /// <param name="txId">事务编号</param>
+    private void DiscardIndexDeltas(UInt64 txId)
+    {
+        _txIndexDeltas.Remove(txId);
+        _txIndexDeltasRegistered.Remove(txId);
+    }
+
     /// <summary>提交二级索引增量：把本次事务产生的 Put/Delete 追加到 .idxl，记录数超阈值时压缩为新的基线</summary>
     /// <param name="deltas">本次操作在各二级索引上产生的增量</param>
     private void CommitSecondaryIndexDeltas(List<SecondaryIndexDeltaEntry> deltas)
@@ -100,8 +151,8 @@ public partial class NovaTable
             {
                 if (AppendSecondaryIndexDelta(bucket.Key, bucket.Value))
                 {
-                    // 增量已落盘，同步推进哈希索引的已应用偏移
-                    if (_secondaryIndexes.TryGetValue(bucket.Key, out var idx)) idx.Commit(_rowLogLength);
+                    // 增量已落盘，同步推进哈希索引的已应用偏移；主键索引损坏时不推进，重启后整表重建
+                    if (_secondaryIndexes.TryGetValue(bucket.Key, out var idx)) idx.Commit(_primaryIndexBroken ? -1 : _rowLogLength);
 
                     CheckSecondaryIndexDeltaThreshold(bucket.Key);
                 }
@@ -374,7 +425,7 @@ public partial class NovaTable
                 if (key == null || pk == null) return -1;
 
                 if (recordType == SecondaryIndexDeltaRecordPut)
-                    idx.Add(key, pk);
+                    idx.Add(key, pk, dedupe: true);
                 else if (recordType == SecondaryIndexDeltaRecordDelete)
                     idx.Remove(key, pk);
                 else

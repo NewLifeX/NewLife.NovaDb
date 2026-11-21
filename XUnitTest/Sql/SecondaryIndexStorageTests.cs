@@ -206,6 +206,66 @@ public class SecondaryIndexStorageTests : IDisposable
         Assert.Equal(new[] { "1", "4", "7" }, QueryIds(reopened, "SELECT id FROM t WHERE score = 1"));
     }
 
+    [Fact(DisplayName = "事务回滚不留下索引条目与增量记录")]
+    public void RollbackLeavesNoIndexEntries()
+    {
+        using (var engine = CreateEngine())
+        {
+            engine.Execute("CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(30))");
+            engine.Execute("CREATE INDEX idx_name ON t (name)");
+            engine.Execute("INSERT INTO t (id, name) VALUES (1, 'a')");
+
+            engine.Execute("BEGIN");
+            engine.Execute("INSERT INTO t (id, name) VALUES (2, 'a'), (3, 'b')");
+            engine.Execute("UPDATE t SET name = 'c' WHERE id = 1");
+            engine.Execute("ROLLBACK");
+
+            Assert.Equal(new[] { "1" }, QueryIds(engine, "SELECT id FROM t WHERE name = 'a'"));
+            Assert.Empty(engine.Execute("SELECT id FROM t WHERE name = 'b'").Rows);
+            Assert.Empty(engine.Execute("SELECT id FROM t WHERE name = 'c'").Rows);
+        }
+
+        // 回滚的条目不能落进索引文件，重开后同样查不到
+        using var reopened = CreateEngine();
+        Assert.Equal(new[] { "1" }, QueryIds(reopened, "SELECT id FROM t WHERE name = 'a'"));
+        Assert.Empty(reopened.Execute("SELECT id FROM t WHERE name = 'b'").Rows);
+        Assert.Empty(reopened.Execute("SELECT id FROM t WHERE name = 'c'").Rows);
+    }
+
+    [Fact(DisplayName = "大批量插入后重开，索引与全表一致且增量已清理")]
+    public void BulkInsertKeepsIndexConsistent()
+    {
+        const Int32 rows = 12000;
+        using (var engine = CreateEngine())
+        {
+            engine.Execute("CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(30), score INT NOT NULL)");
+            engine.Execute("CREATE INDEX idx_score ON t (score)");
+
+            // 每条语句 1000 行，多条语句跨过增量压缩阈值
+            for (var batch = 0; batch < rows / 1000; batch++)
+            {
+                var sb = new System.Text.StringBuilder("INSERT INTO t (id, name, score) VALUES ");
+                for (var j = 0; j < 1000; j++)
+                {
+                    var i = batch * 1000 + j + 1;
+                    if (j > 0) sb.Append(',');
+                    sb.Append($"({i}, 'n{i}', {i % 100})");
+                }
+                engine.Execute(sb.ToString());
+            }
+
+            engine.Execute("UPDATE t SET score = -1 WHERE id <= 500");
+            engine.Execute("DELETE FROM t WHERE id > 11500");
+        }
+
+        Assert.False(File.Exists(Path.Combine(_testDir, "t_idx_score.idxl")), "正常关闭后增量应已清理");
+
+        using var reopened = CreateEngine();
+        Assert.Equal("500", Convert.ToString(reopened.Execute("SELECT COUNT(*) FROM t WHERE score = -1").GetScalar()));
+        Assert.Equal("11500", Convert.ToString(reopened.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+        Assert.Equal(new[] { "11500" }, QueryIds(reopened, "SELECT id FROM t WHERE score = 0 AND id = 11500"));
+    }
+
     [Fact(DisplayName = "二级索引组合层：等值读哈希，有序表按需构建")]
     public void OrderedLayerIsLazy()
     {
