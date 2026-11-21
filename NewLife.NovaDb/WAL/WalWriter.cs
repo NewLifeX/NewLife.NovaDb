@@ -58,7 +58,7 @@ public class WalWriter : IDisposable
 
             var isNewFile = !File.Exists(_walPath);
 
-            _fileStream = new FileStream(_walPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+            _fileStream = new FileStream(_walPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
 
             if (!isNewFile)
             {
@@ -220,6 +220,20 @@ public class WalWriter : IDisposable
             Flush();
             _fileStream?.Dispose();
             _disposed = true;
+        }
+    }
+
+    /// <summary>文件被外部删除或移走后重新打开（文件不存在时新建）</summary>
+    public void Reopen()
+    {
+        lock (_lock)
+        {
+            if (_disposed) throw new ObjectDisposedException(nameof(WalWriter));
+
+            _fileStream?.Dispose();
+            _fileStream = null;
+
+            Open();
         }
     }
 }

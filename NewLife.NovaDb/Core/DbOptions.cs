@@ -30,6 +30,10 @@ public class DbOptions
     /// <summary>页缓存大小（页数），默认 1024 页</summary>
     public Int32 PageCacheSize { get; set; } = 1024;
 
+    /// <summary>表文件巡检间隔（毫秒），默认 200 毫秒；0 表示每次操作都检查</summary>
+    /// <remarks>运维在运行期删除或移走表的索引/数据文件后，引擎按此间隔感知并降级</remarks>
+    public Int32 FileWatchIntervalMs { get; set; } = 200;
+
     /// <summary>时序分片粒度（小时），默认 1 小时</summary>
     public Int32 FluxPartitionHours { get; set; } = 1;
 

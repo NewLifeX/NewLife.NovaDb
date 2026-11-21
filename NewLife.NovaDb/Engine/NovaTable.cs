@@ -18,7 +18,6 @@ public partial class NovaTable : IDisposable
     private readonly DbOptions _options;
     private readonly TransactionManager _txManager;
     private readonly WalWriter? _walWriter;
-    private readonly MmfPager _dataPager;
     private readonly IDataCodec _codec;
     private readonly TableFileManager _fileManager;
 
@@ -125,18 +124,6 @@ public partial class NovaTable : IDisposable
         // 使用 TableFileManager 生成文件路径（表文件平铺在数据库目录下）
         _fileManager = new TableFileManager(_dbPath, schema.TableName, _options);
 
-        // 初始化数据文件（新建时写入 FileHeader）
-        var dataPath = _fileManager.GetDataFilePath();
-        _dataPager = new MmfPager(dataPath, _options.PageSize);
-        var dataHeader = new FileHeader
-        {
-            Version = 1,
-            FileType = FileType.Data,
-            PageSize = (UInt32)_options.PageSize,
-            CreateTime = DateTime.Now,
-        };
-        _dataPager.Open(dataHeader);
-
         // 初始化 WAL
         if (_options.WalMode != WalMode.None)
         {
@@ -153,7 +140,7 @@ public partial class NovaTable : IDisposable
         _shardManager.AddShard(new ShardInfo
         {
             ShardId = DefaultShardId,
-            DataFilePath = _fileManager.GetDataFilePath(),
+            DataFilePath = _fileManager.GetRowLogFilePath(),
             CreatedAt = DateTime.UtcNow
         });
 
@@ -181,6 +168,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             // 获取主键值
             var pkColumn = _schema.GetPrimaryKeyColumn()!;
             var pkValue = row[pkColumn.Ordinal];
@@ -282,6 +271,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             if (!TryGetVisibleVersion(tx, key, out var visibleVersion))
                 return null;
 
@@ -311,6 +302,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             var comparableKey = new ComparableObject(key);
 
             if (!TryGetVisibleVersion(tx, key, out var visibleVersion))
@@ -434,6 +427,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             var comparableKey = new ComparableObject(key);
 
             if (!TryGetVisibleVersion(tx, key, out var visibleVersion))
@@ -546,6 +541,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             var result = new List<Object?[]>();
             var count = 0;
 
@@ -589,9 +586,10 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             var result = new List<Object?[]>();
             var count = 0;
-
             foreach (var (_, version) in CollectVisibleVersions(tx, from, includeFrom, to, includeTo, descending))
             {
                 if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
@@ -714,7 +712,14 @@ public partial class NovaTable : IDisposable
         {
             _txCommitRegistered.Remove(txId);
 
-            if (_primaryIndexBroken) return;
+            RefreshStorage();
+
+            if (_primaryIndexBroken)
+            {
+                // 索引写入曾失败：先尝试按行日志修复，修复失败才放弃本次提交
+                RepairPrimaryIndex();
+                if (_primaryIndexBroken) return;
+            }
             if (!_txCommits.TryGetValue(txId, out var commits)) return;
 
             _txCommits.Remove(txId);
@@ -1043,6 +1048,19 @@ public partial class NovaTable : IDisposable
         _secondaryIndexBaselineCounts.Remove(indexName);
     }
 
+    /// <summary>判断二级索引当前是否已注册（文件缺失时会注销，查询应回退全表扫描）</summary>
+    /// <param name="indexName">索引名</param>
+    /// <returns>已注册返回 true</returns>
+    public Boolean HasSecondaryIndex(String indexName)
+    {
+        if (String.IsNullOrEmpty(indexName)) return false;
+
+        lock (_lock)
+        {
+            return _secondaryIndexes.ContainsKey(indexName);
+        }
+    }
+
     /// <summary>通过二级索引查询匹配的主键列表</summary>
     /// <param name="indexName">索引名</param>
     /// <param name="indexKeyValues">索引键值</param>
@@ -1051,6 +1069,8 @@ public partial class NovaTable : IDisposable
     {
         lock (_lock)
         {
+            RefreshStorage();
+
             if (!_secondaryIndexes.TryGetValue(indexName, out var idx))
                 return null;
 
@@ -1080,6 +1100,8 @@ public partial class NovaTable : IDisposable
     {
         lock (_lock)
         {
+            RefreshStorage();
+
             if (!_secondaryIndexes.TryGetValue(indexName, out var idx))
                 return null;
 
@@ -1283,6 +1305,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             if (!_secondaryIndexes.TryGetValue(indexName, out var idx)) return [];
 
             // 顺序扫描需要有序结构：首次使用时从哈希字典重建
@@ -1412,6 +1436,8 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            RefreshStorage();
+
             var count = 0;
             foreach (var pk in primaryKeys)
             {
@@ -2062,7 +2088,6 @@ public partial class NovaTable : IDisposable
             catch { }
 
             _walWriter?.Dispose();
-            _dataPager?.Dispose();
 
             foreach (var idx in _secondaryIndexes.Values)
             {

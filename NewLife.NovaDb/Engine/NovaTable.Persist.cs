@@ -55,8 +55,10 @@ public partial class NovaTable
         var path = GetRowLogPath();
         var isNew = !File.Exists(path) || new FileInfo(path).Length < RowLogHeaderSize;
 
-        _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        // 带 FileShare.Delete 才能让运维在运行期改名移走数据文件（Windows 有映射视图时无法删除，改名可以）
+        _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
         _rowLogLength = _rowLogStream.Length;
+        _rowLogObservedLength = _rowLogLength;
         _rowStore = new RowStore(_rowLogStream, () => _rowLogLength);
 
         if (isNew)
@@ -69,6 +71,8 @@ public partial class NovaTable
             // 校验文件头
             ValidateRowLogHeader();
         }
+
+        _rowLogObservedLength = _rowLogLength;
     }
 
     /// <summary>写入行日志文件头（32 字节）</summary>
@@ -265,6 +269,7 @@ public partial class NovaTable
         _rowLogStream.Position = RowLogHeaderSize;
         _rowLogStream.Flush();
         _rowLogLength = RowLogHeaderSize;
+        _rowLogObservedLength = _rowLogLength;
     }
 
     /// <summary>压缩行日志（重写仅包含存活行的日志）</summary>
@@ -317,8 +322,9 @@ public partial class NovaTable
             File.Delete(path);
             File.Move(tempPath, path);
 
-            _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+            _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
             _rowLogLength = _rowLogStream.Length;
+            _rowLogObservedLength = _rowLogLength;
             _rowStore = new RowStore(_rowLogStream, () => _rowLogLength);
             _rowLogStream.Position = _rowLogStream.Length;
 

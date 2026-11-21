@@ -175,9 +175,16 @@ partial class SqlEngine
 
     private NovaTable GetTable(String tableName)
     {
-        using var _ = _metaLock.AcquireRead();
-        if (!_tables.TryGetValue(tableName, out var table))
-            throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
+        NovaTable table;
+        using (_metaLock.AcquireRead())
+        {
+            if (!_tables.TryGetValue(tableName, out table!))
+                throw new NovaException(ErrorCode.TableNotFound, "Table '{0}' not found", tableName);
+        }
+
+        // 运维可能在运行期删除或移走表文件，进入语句前先巡检一次
+        table.RefreshStorage();
+
         return table;
     }
 

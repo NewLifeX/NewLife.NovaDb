@@ -129,8 +129,9 @@ public class BackupManager
         if (!Directory.Exists(backupPath))
             throw new NovaException(ErrorCode.DatabaseNotFound, "Backup directory '{0}' not found", backupPath);
 
-        // 检查是否有数据文件
-        var dataFiles = Directory.GetFiles(backupPath, "*.data");
+        // 检查是否有数据文件（新版行日志 .rlog，旧版 .data）
+        var dataFiles = Directory.GetFiles(backupPath, "*.rlog");
+        if (dataFiles.Length == 0) dataFiles = Directory.GetFiles(backupPath, "*.data");
         var novaDbFile = Path.Combine(backupPath, "nova.db");
 
         // 至少需要有 nova.db 或数据文件

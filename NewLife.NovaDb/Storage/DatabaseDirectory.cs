@@ -84,7 +84,7 @@ public class DatabaseDirectory
     }
 
     /// <summary>列举所有用户表</summary>
-    /// <remarks>通过扫描数据库目录下的 .data 文件提取表名，自动排除系统表</remarks>
+    /// <remarks>以行日志 .rlog 作为表数据文件，兼容旧版 .data；自动排除系统表与 Flux 引擎的固定日志文件</remarks>
     /// <returns>按字母排序的表名集合</returns>
     public IEnumerable<String> ListTables()
     {
@@ -92,22 +92,29 @@ public class DatabaseDirectory
             yield break;
 
         var tableNames = new HashSet<String>();
-        var dataFiles = Directory.GetFiles(_basePath, "*.data");
 
-        foreach (var file in dataFiles)
+        foreach (var pattern in new[] { "*.rlog", "*.data" })
         {
-            var fileName = System.IO.Path.GetFileNameWithoutExtension(file);
+            foreach (var file in Directory.GetFiles(_basePath, pattern))
+            {
+                var fileName = System.IO.Path.GetFileNameWithoutExtension(file);
 
-            // 跳过系统表
-            if (fileName.StartsWith("_sys"))
-                continue;
+                // 跳过系统表
+                if (fileName.StartsWith("_sys"))
+                    continue;
 
-            // 提取表名：{TableName}.data 或 {TableName}_{ShardId}.data
-            var parts = fileName.Split('_');
-            var tableName = parts[0];
+                // Flux 引擎的行式日志固定叫 flux.rlog，不是独立表
+                if (String.Equals(fileName, "flux", StringComparison.OrdinalIgnoreCase) &&
+                    file.EndsWith(".rlog", StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-            if (!String.IsNullOrEmpty(tableName))
-                tableNames.Add(tableName);
+                // 提取表名：{TableName} 或 {TableName}_{ShardId}
+                var parts = fileName.Split('_');
+                var tableName = parts[0];
+
+                if (!String.IsNullOrEmpty(tableName))
+                    tableNames.Add(tableName);
+            }
         }
 
         foreach (var name in tableNames.OrderBy(x => x))

@@ -65,7 +65,9 @@ internal sealed class MmfRegion : IDisposable
 
         var mode = exists ? FileMode.Open : FileMode.CreateNew;
         var access = _readOnly ? FileAccess.Read : FileAccess.ReadWrite;
-        var share = FileShare.Read;
+
+        // 允许运维在运行期改名移走索引文件：Windows 存在映射视图时不能删除，但带 FileShare.Delete 可以改名
+        var share = FileShare.Read | FileShare.Delete;
 
         _stream = new FileStream(_path, mode, access, share);
         if (_stream.Length < MinCapacity && !_readOnly)

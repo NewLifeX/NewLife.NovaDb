@@ -165,6 +165,9 @@ partial class SqlEngine
         if (!IsIndexOnlyCount(stmt)) return null;
         if (plan.Kind != TableAccessKind.IndexLookup || plan.IndexName == null || !plan.CoversWhere) return null;
 
+        // 索引文件被运维删除后已注销，必须回退逐行计数
+        if (!table.HasSecondaryIndex(plan.IndexName)) return null;
+
         // 无并发写事务时二级索引条目与可见行一一对应，直接数条目，不必回表逐行判断可见性
         if (!_txManager.HasOtherActiveTransactions(tx.TxId))
         {
@@ -226,6 +229,7 @@ partial class SqlEngine
             "version" => BuildSysVersionData(),
             "binlog" => BuildSysBinlogData(),
             "flux_compression" => BuildSysFluxCompressionData(),
+            "table_files" => BuildSysTableFilesData(),
             _ => throw new NovaException(ErrorCode.TableNotFound, "System table '{0}' not found", stmt.TableName)
         };
 
@@ -536,6 +540,30 @@ partial class SqlEngine
         rows.Add(["block_bytes", stats.BlockBytes.ToString()]);
         rows.Add(["compression_ratio", stats.CompressionRatio.ToString("F2", CultureInfo.InvariantCulture)]);
         rows.Add(["saved_ratio", stats.SavedRatio.ToString("F4", CultureInfo.InvariantCulture)]);
+
+        return (schema, rows);
+    }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysTableFilesData()
+    {
+        var schema = new TableSchema("_sys.table_files");
+        schema.AddColumn(new ColumnDefinition("table_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("file_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("role", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("exists", DataType.Boolean, false));
+        schema.AddColumn(new ColumnDefinition("size", DataType.Int64, false));
+        schema.AddColumn(new ColumnDefinition("degraded", DataType.Boolean, false));
+
+        var rows = new List<Object?[]>();
+
+        using var _ = _metaLock.AcquireRead();
+        foreach (var table in _tables.Values)
+        {
+            foreach (var file in table.GetFileStates())
+            {
+                rows.Add([file.TableName, file.FileName, file.RoleName, file.Exists, file.Size, file.Degraded]);
+            }
+        }
 
         return (schema, rows);
     }

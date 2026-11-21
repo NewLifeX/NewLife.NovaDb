@@ -225,7 +225,7 @@ public partial class NovaTable
         var path = _fileManager.GetSecondaryIndexDeltaFilePath(indexName);
         var isNew = !File.Exists(path) || new FileInfo(path).Length < FileHeader.HeaderSize;
 
-        stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
+        stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read | FileShare.Delete);
         if (isNew)
         {
             // 增量文件头版本与基线版本不同，两者按文件名区分用途

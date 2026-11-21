@@ -235,7 +235,7 @@ partial class SqlEngine
                 CollectIndexPlans(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, order, indexPlans);
 
                 // 候选五：二级索引顺序扫描，按索引键序满足 ORDER BY
-                CollectIndexOrderPlans(tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, rowCount, order, orderPlans);
+                CollectIndexOrderPlans(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, rowCount, order, orderPlans);
 
                 candidates.AddRange(indexPlans);
                 candidates.AddRange(orderPlans);
@@ -251,7 +251,7 @@ partial class SqlEngine
         else if (allowSecondaryIndex)
         {
             // 无 WHERE 时同样可以按二级索引顺序扫描，省掉排序
-            CollectIndexOrderPlans(tableName, tableAlias, schema, [], parameters, pkCol, stats, rowCount, order, orderPlans);
+            CollectIndexOrderPlans(table, tableName, tableAlias, schema, [], parameters, pkCol, stats, rowCount, order, orderPlans);
             candidates.AddRange(orderPlans);
         }
 
@@ -312,6 +312,9 @@ partial class SqlEngine
     {
         foreach (var index in schema.Indexes)
         {
+            // 索引文件被运维删除后已注销，不能再作为候选
+            if (table != null && !table.HasSecondaryIndex(index.IndexName)) continue;
+
             var columns = ResolveIndexColumns(schema, index);
             if (columns == null) continue;
 
@@ -372,6 +375,7 @@ partial class SqlEngine
     /// <param name="tableName">表名</param>
     /// <param name="tableAlias">表别名</param>
     /// <param name="schema">表架构</param>
+    /// <param name="table">表实例，用于判断二级索引是否仍然可用</param>
     /// <param name="conjuncts">WHERE 的顶层 AND 子条件</param>
     /// <param name="parameters">参数字典</param>
     /// <param name="pkCol">主键列</param>
@@ -383,7 +387,7 @@ partial class SqlEngine
     /// 匹配规则：排序列必须是索引列的最左前缀且方向一致，各列不可空、类型排序与 SQL 一致；
     /// 单列索引复用同列范围条件限定扫描区间，联合索引复用前缀等值条件限定扫描分组。
     /// </remarks>
-    private void CollectIndexOrderPlans(String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, Int64? rowCount, List<(String Column, Boolean Descending)>? order, List<TableAccessPlan> plans)
+    private void CollectIndexOrderPlans(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, Int64? rowCount, List<(String Column, Boolean Descending)>? order, List<TableAccessPlan> plans)
     {
         if (order == null || order.Count == 0) return;
 
@@ -397,6 +401,9 @@ partial class SqlEngine
         foreach (var index in schema.Indexes)
         {
             if (index.Columns.Count == 0 || order.Count > index.Columns.Count) continue;
+
+            // 索引文件被运维删除后已注销，不能再作为候选
+            if (table != null && !table.HasSecondaryIndex(index.IndexName)) continue;
 
             // 排序列允许在索引中后移：前面的索引列只要被单值等值条件完整覆盖，顺序扫描仍按索引键序产出
             var start = -1;
@@ -768,6 +775,8 @@ partial class SqlEngine
         // 再找能完整覆盖分支条件的二级索引等值
         foreach (var index in schema.Indexes)
         {
+            // 索引文件被运维删除后已注销，不能再作为候选
+            if (!table.HasSecondaryIndex(index.IndexName)) continue;
             var columns = ResolveIndexColumns(schema, index);
             if (columns == null) continue;
 
@@ -877,6 +886,10 @@ partial class SqlEngine
 
             case TableAccessKind.IndexLookup:
                 {
+                    // 索引在规划后被运维删除：回退全表扫描，不能把"索引缺失"当成"没有命中"
+                    if (!table.HasSecondaryIndex(plan.IndexName!))
+                        return table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, false, neededColumns);
+
                     // 可提前停止时把 LIMIT 传进索引探测，前缀扫描不必先物化全部主键
                     var pks = plan.IndexMatches ?? LookupIndexMatches(table, plan, maxRows);
                     var rows = new List<Object?[]>(pks.Count);
@@ -893,6 +906,9 @@ partial class SqlEngine
                 }
 
             case TableAccessKind.IndexOrder:
+                if (!table.HasSecondaryIndex(plan.IndexName!))
+                    return table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, false, neededColumns);
+
                 return table.ScanIndexOrder(tx, plan.IndexName!, plan.OrderPrefix,
                     plan.HasLower ? plan.Lower : null, plan.HasLower, plan.LowerInclusive,
                     plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive,
@@ -900,6 +916,13 @@ partial class SqlEngine
 
             case TableAccessKind.IndexMerge:
                 {
+                    // 任一路索引已被运维删除：整体回退全表扫描，避免只返回部分结果
+                    foreach (var branch in plan.MergeBranches)
+                    {
+                        if (branch.IndexName != null && !table.HasSecondaryIndex(branch.IndexName))
+                            return table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, false, neededColumns);
+                    }
+
                     // 各路主键并集先去重，再统一回表；结果顺序按主键升序，与全表扫描一致
                     var pks = plan.IndexMatches ?? LookupMergeMatches(table, plan);
                     plan.IndexMatches = pks;

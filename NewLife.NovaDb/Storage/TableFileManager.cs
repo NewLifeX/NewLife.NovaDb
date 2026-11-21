@@ -38,7 +38,20 @@ public class TableFileManager
             throw new ArgumentException("Table name cannot be empty", nameof(tableName));
     }
 
+    /// <summary>获取行日志文件路径（Nova 表的数据文件）</summary>
+    /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
+    /// <returns>行日志文件完整路径</returns>
+    public String GetRowLogFilePath(Int32? shardId = null)
+    {
+        var fileName = shardId.HasValue
+            ? $"{_tableName}_{shardId.Value}.rlog"
+            : $"{_tableName}.rlog";
+
+        return Path.Combine(_databasePath, fileName);
+    }
+
     /// <summary>获取数据文件路径</summary>
+    /// <remarks>Nova 表的数据实际写在 <see cref="GetRowLogFilePath"/> 指向的行日志中；本方法仅为兼容旧库保留</remarks>
     /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
     /// <returns>数据文件完整路径</returns>
     public String GetDataFilePath(Int32? shardId = null)
@@ -271,13 +284,13 @@ public class TableFileManager
     }
 
     /// <summary>检查表文件是否存在</summary>
-    /// <returns>如果至少存在一个表相关文件则返回 true</returns>
+    /// <returns>存在行日志或旧版数据文件时返回 true</returns>
     public Boolean Exists()
     {
         if (!Directory.Exists(_databasePath))
             return false;
 
-        var dataFile = GetDataFilePath();
-        return File.Exists(dataFile);
+        // Nova 表的数据文件是行日志；.data 仅为旧版库兼容
+        return File.Exists(GetRowLogFilePath()) || File.Exists(GetDataFilePath());
     }
 }
