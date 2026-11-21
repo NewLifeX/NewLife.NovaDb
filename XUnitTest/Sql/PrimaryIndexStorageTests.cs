@@ -135,6 +135,45 @@ public class PrimaryIndexStorageTests : IDisposable
         Assert.Equal("b", Convert.ToString(reopened.Execute("SELECT name FROM t WHERE id = 2").GetScalar()));
     }
 
+    [Fact(DisplayName = "主键索引存活计数在增删改、清空与重开后保持准确")]
+    public void LiveCountStaysAccurate()
+    {
+        using (var engine = CreateEngine())
+        {
+            engine.Execute("CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(30))");
+            for (var i = 1; i <= 100; i++) engine.Execute($"INSERT INTO t (id, name) VALUES ({i}, 'n{i}')");
+            Assert.Equal("100", Convert.ToString(engine.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+
+            engine.Execute("DELETE FROM t WHERE id <= 40");
+            Assert.Equal("60", Convert.ToString(engine.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+
+            engine.Execute("UPDATE t SET name = 'u' WHERE id <= 60");
+            Assert.Equal("60", Convert.ToString(engine.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+
+            engine.Execute("DELETE FROM t WHERE id > 55");
+            Assert.Equal("15", Convert.ToString(engine.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+
+            engine.Execute("TRUNCATE TABLE t");
+            Assert.Equal("0", Convert.ToString(engine.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+
+            engine.Execute("INSERT INTO t (id, name) VALUES (1, 'a'), (2, 'b')");
+            Assert.Equal("2", Convert.ToString(engine.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+        }
+
+        using (var reopened = CreateEngine())
+        {
+            Assert.Equal("2", Convert.ToString(reopened.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+            reopened.Execute("DELETE FROM t");
+            Assert.Equal("0", Convert.ToString(reopened.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+        }
+
+        // 索引文件被删除后重建，计数仍准确
+        ForceRebuild();
+
+        using var rebuilt = CreateEngine();
+        Assert.Equal("0", Convert.ToString(rebuilt.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+    }
+
     [Fact(DisplayName = "索引文件尾部被截断后重开自动重建")]
     public void CorruptedIndexRebuilds()
     {

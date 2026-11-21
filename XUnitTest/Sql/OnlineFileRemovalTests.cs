@@ -214,6 +214,45 @@ public class OnlineFileRemovalTests : IDisposable
         Assert.Contains(after.Rows, r => Convert.ToString(r[2]) == "secondary_index" && !Convert.ToBoolean(r[3]) && Convert.ToBoolean(r[5]));
     }
 
+    [Fact(DisplayName = "进程未刷索引时直接拷贝目录，重开后数据完整")]
+    public void UncleanSnapshotRebuildsIndex()
+    {
+        var snapshot = Path.Combine(Path.GetTempPath(), "NovaSnap_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using (var engine = CreateEngine())
+            {
+                engine.Execute("CREATE TABLE t (id INT PRIMARY KEY, name VARCHAR(30), score INT)");
+                engine.Execute("CREATE INDEX idx_score ON t (score)");
+                for (var i = 1; i <= 100; i++)
+                    engine.Execute($"INSERT INTO t (id, name, score) VALUES ({i}, 'n{i}', {i % 10})");
+
+                // 不 Dispose 直接复制目录：模拟进程被强制终止，索引的持久化偏移落后于行日志
+                CopyDirectory(_testDir, snapshot);
+            }
+
+            using var reopened = new SqlEngine(snapshot, new DbOptions { Path = snapshot, WalMode = WalMode.None });
+            Assert.Equal("100", Convert.ToString(reopened.Execute("SELECT COUNT(*) FROM t").GetScalar()));
+            Assert.Equal("n7", Convert.ToString(reopened.Execute("SELECT name FROM t WHERE id = 7").GetScalar()));
+            Assert.Equal(10, reopened.Execute("SELECT id FROM t WHERE score = 3").Rows.Count);
+            Assert.Equal(100, reopened.Execute("SELECT id FROM t ORDER BY id DESC").Rows.Count);
+            Assert.Equal("n100", Convert.ToString(reopened.Execute("SELECT name FROM t ORDER BY id DESC LIMIT 1").GetScalar()));
+        }
+        finally
+        {
+            try { Directory.Delete(snapshot, recursive: true); } catch { }
+        }
+    }
+
+    private static void CopyDirectory(String source, String target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var file in Directory.GetFiles(source))
+        {
+            File.Copy(file, Path.Combine(target, Path.GetFileName(file)), overwrite: true);
+        }
+    }
+
     [Fact(DisplayName = "正常删除数据行不会触发文件降级")]
     public void NormalDeletesDoNotTriggerDegradation()
     {
