@@ -47,6 +47,8 @@ internal static class SqlCostModel
             TableAccessKind.PrimaryKeyLookup => probes * IndexProbeCost + rows * LookupRowCost + filter,
             TableAccessKind.PrimaryKeyRange => IndexProbeCost + rows * (IndexScanRowCost + ScanRowCost) + filter,
             TableAccessKind.IndexLookup => probes * IndexProbeCost + rows * LookupRowCost + filter,
+            // 索引顺序扫描：沿索引键顺序遍历并按主键回表，比随机回表便宜，且省掉排序
+            TableAccessKind.IndexOrder => IndexProbeCost + rows * (IndexScanRowCost + ScanRowCost) + filter,
             _ => rows * ScanRowCost + filter,
         };
     }

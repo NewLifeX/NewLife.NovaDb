@@ -359,6 +359,7 @@ public List<Dictionary<String, Object?>> Query(String sql,
 | `indexed_col = v`、`indexed_col IN (v...)`（单列索引） | `INDEX LOOKUP` | `NovaTable.LookupByIndex` 取主键后回表 |
 | 联合索引 `(a,b)`：`a = v`、`a = v AND b <范围>`、`a = v AND b = v` | `INDEX LOOKUP` | 前缀走 `LookupByIndexPrefix`（按键有序分块扫描），全列等值走 `LookupByIndex` |
 | `a = v OR b = v`（两侧都是可走索引的等值条件） | `INDEX MERGE` | 各路分别取主键后求并集去重，再统一回表 |
+| `ORDER BY indexed_col`、`ORDER BY a, b`（命中最左前缀且同向） | `INDEX ORDER` | `NovaTable.ScanIndexOrder` 沿索引键序回表，免排序并支持 LIMIT 提前停止 |
 | 其他（`LIKE`、函数、未建索引列、OR 有一侧无索引） | `FULL SCAN` | `GetAll` 顺序扫描 |
 
 选择规则：
@@ -369,10 +370,11 @@ public List<Dictionary<String, Object?>> Query(String sql,
 - 字符串索引键在写入时统一大写，与 SQL 大小写不敏感的 `=` 语义对齐（`.idx` 文件版本 2；旧版本文件启动时自动从行数据重建）。
 - 命中行数超过全表 1/4 且超过 32 行时，回退全表扫描：随机回表比顺序扫描更慢。
 - 字符串主键不做范围下推：SkipList 的字符串排序是区域性敏感比较，与 SQL 的大小写不敏感比较不一致，下推可能漏行。
+- `ORDER BY` 可由索引顺序满足时免排序：排序列以主键打头走主键正/反向扫描；排序列是单列二级索引或联合索引最左前缀且同向时走 `INDEX ORDER`；等值命中后排序列为常量时任意方向都免排序。`EXPLAIN` 的 `extra` 标 `using index order` 并省略 `SORT` 步骤。
 
 代价选择（s2 起）：先枚举候选（全扫 / 主键点查 / 主键范围 / 单列索引等值），再由 `Sql/SqlCostModel.cs` 估算比较。
-- 成本单位＝一次行反序列化：顺序扫描 1、索引探测 1、回表 4、残余过滤 0.2、索引顺序扫描 0.5；有 `ORDER BY` 时另计 `0.1*n*log2(n)`（索引顺序免排序留给 s4）。
-- 有统计时取成本最小者，并列优先全表扫描（`reason=stats`）；统计缺失时沿用原优先级：主键点查 → 索引 → 主键范围 → 全扫（`reason=fallback`）。
+- 成本单位＝一次行反序列化：顺序扫描 1、索引探测 1、回表 4、残余过滤 0.2、索引顺序扫描 0.5；有 `ORDER BY` 且计划不保序时另计 `0.1*n*log2(n)`，`ProvidesOrder` 的计划不计排序成本。
+- 有统计时取成本最小者，并列优先全表扫描（`reason=stats`）；统计缺失时沿用原优先级：主键点查 → 索引 → 主键范围 → 索引顺序 → 全扫（`reason=fallback`）。
 - 索引候选命中超过全表 1/4 且超过 32 行时直接排除（随机回表比顺序扫描更慢）。
 - `EXPLAIN` 的 `extra` 追加 `cost=...`，`rows` 显示估算行数。
 
@@ -388,7 +390,7 @@ if (stmt.Where != null)
 
 ### 9.3 LIMIT 下推
 
-无 `ORDER BY` / `GROUP BY` / 聚合、且 WHERE 已被访问路径完整覆盖时，把 `OFFSET + LIMIT` 压到取数阶段：全表扫描与主键范围都只反序列化需要的行，`SELECT ... LIMIT 10` 不再反序列化整表。二级索引路径因索引未版本化（见 9.2 已知限制）不做 LIMIT 提前截断。
+无 `GROUP BY` / 聚合、且 WHERE 已被访问路径完整覆盖时，把 `OFFSET + LIMIT` 压到取数阶段：全表扫描、主键范围与索引顺序扫描（`ProvidesOrder`）都只反序列化需要的行，`SELECT ... LIMIT 10` 不再反序列化整表，`ORDER BY col LIMIT n` 也能边扫边停。无 `ORDER BY` 时不保序的二级索引等值查找仍不做提前截断。
 
 ### 9.4 谓词下推
 

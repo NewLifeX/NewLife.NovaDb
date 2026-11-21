@@ -42,21 +42,30 @@ partial class SqlEngine
 
         using var tx = _txManager.BeginTransaction();
 
+        // ORDER BY 只在对原始行排序时才可能被索引顺序满足：分组/聚合后排序的是结果组，与表行顺序无关
+        var orderRows = stmt.OrderBy != null && stmt.OrderBy.Count > 0 && !HasAggregateFunction(stmt)
+            && (stmt.GroupBy == null || stmt.GroupBy.Count == 0);
+
         // 1. 访问计划：能走主键/二级索引就不全表扫描
-        var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters, needsSort: stmt.OrderBy != null && stmt.OrderBy.Count > 0);
+        var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters,
+            needsSort: orderRows, orderBy: orderRows ? stmt.OrderBy : null);
 
         // 1.1 索引覆盖的 COUNT(*)：只按索引命中的主键统计可见行，不反序列化整行
         var indexOnlyCount = TryExecuteIndexOnlyCount(stmt, plan, table, tx, schema);
         if (indexOnlyCount != null) return indexOnlyCount;
 
-        // LIMIT 下推：无排序/分组/聚合且条件被索引完整覆盖时，只需取 offset+limit 行
-        // 二级索引与主键索引不同步于 MVCC 可见性，故只对主键/全表扫描计划下推
+        // LIMIT 下推：无排序/分组/聚合且条件被访问路径完整覆盖时，只需取 offset+limit 行
+        // 顺序扫描（主键/索引顺序）还能保证“边扫边停”的结果与排序后切片一致
         var maxRows = 0;
-        if (stmt.Limit.HasValue && stmt.OrderBy == null && !HasAggregateFunction(stmt)
+        if (stmt.Limit.HasValue
+            && !HasAggregateFunction(stmt)
             && (stmt.GroupBy == null || stmt.GroupBy.Count == 0)
-            && plan.CoversWhere
-            && plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange or TableAccessKind.FullScan)
-            maxRows = (stmt.OffsetValue ?? 0) + stmt.Limit.Value;
+            && plan.CoversWhere)
+        {
+            var canStopEarly = plan.ProvidesOrder
+                || (stmt.OrderBy == null && plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange or TableAccessKind.FullScan);
+            if (canStopEarly) maxRows = (stmt.OffsetValue ?? 0) + stmt.Limit.Value;
+        }
 
         // 2. 取候选行
         var rows = FetchPlanRows(plan, table, tx, maxRows, cancellationToken);
@@ -79,8 +88,8 @@ partial class SqlEngine
             return ExecuteAggregate(stmt, rows, schema, parameters, cancellationToken);
         }
 
-        // 6. ORDER BY
-        if (stmt.OrderBy != null)
+        // 6. ORDER BY：访问计划已按索引顺序产出时跳过内存排序
+        if (stmt.OrderBy != null && stmt.OrderBy.Count > 0 && !plan.ProvidesOrder)
         {
             cancellationToken.ThrowIfCancellationRequested();
             rows = ApplyOrderBy(rows, stmt.OrderBy, schema);

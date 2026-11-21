@@ -9,6 +9,9 @@ internal class SkipListNode<TKey, TValue> where TKey : IComparable<TKey>
     public TValue Value { get; set; }
     public SkipListNode<TKey, TValue>?[] Forward { get; set; }
 
+    /// <summary>第 0 层前驱指针，供反向遍历使用。头节点为 null</summary>
+    public SkipListNode<TKey, TValue>? Back { get; set; }
+
     public SkipListNode(TKey key, TValue value, Int32 level)
     {
         Key = key;
@@ -116,6 +119,10 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
                 update[i]!.Forward[i] = newNode;
             }
 
+            // 维护第 0 层前驱指针，供反向遍历使用
+            newNode.Back = update[0];
+            if (newNode.Forward[0] != null) newNode.Forward[0]!.Back = newNode;
+
             _count++;
         }
     }
@@ -183,6 +190,9 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
             if (current == null || current.Key.CompareTo(key) != 0)
                 return false;
 
+            // 先修复第 0 层前驱指针，再从各层摘除节点
+            if (current.Forward[0] != null) current.Forward[0]!.Back = current.Back;
+
             // 删除节点
             for (var i = 0; i <= _level; i++)
             {
@@ -226,55 +236,114 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
     }
 
     /// <summary>按键顺序获取指定范围内的键值对</summary>
-    /// <param name="from">起始键，null 表示不限下界</param>
-    /// <param name="includeFrom">是否包含起始键</param>
-    /// <param name="to">结束键，null 表示不限上界</param>
-    /// <param name="includeTo">是否包含结束键</param>
+    /// <param name="from">区间下界键，null 表示不限</param>
+    /// <param name="includeFrom">是否包含下界键</param>
+    /// <param name="to">区间上界键，null 表示不限</param>
+    /// <param name="includeTo">是否包含上界键</param>
     /// <param name="maxCount">最大返回数量，0 表示不限制</param>
-    /// <returns>按键排序的键值对列表</returns>
-    public List<KeyValuePair<TKey, TValue>> GetRange(TKey? from, Boolean includeFrom, TKey? to, Boolean includeTo, Int32 maxCount = 0)
+    /// <param name="descending">是否按降序返回；区间上下界语义不变，只是遍历方向相反</param>
+    /// <returns>按键升序或降序排列的键值对列表</returns>
+    /// <remarks>降序从头节点定位区间上界，再沿第 0 层前驱指针回退，无需遍历整个区间</remarks>
+    public List<KeyValuePair<TKey, TValue>> GetRange(TKey? from, Boolean includeFrom, TKey? to, Boolean includeTo, Int32 maxCount = 0, Boolean descending = false)
     {
         lock (_lock)
         {
-            var result = new List<KeyValuePair<TKey, TValue>>();
-            var current = _head;
+            return descending
+                ? GetRangeDescending(from, includeFrom, to, includeTo, maxCount)
+                : GetRangeAscending(from, includeFrom, to, includeTo, maxCount);
+        }
+    }
 
+    /// <summary>正向遍历指定区间</summary>
+    private List<KeyValuePair<TKey, TValue>> GetRangeAscending(TKey? from, Boolean includeFrom, TKey? to, Boolean includeTo, Int32 maxCount)
+    {
+        var result = new List<KeyValuePair<TKey, TValue>>();
+        var current = _head;
+
+        if (from != null)
+        {
+            // 定位第一个不小于 from 的节点
+            for (var i = _level; i >= 0; i--)
+            {
+                while (current.Forward[i] != null && current.Forward[i]!.Key.CompareTo(from) < 0)
+                {
+                    current = current.Forward[i]!;
+                }
+            }
+
+            current = current.Forward[0]!;
+            if (!includeFrom && current != null && current.Key.CompareTo(from) == 0)
+                current = current.Forward[0]!;
+        }
+        else
+        {
+            current = _head.Forward[0]!;
+        }
+
+        while (current != null)
+        {
+            if (to != null)
+            {
+                var cmp = current.Key.CompareTo(to);
+                if (cmp > 0 || (cmp == 0 && !includeTo)) break;
+            }
+
+            result.Add(new KeyValuePair<TKey, TValue>(current.Key, current.Value));
+            if (maxCount > 0 && result.Count >= maxCount) break;
+
+            current = current.Forward[0]!;
+        }
+
+        return result;
+    }
+
+    /// <summary>反向遍历指定区间</summary>
+    private List<KeyValuePair<TKey, TValue>> GetRangeDescending(TKey? from, Boolean includeFrom, TKey? to, Boolean includeTo, Int32 maxCount)
+    {
+        var result = new List<KeyValuePair<TKey, TValue>>();
+        var current = _head;
+
+        if (to != null)
+        {
+            // 定位最后一个不大于 to 的节点
+            for (var i = _level; i >= 0; i--)
+            {
+                while (current.Forward[i] != null && current.Forward[i]!.Key.CompareTo(to) <= 0)
+                {
+                    current = current.Forward[i]!;
+                }
+            }
+
+            if (!includeTo && current != _head && current.Key.CompareTo(to) == 0)
+                current = current.Back!;
+        }
+        else
+        {
+            // 定位最后一个节点
+            for (var i = _level; i >= 0; i--)
+            {
+                while (current.Forward[i] != null)
+                {
+                    current = current.Forward[i]!;
+                }
+            }
+        }
+
+        while (current != null && current != _head)
+        {
             if (from != null)
             {
-                // 定位第一个不小于 from 的节点
-                for (var i = _level; i >= 0; i--)
-                {
-                    while (current.Forward[i] != null && current.Forward[i]!.Key.CompareTo(from) < 0)
-                    {
-                        current = current.Forward[i]!;
-                    }
-                }
-
-                current = current.Forward[0]!;
-                if (!includeFrom && current != null && current.Key.CompareTo(from) == 0)
-                    current = current.Forward[0]!;
-            }
-            else
-            {
-                current = _head.Forward[0]!;
+                var cmp = current.Key.CompareTo(from);
+                if (cmp < 0 || (cmp == 0 && !includeFrom)) break;
             }
 
-            while (current != null)
-            {
-                if (to != null)
-                {
-                    var cmp = current.Key.CompareTo(to);
-                    if (cmp > 0 || (cmp == 0 && !includeTo)) break;
-                }
+            result.Add(new KeyValuePair<TKey, TValue>(current.Key, current.Value));
+            if (maxCount > 0 && result.Count >= maxCount) break;
 
-                result.Add(new KeyValuePair<TKey, TValue>(current.Key, current.Value));
-                if (maxCount > 0 && result.Count >= maxCount) break;
-
-                current = current.Forward[0]!;
-            }
-
-            return result;
+            current = current.Back;
         }
+
+        return result;
     }
 
     /// <summary>获取所有键值对（按键排序）</summary>

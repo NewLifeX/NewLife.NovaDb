@@ -602,8 +602,9 @@ public partial class NovaTable : IDisposable
     /// <param name="includeTo">是否包含上界</param>
     /// <param name="maxRows">最大返回行数，0 表示不限制</param>
     /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
-    /// <returns>按主键升序排列的行数据列表</returns>
-    public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows, CancellationToken cancellationToken)
+    /// <param name="descending">是否按主键降序返回；边界语义不变，只是扫描方向相反</param>
+    /// <returns>按主键升序（或 <paramref name="descending"/> 为 true 时降序）排列的行数据列表</returns>
+    public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows, CancellationToken cancellationToken, Boolean descending = false)
     {
         if (tx == null)
             throw new ArgumentNullException(nameof(tx));
@@ -618,7 +619,7 @@ public partial class NovaTable : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
 
                 // 先按 maxRows 截取索引条目；索引条目不一定有当前事务可见版本，截断可能少取行，此时退回不限量扫描
-                var entries = _primaryIndex.GetRange(fromKey, includeFrom, toKey, includeTo, maxRows);
+                var entries = _primaryIndex.GetRange(fromKey, includeFrom, toKey, includeTo, maxRows, descending);
                 var result = new List<Object?[]>();
                 var lost = false;
 
@@ -863,6 +864,145 @@ public partial class NovaTable : IDisposable
 
             return result;
         }
+    }
+
+    /// <summary>按二级索引键顺序扫描并回表，产出与索引键同序的可见行</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="indexName">索引名</param>
+    /// <param name="prefixValues">联合索引前缀等值条件，单列索引传 null</param>
+    /// <param name="lower">单列索引键下界，null 表示不限</param>
+    /// <param name="hasLower">是否有下界</param>
+    /// <param name="includeLower">是否包含下界</param>
+    /// <param name="upper">单列索引键上界，null 表示不限</param>
+    /// <param name="hasUpper">是否有上界</param>
+    /// <param name="includeUpper">是否包含上界</param>
+    /// <param name="descending">是否按索引键降序扫描</param>
+    /// <param name="maxRows">最大返回行数，0 表示不限制</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>按索引键顺序排列的可见行；索引不存在时返回空列表</returns>
+    /// <remarks>
+    /// 同一索引键下的主键始终按升序回表，与“全表扫描后按同一列稳定排序”的并列行顺序一致；
+    /// 索引键列含 NULL 的行不进索引，调用方需保证排序列不可空。
+    /// </remarks>
+    public List<Object?[]> ScanIndexOrder(Transaction tx, String indexName, Object?[]? prefixValues, Object? lower, Boolean hasLower, Boolean includeLower, Object? upper, Boolean hasUpper, Boolean includeUpper, Boolean descending, Int32 maxRows, CancellationToken cancellationToken)
+    {
+        if (tx == null) throw new ArgumentNullException(nameof(tx));
+        if (indexName == null) throw new ArgumentNullException(nameof(indexName));
+
+        lock (_lock)
+        {
+            if (!_secondaryIndexes.TryGetValue(indexName, out var idx)) return [];
+
+            var result = new List<Object?[]>();
+
+            Object?[]? prefix = null;
+            if (prefixValues != null && prefixValues.Length > 0)
+            {
+                prefix = new Object?[prefixValues.Length];
+                for (var i = 0; i < prefix.Length; i++)
+                {
+                    prefix[i] = NormalizeIndexValue(prefixValues[i]);
+
+                    // 索引键列含 NULL 时不进索引，带 NULL 的前缀不可能命中
+                    if (prefix[i] == null) return result;
+                }
+            }
+
+            if (prefix == null)
+            {
+                var fromKey = hasLower && lower != null ? new ComparableObject(NormalizeIndexValue(lower)!) : null;
+                var includeFrom = !hasLower || includeLower;
+                var toKey = hasUpper && upper != null ? new ComparableObject(NormalizeIndexValue(upper)!) : null;
+                var includeTo = !hasUpper || includeUpper;
+
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var entries = idx.GetRange(fromKey, includeFrom, toKey, includeTo, SecondaryIndexPrefixScanChunkSize, descending);
+                    foreach (var entry in entries)
+                    {
+                        if (AppendIndexEntryRows(tx, entry.Value, result, maxRows, cancellationToken)) return result;
+                    }
+
+                    if (entries.Count < SecondaryIndexPrefixScanChunkSize) break;
+
+                    // 继续下一块：正向抬高下界，反向压低上界（已取过的键不再包含）
+                    if (descending)
+                    {
+                        toKey = entries[^1].Key;
+                        includeTo = false;
+                    }
+                    else
+                    {
+                        fromKey = entries[^1].Key;
+                        includeFrom = false;
+                    }
+                }
+
+                return result;
+            }
+
+            // 联合索引前缀等值：正向分块扫描到前缀变化即停；反向需先收集前缀分组再逆序回表
+            var collected = new List<List<ComparableObject>>();
+            var scanFrom = new ComparableObject(prefix);
+            var scanIncludeFrom = true;
+            var stop = false;
+            while (!stop)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var entries = idx.GetRange(scanFrom, scanIncludeFrom, null, true, SecondaryIndexPrefixScanChunkSize);
+                foreach (var entry in entries)
+                {
+                    // 单列索引键不是数组，与联合索引键不可比较，直接结束
+                    if (entry.Key.Value is not Object?[] keyValues || !MatchIndexPrefix(keyValues, prefix))
+                    {
+                        stop = true;
+                        break;
+                    }
+
+                    if (descending) collected.Add(entry.Value);
+                    else if (AppendIndexEntryRows(tx, entry.Value, result, maxRows, cancellationToken)) return result;
+                }
+
+                if (stop || entries.Count < SecondaryIndexPrefixScanChunkSize) break;
+
+                scanFrom = entries[^1].Key;
+                scanIncludeFrom = false;
+            }
+
+            for (var i = collected.Count - 1; i >= 0; i--)
+            {
+                if (AppendIndexEntryRows(tx, collected[i], result, maxRows, cancellationToken)) return result;
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>把同一索引键下的主键按升序回表追加可见行</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="primaryKeys">索引键下的主键列表</param>
+    /// <param name="rows">结果行列表</param>
+    /// <param name="maxRows">最大返回行数，0 表示不限制</param>
+    /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
+    /// <returns>是否已达到行数上限</returns>
+    private Boolean AppendIndexEntryRows(Transaction tx, List<ComparableObject> primaryKeys, List<Object?[]> rows, Int32 maxRows, CancellationToken cancellationToken)
+    {
+        var count = 0;
+        foreach (var pk in primaryKeys)
+        {
+            if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+            var row = Get(tx, pk.Value!);
+            if (row == null) continue;
+
+            rows.Add(row);
+            if (maxRows > 0 && rows.Count >= maxRows) return true;
+        }
+
+        return false;
     }
 
     /// <summary>统计指定主键中当前事务可见的行数，只检查行版本可见性，不反序列化行数据</summary>

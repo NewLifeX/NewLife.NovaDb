@@ -21,6 +21,9 @@ internal enum TableAccessKind
 
     /// <summary>多路二级索引等值合并（顶层 OR 各分支取主键并集）</summary>
     IndexMerge,
+
+    /// <summary>二级索引顺序扫描，按索引键序产出以满足 ORDER BY</summary>
+    IndexOrder,
 }
 
 /// <summary>单表访问计划。由 WHERE 条件推导，SELECT/UPDATE/DELETE 与 EXPLAIN 共用</summary>
@@ -65,6 +68,15 @@ internal sealed class TableAccessPlan
     /// <summary>候选集是否已完整表达 WHERE，没有剩余条件</summary>
     public Boolean CoversWhere { get; set; }
 
+    /// <summary>候选集是否已按 ORDER BY 要求的顺序产出（免排序）</summary>
+    public Boolean ProvidesOrder { get; set; }
+
+    /// <summary>顺序扫描方向是否为降序（仅 <see cref="ProvidesOrder"/> 时有意义）</summary>
+    public Boolean OrderDescending { get; set; }
+
+    /// <summary>联合索引顺序扫描的前缀等值条件（仅 <see cref="TableAccessKind.IndexOrder"/>）</summary>
+    public Object?[]? OrderPrefix { get; set; }
+
     /// <summary>估算行数</summary>
     public Int64? EstimatedRows { get; set; }
 
@@ -81,6 +93,7 @@ internal sealed class TableAccessPlan
         TableAccessKind.PrimaryKeyRange => "PK RANGE",
         TableAccessKind.IndexLookup => "INDEX LOOKUP",
         TableAccessKind.IndexMerge => "INDEX MERGE",
+        TableAccessKind.IndexOrder => "INDEX ORDER",
         _ => "FULL SCAN",
     };
 
@@ -88,7 +101,7 @@ internal sealed class TableAccessPlan
     public String KeyText => Kind switch
     {
         TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange => PrimaryKeyText,
-        TableAccessKind.IndexLookup => $"{IndexName}({IndexColumn})",
+        TableAccessKind.IndexLookup or TableAccessKind.IndexOrder => $"{IndexName}({IndexColumn})",
         TableAccessKind.IndexMerge => String.Join(", ", MergeBranches.Select(e => e.KeyText)),
         _ => String.Empty,
     };
@@ -125,8 +138,9 @@ partial class SqlEngine
     /// <param name="parameters">参数字典</param>
     /// <param name="allowSecondaryIndex">是否允许使用二级索引（UPDATE/DELETE 仅复用主键路径）</param>
     /// <param name="needsSort">结果是否需要排序，排序成本按估算输出行数计入</param>
+    /// <param name="orderBy">ORDER BY 子句，可被索引顺序满足时产生免排序候选</param>
     /// <returns>访问计划</returns>
-    private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true, Boolean needsSort = false)
+    private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true, Boolean needsSort = false, List<OrderByClause>? orderBy = null)
     {
         // 统计信息缺失或过期时为 null，此时沿用原有规则优先级，行为与引入代价模型前一致
         var stats = table == null ? null : GetTableStatistics(tableName, table);
@@ -135,6 +149,12 @@ partial class SqlEngine
         if (stats != null) rowCount = stats.RowCount;
         else if (table != null) rowCount = table.RowCount;
 
+        var pkCol = schema.GetPrimaryKeyColumn();
+
+        // ORDER BY 能否直接由索引顺序满足：主键唯一，排序列以主键打头即可；二级索引要求排序列是其最左前缀
+        var order = ResolveOrderColumns(orderBy, schema, tableName, tableAlias);
+        var primaryOrder = order != null && pkCol != null && CanUseOrderIndex(pkCol, isPrimaryKey: true) && IsPrimaryKeyOrder(order, pkCol);
+
         // 候选一：全表扫描，始终可用；代价相同时优先选它，保证计划稳定
         var fullScan = new TableAccessPlan
         {
@@ -142,12 +162,15 @@ partial class SqlEngine
             TableName = tableName,
             CoversWhere = where == null,
             EstimatedRows = rowCount,
+            ProvidesOrder = primaryOrder,
+            OrderDescending = primaryOrder && order![0].Descending,
         };
 
         TableAccessPlan? lookupPlan = null;
         TableAccessPlan? rangePlan = null;
         TableAccessPlan? mergePlan = null;
         var indexPlans = new List<TableAccessPlan>();
+        var orderPlans = new List<TableAccessPlan>();
         var candidates = new List<TableAccessPlan> { fullScan };
 
         if (where != null)
@@ -155,7 +178,6 @@ partial class SqlEngine
             var conjuncts = new List<SqlExpression>();
             CollectConjuncts(where, conjuncts);
 
-            var pkCol = schema.GetPrimaryKeyColumn();
             if (pkCol != null)
             {
                 var primaryKeyText = $"PRIMARY({pkCol.Name})";
@@ -174,6 +196,8 @@ partial class SqlEngine
                             PrimaryKeyText = primaryKeyText,
                             CoversWhere = used.Count == conjuncts.Count,
                             EstimatedRows = keys.Count,
+                            // 主键列表按升序排列，多键只在升序时可免排序；单键任意方向都成立
+                            ProvidesOrder = primaryOrder && (keys.Count <= 1 || !order![0].Descending),
                         };
                         lookupPlan.Keys.AddRange(keys);
                         candidates.Add(lookupPlan);
@@ -188,6 +212,8 @@ partial class SqlEngine
                         Kind = TableAccessKind.PrimaryKeyRange,
                         TableName = tableName,
                         PrimaryKeyText = primaryKeyText,
+                        ProvidesOrder = primaryOrder,
+                        OrderDescending = primaryOrder && order![0].Descending,
                     };
 
                     var used = new List<SqlExpression>();
@@ -205,10 +231,15 @@ partial class SqlEngine
             // 候选四：二级索引等值（单列索引）与联合索引最左前缀
             if (allowSecondaryIndex)
             {
-                CollectIndexPlans(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, indexPlans);
-                candidates.AddRange(indexPlans);
+                CollectIndexPlans(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, order, indexPlans);
 
-                // 候选五：顶层 OR 的多路索引等值合并，先分别取主键再求并集
+                // 候选五：二级索引顺序扫描，按索引键序满足 ORDER BY
+                CollectIndexOrderPlans(tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, rowCount, order, orderPlans);
+
+                candidates.AddRange(indexPlans);
+                candidates.AddRange(orderPlans);
+
+                // 候选六：顶层 OR 的多路索引等值合并，先分别取主键再求并集
                 if (table != null)
                 {
                     mergePlan = BuildIndexMergePlan(table, tableName, tableAlias, schema, where, parameters, pkCol, stats);
@@ -216,12 +247,23 @@ partial class SqlEngine
                 }
             }
         }
+        else if (allowSecondaryIndex)
+        {
+            // 无 WHERE 时同样可以按二级索引顺序扫描，省掉排序
+            CollectIndexOrderPlans(tableName, tableAlias, schema, [], parameters, pkCol, stats, rowCount, order, orderPlans);
+            candidates.AddRange(orderPlans);
+        }
 
         TableAccessPlan chosen;
         if (stats == null)
         {
-            // 无统计：保持原有规则优先级，避免因缺少统计而选错
-            chosen = lookupPlan ?? (indexPlans.Count > 0 ? indexPlans[0] : null) ?? mergePlan ?? rangePlan ?? fullScan;
+            // 无统计：保持原有规则优先级，避免因缺少统计而选错；顺序扫描候选排在限制更强的路径之后
+            chosen = lookupPlan
+                ?? (indexPlans.Count > 0 ? indexPlans[0] : null)
+                ?? mergePlan
+                ?? rangePlan
+                ?? (orderPlans.Count > 0 ? orderPlans[0] : null)
+                ?? fullScan;
             chosen.Reason = "fallback";
         }
         else
@@ -245,11 +287,11 @@ partial class SqlEngine
         return chosen;
     }
 
-    /// <summary>估算计划总代价，需要排序时叠加排序成本</summary>
+    /// <summary>估算计划总代价，需要排序且计划本身不保序时叠加排序成本</summary>
     private static Double EstimatePlanCost(TableAccessPlan plan, TableStatistics? stats, Boolean needsSort)
     {
         var cost = plan.Kind == TableAccessKind.IndexMerge ? EstimateMergeCost(plan, stats) : SqlCostModel.EstimateCost(plan, stats);
-        if (needsSort) cost += SqlCostModel.EstimateSortCost(plan.EstimatedRows ?? stats?.RowCount ?? 0L);
+        if (needsSort && !plan.ProvidesOrder) cost += SqlCostModel.EstimateSortCost(plan.EstimatedRows ?? stats?.RowCount ?? 0L);
 
         return cost;
     }
@@ -265,7 +307,7 @@ partial class SqlEngine
     }
 
     /// <summary>收集可用的二级索引等值/前缀候选</summary>
-    private void CollectIndexPlans(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, List<TableAccessPlan> plans)
+    private void CollectIndexPlans(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, List<(String Column, Boolean Descending)>? order, List<TableAccessPlan> plans)
     {
         foreach (var index in schema.Indexes)
         {
@@ -274,12 +316,142 @@ partial class SqlEngine
 
             if (columns.Count == 1)
             {
+                var count = plans.Count;
                 CollectSingleColumnIndexPlan(table, tableName, tableAlias, index, columns[0], conjuncts, parameters, pkCol, stats, plans);
+                if (plans.Count > count) MarkConstantColumnsOrder(plans[count], columns, order);
                 continue;
             }
 
             var candidate = BuildCompositeIndexPlan(table, tableName, tableAlias, columns, index, conjuncts, parameters, pkCol, stats);
-            if (candidate != null) plans.Add(candidate);
+            if (candidate != null)
+            {
+                MarkConstantColumnsOrder(candidate, columns, order);
+                plans.Add(candidate);
+            }
+        }
+    }
+
+    /// <summary>等值命中时判断 ORDER BY 是否已被常量列满足，满足则免排序</summary>
+    /// <param name="plan">索引等值候选</param>
+    /// <param name="columns">索引列</param>
+    /// <param name="order">排序列</param>
+    /// <remarks>等值命中的所有行在这些列上取值相同，任意排列都符合 ORDER BY，方向也不受影响</remarks>
+    private static void MarkConstantColumnsOrder(TableAccessPlan plan, List<ColumnDefinition> columns, List<(String Column, Boolean Descending)>? order)
+    {
+        if (order == null || order.Count == 0) return;
+
+        // 只有唯一探测键才代表列值恒定：IN 列表会命中多组不同的键
+        Int32 constantColumns;
+        if (plan.Keys.Count == 1 && plan.IndexPrefixes.Count == 0)
+            constantColumns = columns.Count;
+        else if (plan.IndexPrefixes.Count == 1)
+            constantColumns = plan.IndexPrefixes[0].Length;
+        else
+            return;
+
+        for (var i = 0; i < order.Count; i++)
+        {
+            var found = false;
+            for (var j = 0; j < constantColumns; j++)
+            {
+                if (String.Equals(columns[j].Name, order[i].Column, StringComparison.OrdinalIgnoreCase))
+                {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) return;
+        }
+
+        plan.ProvidesOrder = true;
+    }
+
+    /// <summary>收集能按索引键序满足 ORDER BY 的二级索引顺序扫描候选</summary>
+    /// <param name="tableName">表名</param>
+    /// <param name="tableAlias">表别名</param>
+    /// <param name="schema">表架构</param>
+    /// <param name="conjuncts">WHERE 的顶层 AND 子条件</param>
+    /// <param name="parameters">参数字典</param>
+    /// <param name="pkCol">主键列</param>
+    /// <param name="stats">表统计信息</param>
+    /// <param name="rowCount">表行数粗估</param>
+    /// <param name="order">排序列</param>
+    /// <param name="plans">输出候选列表</param>
+    /// <remarks>
+    /// 匹配规则：排序列必须是索引列的最左前缀且方向一致，各列不可空、类型排序与 SQL 一致；
+    /// 单列索引复用同列范围条件限定扫描区间，联合索引复用前缀等值条件限定扫描分组。
+    /// </remarks>
+    private void CollectIndexOrderPlans(String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, Int64? rowCount, List<(String Column, Boolean Descending)>? order, List<TableAccessPlan> plans)
+    {
+        if (order == null || order.Count == 0) return;
+
+        // 多列方向不一致时，单项索引扫描无法同时满足升序与降序，只能退回排序
+        var descending = order[0].Descending;
+        for (var i = 1; i < order.Count; i++)
+        {
+            if (order[i].Descending != descending) return;
+        }
+
+        foreach (var index in schema.Indexes)
+        {
+            if (index.Columns.Count == 0 || order.Count > index.Columns.Count) continue;
+
+            // 排序列必须是索引最左前缀，且列本身可空性与排序口径都与 SQL 一致
+            var matched = true;
+            for (var i = 0; i < order.Count && matched; i++)
+            {
+                if (!String.Equals(index.Columns[i], order[i].Column, StringComparison.OrdinalIgnoreCase)) matched = false;
+                else if (!schema.HasColumn(index.Columns[i]) || !CanUseOrderIndex(schema.GetColumn(index.Columns[i]))) matched = false;
+            }
+            if (!matched) continue;
+
+            // 索引首列就是主键时，主键索引本身就是等价且更廉价的顺序来源（主键唯一，后续索引列不影响顺序）
+            if (pkCol != null && String.Equals(index.Columns[0], pkCol.Name, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var candidate = new TableAccessPlan
+            {
+                Kind = TableAccessKind.IndexOrder,
+                TableName = tableName,
+                IndexName = index.IndexName,
+                IndexColumn = String.Join(",", index.Columns),
+                PrimaryKeyText = pkCol == null ? String.Empty : $"PRIMARY({pkCol.Name})",
+                ProvidesOrder = true,
+                OrderDescending = descending,
+            };
+
+            var used = new List<SqlExpression>();
+            if (index.Columns.Count == 1)
+            {
+                // 单列索引：同列范围条件可直接限定跳表扫描区间
+                CollectRangeBounds(conjuncts, schema.GetColumn(index.Columns[0]), tableName, tableAlias, parameters, candidate, used);
+                candidate.EstimatedRows = candidate.HasLower || candidate.HasUpper
+                    ? EstimateRangeRows(stats, schema.GetColumn(index.Columns[0]), candidate, rowCount)
+                    : rowCount;
+            }
+            else
+            {
+                // 联合索引：排序列上的等值条件可限定扫描分组，后续列仍按索引键序产出
+                var prefix = new List<Object>();
+                for (var i = 0; i < order.Count; i++)
+                {
+                    var column = schema.GetColumn(index.Columns[i]);
+                    if (!CanUseEqualityIndex(column.DataType)) break;
+
+                    var columnUsed = new List<SqlExpression>();
+                    var keys = CollectEqualityKeys(conjuncts, column, tableName, tableAlias, parameters, columnUsed);
+                    if (keys == null || keys.Count != 1) break;
+
+                    prefix.Add(keys[0]);
+                    used.AddRange(columnUsed);
+                }
+
+                if (prefix.Count > 0) candidate.OrderPrefix = [.. prefix];
+                candidate.EstimatedRows = rowCount;
+            }
+
+            candidate.CoversWhere = used.Count == conjuncts.Count;
+            plans.Add(candidate);
         }
     }
 
@@ -651,7 +823,7 @@ partial class SqlEngine
                 return table.GetRange(tx,
                     plan.HasLower ? plan.Lower : null, !plan.HasLower || plan.LowerInclusive,
                     plan.HasUpper ? plan.Upper : null, !plan.HasUpper || plan.UpperInclusive,
-                    maxRows, cancellationToken);
+                    maxRows, cancellationToken, plan.ProvidesOrder && plan.OrderDescending);
 
             case TableAccessKind.IndexLookup:
                 {
@@ -668,6 +840,12 @@ partial class SqlEngine
                     }
                     return rows;
                 }
+
+            case TableAccessKind.IndexOrder:
+                return table.ScanIndexOrder(tx, plan.IndexName!, plan.OrderPrefix,
+                    plan.HasLower ? plan.Lower : null, plan.HasLower, plan.LowerInclusive,
+                    plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive,
+                    plan.OrderDescending, maxRows, cancellationToken);
 
             case TableAccessKind.IndexMerge:
                 {
@@ -688,7 +866,10 @@ partial class SqlEngine
                 }
 
             default:
-                // 全表扫描：LIMIT 下推时同样只反序列化需要的行
+                // 全表扫描：LIMIT 下推时同样只反序列化需要的行；ORDER BY 主键降序时反向扫描
+                if (plan.ProvidesOrder && plan.OrderDescending)
+                    return table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, descending: true);
+
                 return maxRows > 0 ? table.GetRange(tx, null, true, null, true, maxRows, cancellationToken) : table.GetAll(tx, cancellationToken);
         }
     }
@@ -1049,6 +1230,56 @@ partial class SqlEngine
     /// <remarks>字符串的索引排序是区域性敏感比较，与 SQL 的大小写不敏感比较不一致，范围下推可能漏行，故排除</remarks>
     private static Boolean CanUseRangeIndex(DataType dataType) => dataType is
         DataType.Int32 or DataType.Int64 or DataType.Double or DataType.Decimal or DataType.DateTime;
+
+    /// <summary>判断列能否用索引顺序满足 ORDER BY</summary>
+    /// <param name="column">列定义</param>
+    /// <param name="isPrimaryKey">是否主键列。主键非空，所有行都在主键索引里</param>
+    /// <remarks>
+    /// 可空列的 NULL 不进二级索引，字符串与日期的索引排序口径又和 SQL 排序不一致，
+    /// 直接按索引顺序输出会与「扫描后排序」的结果不同，故只对数值列免排序。
+    /// </remarks>
+    private static Boolean CanUseOrderIndex(ColumnDefinition column, Boolean isPrimaryKey = false)
+        => column.DataType is DataType.Int32 or DataType.Int64 or DataType.Double or DataType.Decimal
+            && (isPrimaryKey || !column.Nullable);
+
+    /// <summary>把 ORDER BY 解析成列清单，含表别名限定列名；存在无法识别的列时返回 null</summary>
+    /// <param name="orderBy">ORDER BY 子句</param>
+    /// <param name="schema">表架构</param>
+    /// <param name="tableName">表名</param>
+    /// <param name="tableAlias">表别名</param>
+    /// <returns>列名与方向列表；无 ORDER BY 或无法解析时返回 null</returns>
+    private static List<(String Column, Boolean Descending)>? ResolveOrderColumns(List<OrderByClause>? orderBy, TableSchema schema, String tableName, String? tableAlias)
+    {
+        if (orderBy == null || orderBy.Count == 0) return null;
+
+        var result = new List<(String, Boolean)>(orderBy.Count);
+        foreach (var clause in orderBy)
+        {
+            var name = clause.ColumnName;
+            if (String.IsNullOrEmpty(name)) return null;
+
+            // 兼容别名限定列名（如 e.name），取点后部分作为列名
+            var dot = name.LastIndexOf('.');
+            if (dot >= 0)
+            {
+                var prefix = name.Substring(0, dot);
+                if (!String.Equals(prefix, tableName, StringComparison.OrdinalIgnoreCase) &&
+                    !String.Equals(prefix, tableAlias, StringComparison.OrdinalIgnoreCase)) return null;
+
+                name = name.Substring(dot + 1);
+            }
+
+            if (!schema.HasColumn(name)) return null;
+
+            result.Add((name, clause.Descending));
+        }
+
+        return result;
+    }
+
+    /// <summary>判断排序列是否以主键打头，主键唯一时后续排序列不再影响顺序</summary>
+    private static Boolean IsPrimaryKeyOrder(List<(String Column, Boolean Descending)> order, ColumnDefinition pkCol)
+        => order.Count > 0 && String.Equals(order[0].Column, pkCol.Name, StringComparison.OrdinalIgnoreCase);
 
     #endregion
 }

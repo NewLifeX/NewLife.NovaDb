@@ -51,6 +51,7 @@ public partial class SqlEngine
         var key = "";
         var estimatedRows = "?";
         var extra = "";
+        var providesOrder = false;
 
         if (!String.IsNullOrEmpty(tableName) && tableName != "DUAL")
         {
@@ -59,10 +60,14 @@ public partial class SqlEngine
             {
                 _tables.TryGetValue(tableName, out var table);
 
-                var needsSort = select.OrderBy != null && select.OrderBy.Count > 0;
-                var access = BuildTableAccessPlan(table, tableName, select.TableAlias, schema, select.Where, parameters, needsSort: needsSort);
+                // 与执行阶段一致：分组/聚合后排序的是结果组，与表行顺序无关
+                var needsSort = select.OrderBy != null && select.OrderBy.Count > 0 && !HasAggregateFunction(select)
+                    && (select.GroupBy == null || select.GroupBy.Count == 0);
+                var access = BuildTableAccessPlan(table, tableName, select.TableAlias, schema, select.Where, parameters,
+                    needsSort: needsSort, orderBy: needsSort ? select.OrderBy : null);
                 scanType = access.PlanType;
                 key = access.KeyText;
+                providesOrder = access.ProvidesOrder;
 
                 if (access.EstimatedRows.HasValue)
                     estimatedRows = access.EstimatedRows.Value.ToString();
@@ -72,9 +77,13 @@ public partial class SqlEngine
                 if (!access.CoversWhere)
                     extra = "Residual WHERE filter";
 
+                // 访问路径本身按索引顺序产出，执行阶段不再排序
+                if (access.ProvidesOrder)
+                    extra = AppendExtra(extra, access.OrderDescending ? "using index order, descending" : "using index order");
+
                 // 与执行阶段一致：COUNT(*) 可完全由索引回答时标注不回表
                 if (IsIndexOnlyCount(select) && access.Kind == TableAccessKind.IndexLookup && access.CoversWhere)
-                    extra = String.IsNullOrEmpty(extra) ? "Index-only COUNT" : $"{extra}; Index-only COUNT";
+                    extra = AppendExtra(extra, "Index-only COUNT");
 
                 extra = AppendCost(extra, access);
             }
@@ -127,8 +136,8 @@ public partial class SqlEngine
             stepId++;
         }
 
-        // ORDER BY
-        if (select.OrderBy != null && select.OrderBy.Count > 0)
+        // ORDER BY：访问路径已按索引顺序产出时不再需要内存排序
+        if (select.OrderBy != null && select.OrderBy.Count > 0 && !providesOrder)
         {
             plan.Add([stepId.ToString(), "SORT", "", "", "?", $"In-memory sort, {select.OrderBy.Count} key(s)"]);
             stepId++;
@@ -217,10 +226,14 @@ public partial class SqlEngine
         plan.Add(["1", scanType, delete.TableName, key, estimatedRows, extra]);
     }
 
+    /// <summary>在 extra 列追加说明文字，保留已有内容</summary>
+    private static String AppendExtra(String extra, String text)
+        => String.IsNullOrEmpty(extra) ? text : $"{extra}; {text}";
+
     /// <summary>在 extra 列追加计划代价，保留已有说明文字</summary>
     private static String AppendCost(String extra, TableAccessPlan plan)
     {
         var cost = plan.Cost.ToString("0.0", CultureInfo.InvariantCulture);
-        return String.IsNullOrEmpty(extra) ? $"cost={cost}" : $"{extra}; cost={cost}";
+        return AppendExtra(extra, $"cost={cost}");
     }
 }
