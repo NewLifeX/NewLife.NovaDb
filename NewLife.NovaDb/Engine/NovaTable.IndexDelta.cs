@@ -299,10 +299,12 @@ public partial class NovaTable
 
     /// <summary>获取二级索引的增量压缩阈值</summary>
     /// <param name="indexName">索引名称</param>
-    /// <returns>max(1000, (基线条目数 + 增量记录数) / 2)</returns>
+    /// <returns>max(1000, 基线条目数 / 2)</returns>
     /// <remarks>
     /// 阈值必须随索引当前规模增长：只看基线条目数时，新建索引的基线为 0、阈值恒为 1000，
     /// 批量装载 500 万行会触发上千次全量重写基线（O(N²)），实测把 100 万行装载从 40 秒拖到 145 秒。
+    /// 基线条目数取**索引条目数（存活值数）**而不是不同键数：低基数列（状态、类型）的不同键可能只有几十个，
+    /// 用不同键数会让阈值恒定在最小值，每万次写入就全量重写一次索引，百万行规模直接退化。
     /// </remarks>
     private Int32 GetSecondaryIndexDeltaThreshold(String indexName)
     {
@@ -335,7 +337,7 @@ public partial class NovaTable
             {
                 idx.CompactIfNeeded(_rowLogLength);
                 idx.Commit(_rowLogLength);
-                _secondaryIndexBaselineCounts[indexName] = (Int32)idx.KeyCount;
+                _secondaryIndexBaselineCounts[indexName] = (Int32)idx.LiveCount;
             }
         }
     }
