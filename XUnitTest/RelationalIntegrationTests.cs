@@ -53,7 +53,7 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         return conn;
     }
 
-    private String DataFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.data");
+    private String DataFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.rlog");
     private String WalFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.wal");
     private String IdxFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.idx");
 
@@ -71,16 +71,19 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         var metaFile = Path.Combine(RelationalDbFixture.DbPath, "nova.db");
         Assert.True(File.Exists(metaFile), "nova.db 元数据文件应在首次建表后创建");
 
-        // 验证 .data 文件已创建
+        // 验证行日志文件已创建
         var dataFile = DataFile("rel_ddl_create");
-        Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
+        Assert.True(File.Exists(dataFile), ".rlog 文件应在建表后存在");
 
-        // 验证文件头版本、类型、页大小
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal((Byte)1, header.Version);
-        Assert.Equal(FileType.Data, header.FileType);
-        Assert.Equal(4096u, header.PageSize);
-        Assert.True(header.CreateTime.Year >= 2020);
+        // 验证行日志文件头：魔数 NRLG + 版本 1
+        var header = new Byte[32];
+        using (var fs = File.Open(dataFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+            Assert.Equal(32, fs.Read(header, 0, 32));
+        Assert.Equal((Byte)'N', header[0]);
+        Assert.Equal((Byte)'R', header[1]);
+        Assert.Equal((Byte)'L', header[2]);
+        Assert.Equal((Byte)'G', header[3]);
+        Assert.Equal((Byte)1, header[4]);
 
         // 通过 _sys.tables 验证表定义已持久化
         using var cmd = conn.CreateCommand();
@@ -98,11 +101,11 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         conn.ExecuteNonQuery("CREATE TABLE rel_ddl_drop (id INT PRIMARY KEY, name STRING(50))");
 
         var dataFile = DataFile("rel_ddl_drop");
-        Assert.True(File.Exists(dataFile), "建表后 .data 文件应存在");
+        Assert.True(File.Exists(dataFile), "建表后 .rlog 文件应存在");
 
         conn.ExecuteNonQuery("DROP TABLE rel_ddl_drop");
 
-        Assert.False(File.Exists(dataFile), "删表后 .data 文件应被删除");
+        Assert.False(File.Exists(dataFile), "删表后 .rlog 文件应被删除");
         Assert.False(File.Exists(WalFile("rel_ddl_drop")), "删表后 .wal 文件应被删除");
         Assert.False(File.Exists(IdxFile("rel_ddl_drop")), "删表后 .idx 文件应被删除");
 

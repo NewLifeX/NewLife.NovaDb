@@ -277,8 +277,8 @@ public class MySqlCompatibilityTests : IClassFixture<MySqlCompatibilityFixture>
         Assert.Equal(2, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM mysql_rename_new")));
         // 二级索引随表搬迁后仍可用
         Assert.Equal(1, Convert.ToInt32(Scalar(conn, "SELECT COUNT(*) FROM mysql_rename_new WHERE name = 'a'")));
-        Assert.True(File.Exists(Path.Combine(MySqlCompatibilityFixture.DbPath, "mysql_rename_new.data")), "数据文件应随表改名搬迁");
-        Assert.False(File.Exists(Path.Combine(MySqlCompatibilityFixture.DbPath, "mysql_rename_old.data")), "旧数据文件应已移除");
+        Assert.True(File.Exists(Path.Combine(MySqlCompatibilityFixture.DbPath, "mysql_rename_new.rlog")), "数据文件应随表改名搬迁");
+        Assert.False(File.Exists(Path.Combine(MySqlCompatibilityFixture.DbPath, "mysql_rename_old.rlog")), "旧数据文件应已移除");
 
         // 旧表名不可再访问
         using var cmd = conn.CreateCommand();

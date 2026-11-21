@@ -83,6 +83,27 @@ public class TableFileManagerTests : IDisposable
         Assert.Equal(Path.Combine(_testPath, "Users_5.data"), path3);
     }
 
+    [Fact(DisplayName = "测试行日志路径生成")]
+    public void TestGetRowLogFilePath()
+    {
+        var manager = new TableFileManager(_testPath, "Users", _options);
+
+        Assert.Equal(Path.Combine(_testPath, "Users.rlog"), manager.GetRowLogFilePath());
+        Assert.Equal(Path.Combine(_testPath, "Users_0.rlog"), manager.GetRowLogFilePath(0));
+    }
+
+    [Fact(DisplayName = "仅存在行日志时也判断表存在")]
+    public void TestExistsByRowLog()
+    {
+        var manager = new TableFileManager(_testPath, "RlogTable", _options);
+
+        Assert.False(manager.Exists());
+
+        File.WriteAllText(manager.GetRowLogFilePath(), "");
+
+        Assert.True(manager.Exists());
+    }
+
     [Fact(DisplayName = "测试主索引文件路径生成")]
     public void TestGetPrimaryIndexFilePath()
     {

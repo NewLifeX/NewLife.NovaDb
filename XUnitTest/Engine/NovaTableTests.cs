@@ -58,8 +58,9 @@ public class NovaTableTests : IDisposable
 
         Assert.NotNull(table);
         Assert.Equal(schema, table.Schema);
-        // 表文件平铺在数据库目录下，不再创建表子目录
-        Assert.True(File.Exists(Path.Combine(_testDir, "users.data")));
+        // 表文件平铺在数据库目录下，数据写入行日志 .rlog
+        Assert.True(File.Exists(Path.Combine(_testDir, "users.rlog")));
+        Assert.False(File.Exists(Path.Combine(_testDir, "users.data")));
     }
 
     [Fact(DisplayName = "测试插入和查询")]

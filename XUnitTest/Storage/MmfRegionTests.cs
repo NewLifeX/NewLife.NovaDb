@@ -18,6 +18,7 @@ public class MmfRegionTests : IDisposable
     public void Dispose()
     {
         if (File.Exists(_testFile)) File.Delete(_testFile);
+        if (File.Exists(_testFile + ".moved")) File.Delete(_testFile + ".moved");
     }
 
     [Fact(DisplayName = "写入后重开仍能读到数据")]
@@ -121,6 +122,30 @@ public class MmfRegionTests : IDisposable
 
         File.Delete(_testFile);
         Assert.False(File.Exists(_testFile));
+    }
+
+    [Fact(DisplayName = "映射期间文件可改名移走，视图继续可读写")]
+    public void RenameWhileMapped()
+    {
+        var moved = _testFile + ".moved";
+
+        var region = new MmfRegion(_testFile);
+        region.Open();
+        region.WriteInt64(0, 42);
+
+        // Windows 有映射视图时不允许删除，但允许改名；Linux 两者都可以
+        File.Move(_testFile, moved);
+        Assert.False(File.Exists(_testFile));
+
+        Assert.Equal(42L, region.ReadInt64(0));
+        region.WriteInt64(8, 99);
+        Assert.Equal(99L, region.ReadInt64(8));
+
+        region.Dispose();
+
+        // 释放映射后，被移走的文件才能被真正删除
+        File.Delete(moved);
+        Assert.False(File.Exists(moved));
     }
 
     [Fact(DisplayName = "只读打开不存在的文件时抛异常")]

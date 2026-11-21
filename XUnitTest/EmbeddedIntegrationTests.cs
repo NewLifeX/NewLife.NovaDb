@@ -50,8 +50,24 @@ public class EmbeddedIntegrationTests : IDisposable
         return conn;
     }
 
-    /// <summary>获取表的 .data 文件路径</summary>
-    private String GetDataFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.data");
+    /// <summary>获取表的行日志文件路径（Nova 表的数据文件）</summary>
+    private String GetDataFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.rlog");
+
+    /// <summary>校验行日志文件头：32 字节，魔数 NRLG，版本 1</summary>
+    private static void AssertRowLogHeader(String path)
+    {
+        Assert.True(File.Exists(path), $"{Path.GetFileName(path)} 文件应存在");
+        Assert.True(new FileInfo(path).Length >= 32, "行日志文件大小应不小于文件头 32 字节");
+
+        var header = new Byte[32];
+        using var fs = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        Assert.Equal(32, fs.Read(header, 0, 32));
+        Assert.Equal((Byte)'N', header[0]);
+        Assert.Equal((Byte)'R', header[1]);
+        Assert.Equal((Byte)'L', header[2]);
+        Assert.Equal((Byte)'G', header[3]);
+        Assert.Equal((Byte)1, header[4]);
+    }
 
     /// <summary>获取表主键索引的 .idx 文件路径</summary>
     private String GetIdxFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.idx");
@@ -127,19 +143,9 @@ public class EmbeddedIntegrationTests : IDisposable
         var metaFile = Path.Combine(_dbPath, "nova.db");
         Assert.True(File.Exists(metaFile), "数据库元数据文件 nova.db 应在首次建表后创建");
 
-        // 验证 .data 文件已创建
+        // 验证行日志文件已创建
         var dataFile = GetDataFilePath("emb_ddl_create");
-        Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
-
-        // 验证 .data 文件头内容
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal((Byte)1, header.Version);
-        Assert.Equal(FileType.Data, header.FileType);
-        Assert.Equal(4096u, header.PageSize);
-        Assert.True(header.CreateTime.Year >= 2020, "CreateTime 应为有效时间");
-
-        // .data 文件大小应至少包含一个 32 字节的文件头
-        Assert.True(new FileInfo(dataFile).Length >= FileHeader.HeaderSize, ".data 文件大小应不小于文件头 32 字节");
+        AssertRowLogHeader(dataFile);
 
         // 通过系统表验证表信息存在
         cmd.CommandText = "SELECT * FROM _sys.tables";
@@ -184,10 +190,7 @@ public class EmbeddedIntegrationTests : IDisposable
 
         // 建表后文件应存在且文件头正确
         var dataFile = GetDataFilePath("emb_ddl_drop");
-        Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal(FileType.Data, header.FileType);
-        Assert.Equal(4096u, header.PageSize);
+        AssertRowLogHeader(dataFile);
 
         // 验证数据库元数据文件存在
         var metaFile = Path.Combine(_dbPath, "nova.db");
@@ -214,7 +217,7 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.Equal(0, rows);
 
         // 删表后文件应被清除
-        Assert.False(File.Exists(dataFile), ".data 文件应在删表后被删除");
+        Assert.False(File.Exists(dataFile), ".rlog 文件应在删表后被删除");
         Assert.False(File.Exists(GetIdxFilePath("emb_ddl_drop")), ".idx 文件应在删表后被删除");
         Assert.False(File.Exists(GetWalFilePath("emb_ddl_drop")), ".wal 文件应在删表后被删除");
 
@@ -355,12 +358,9 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "CREATE TABLE emb_dml_ins1 (id INT PRIMARY KEY, name VARCHAR NOT NULL, age INT)";
         cmd.ExecuteNonQuery();
 
-        // 建表后 .data 文件应存在且文件头正确
+        // 建表后行日志应存在且文件头正确
         var dataFile = GetDataFilePath("emb_dml_ins1");
-        Assert.True(File.Exists(dataFile), ".data 文件应在建表后存在");
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal(FileType.Data, header.FileType);
-        Assert.Equal(4096u, header.PageSize);
+        AssertRowLogHeader(dataFile);
 
         // 记录插入前 .wal 文件大小
         var walFile = GetWalFilePath("emb_dml_ins1");
@@ -1255,12 +1255,9 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "CREATE TABLE emb_wal_full (id INT PRIMARY KEY, name VARCHAR)";
         cmd.ExecuteNonQuery();
 
-        // 验证 .data 文件头
+        // 验证行日志文件头
         var dataFile = GetDataFilePath("emb_wal_full");
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal((UInt16)1, header.Version);
-        Assert.Equal(FileType.Data, header.FileType);
-        Assert.Equal(4096u, header.PageSize);
+        AssertRowLogHeader(dataFile);
 
         // Full 模式下 .wal 文件应在建表后立即存在
         var walFile = GetWalFilePath("emb_wal_full");
@@ -1296,9 +1293,8 @@ public class EmbeddedIntegrationTests : IDisposable
             cmd.ExecuteNonQuery();
         }
 
-        // 连接关闭后验证 .data 文件头
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal(FileType.Data, header.FileType);
+        // 连接关闭后验证行日志文件头
+        AssertRowLogHeader(dataFile);
     }
 
     [Fact(DisplayName = "嵌入式-WalMode=None时无WAL文件")]
@@ -1320,12 +1316,9 @@ public class EmbeddedIntegrationTests : IDisposable
 
         Assert.False(File.Exists(walFile), "WalMode=None 时插入数据后仍不应有 .wal 文件");
 
-        // .data 文件应存在且文件头正确
+        // 数据文件应存在且文件头正确
         var dataFile = GetDataFilePath("emb_wal_none");
-        Assert.True(File.Exists(dataFile), "WalMode=None 时 .data 文件应存在");
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal(FileType.Data, header.FileType);
-        Assert.Equal(4096u, header.PageSize);
+        AssertRowLogHeader(dataFile);
     }
 
     [Fact(DisplayName = "嵌入式-WAL文件随DML操作持续增长")]
@@ -1337,10 +1330,9 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "CREATE TABLE emb_wal_grow (id INT PRIMARY KEY, name VARCHAR, age INT)";
         cmd.ExecuteNonQuery();
 
-        // 验证 .data 文件头
+        // 验证行日志文件头
         var dataFile = GetDataFilePath("emb_wal_grow");
-        var header = FileHeader.Read(dataFile);
-        Assert.Equal(FileType.Data, header.FileType);
+        AssertRowLogHeader(dataFile);
 
         var walFile = GetWalFilePath("emb_wal_grow");
         var sizeAfterCreate = File.Exists(walFile) ? new FileInfo(walFile).Length : 0;

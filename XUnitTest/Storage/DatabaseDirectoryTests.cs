@@ -221,6 +221,24 @@ public class DatabaseDirectoryTests : IDisposable
         Assert.Contains("Orders", tables);
     }
 
+    [Fact(DisplayName = "列出数据表识别行日志并排除 Flux 日志")]
+    public void TestListTablesByRowLog()
+    {
+        var db = new DatabaseDirectory(_testPath, _options);
+        db.Create();
+
+        File.WriteAllText(Path.Combine(_testPath, "Users.rlog"), "");
+        File.WriteAllText(Path.Combine(_testPath, "Orders.rlog"), "");
+        File.WriteAllText(Path.Combine(_testPath, "flux.rlog"), "");
+        File.WriteAllText(Path.Combine(_testPath, "Users_idx_score.hidx"), "");
+
+        var tables = db.ListTables().ToList();
+
+        Assert.Equal(2, tables.Count);
+        Assert.Contains("Users", tables);
+        Assert.Contains("Orders", tables);
+    }
+
     [Fact(DisplayName = "空数据库列出数据表为空")]
     public void TestListTablesEmpty()
     {
