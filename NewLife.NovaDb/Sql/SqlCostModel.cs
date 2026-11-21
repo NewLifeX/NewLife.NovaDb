@@ -30,12 +30,18 @@ internal static class SqlCostModel
     /// <summary>估算访问计划的代价</summary>
     /// <param name="plan">候选计划</param>
     /// <param name="stats">表统计信息，可为空</param>
+    /// <param name="fetchLimit">LIMIT 提示：可边扫边停的计划只需取这么多行，用于修正代价</param>
     /// <returns>代价，单位与常量一致</returns>
-    public static Double EstimateCost(TableAccessPlan plan, TableStatistics? stats)
+    public static Double EstimateCost(TableAccessPlan plan, TableStatistics? stats, Int64? fetchLimit = null)
     {
         if (plan == null) return 0;
 
         var rows = GetRows(plan, stats);
+
+        // 可边扫边停的计划（保序输出 / 主键直达 / 无条件全扫）在 LIMIT 下不必付全量代价
+        if (fetchLimit.HasValue && fetchLimit.Value > 0 && plan.CoversWhere && CanEarlyStop(plan) && fetchLimit.Value < rows)
+            rows = fetchLimit.Value;
+
         var filter = plan.CoversWhere ? 0 : rows * FilterRowCost;
 
         // 索引探测次数取候选键数量，至少按一次计算
@@ -52,6 +58,12 @@ internal static class SqlCostModel
             _ => rows * ScanRowCost + filter,
         };
     }
+
+    /// <summary>判断计划能否在凑够 LIMIT 行后提前停止</summary>
+    /// <param name="plan">访问计划</param>
+    /// <returns>是否可提前停止</returns>
+    private static Boolean CanEarlyStop(TableAccessPlan plan)
+        => plan.ProvidesOrder || plan.Kind is TableAccessKind.FullScan or TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange;
 
     /// <summary>估算排序代价 0.1*n*log2(n)</summary>
     /// <param name="rows">参与排序的行数</param>

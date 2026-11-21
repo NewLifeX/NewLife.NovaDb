@@ -48,7 +48,8 @@ partial class SqlEngine
 
         // 1. 访问计划：能走主键/二级索引就不全表扫描
         var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters,
-            needsSort: orderRows, orderBy: orderRows ? stmt.OrderBy : null);
+            needsSort: orderRows, orderBy: orderRows ? stmt.OrderBy : null,
+            fetchLimit: stmt.Limit.HasValue ? (Int64)(stmt.OffsetValue ?? 0) + stmt.Limit.Value : null);
 
         // 1.1 索引覆盖的 COUNT(*)：只按索引命中的主键统计可见行，不反序列化整行
         var indexOnlyCount = TryExecuteIndexOnlyCount(stmt, plan, table, tx, schema);

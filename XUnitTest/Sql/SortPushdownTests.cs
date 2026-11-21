@@ -368,6 +368,54 @@ public class SortPushdownTests : IDisposable
         Assert.Equal(descending, Rows(_engine.Execute("SELECT id, score FROM items ORDER BY score DESC LIMIT 10")));
     }
 
+    [Fact(DisplayName = "时间列可走索引顺序免排序")]
+    public void DateTimeOrder_UsesIndexOrder()
+    {
+        _engine.Execute("CREATE TABLE events (id INT PRIMARY KEY, level INT NOT NULL, happen DATETIME NOT NULL)");
+        _engine.Execute("CREATE INDEX idx_happen ON events (happen)");
+
+        var start = new DateTime(2026, 1, 31, 23, 0, 0);
+        for (var i = 1; i <= 40; i++)
+            _engine.Execute($"INSERT INTO events (id, level, happen) VALUES ({i}, {i % 3}, '{start.AddDays(i * 7):yyyy-MM-dd HH:mm:ss}')");
+
+        var sql = "SELECT id FROM events ORDER BY happen DESC LIMIT 5";
+        Assert.False(HasSortStep(Explain(sql)), "时间列应能由索引顺序免排序");
+        Assert.Contains("using index order", ExplainExtra(sql));
+
+        // 索引顺序（免排序）结果必须与删掉索引后的内存排序逐行一致
+        var fast = String.Join("|", Rows(_engine.Execute(sql)).Select(r => String.Join(",", r)));
+        _engine.Execute("DROP INDEX idx_happen ON events");
+        var slow = String.Join("|", Rows(_engine.Execute(sql)).Select(r => String.Join(",", r)));
+
+        Assert.Equal(slow, fast);
+        Assert.Equal("40|39|38|37|36", fast);
+    }
+
+    [Fact(DisplayName = "等值前缀 + 下一列排序走索引顺序")]
+    public void EqualityPrefix_OrderByNextColumn()
+    {
+        _engine.Execute("CREATE TABLE events2 (id INT PRIMARY KEY, level INT NOT NULL, happen DATETIME NOT NULL)");
+        _engine.Execute("CREATE INDEX idx_level_happen ON events2 (level, happen)");
+
+        var start = new DateTime(2026, 1, 31, 23, 0, 0);
+        for (var i = 1; i <= 60; i++)
+            _engine.Execute($"INSERT INTO events2 (id, level, happen) VALUES ({i}, {i % 3}, '{start.AddDays(i):yyyy-MM-dd HH:mm:ss}')");
+
+        // 有统计时按代价选择：等值前缀 + 下一列排序的索引顺序扫描免排序
+        _engine.Execute("ANALYZE TABLE events2");
+
+        var sql = "SELECT id FROM events2 WHERE level = 1 ORDER BY happen DESC LIMIT 5";
+        Assert.False(HasSortStep(Explain(sql)), "等值前缀 + 下一列排序应能免排序");
+        Assert.Contains("using index order", ExplainExtra(sql));
+
+        var fast = String.Join("|", Rows(_engine.Execute(sql)).Select(r => String.Join(",", r)));
+        _engine.Execute("DROP INDEX idx_level_happen ON events2");
+        var slow = String.Join("|", Rows(_engine.Execute(sql)).Select(r => String.Join(",", r)));
+
+        Assert.Equal(slow, fast);
+        Assert.Equal("58|55|52|49|46", fast);
+    }
+
     [Fact(DisplayName = "可空列与字符串列不按索引顺序免排序，结果仍正确")]
     public void UnsafeOrderColumns_FallBackToSort()
     {

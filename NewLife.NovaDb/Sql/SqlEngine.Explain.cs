@@ -64,7 +64,8 @@ public partial class SqlEngine
                 var needsSort = select.OrderBy != null && select.OrderBy.Count > 0 && !HasAggregateFunction(select)
                     && (select.GroupBy == null || select.GroupBy.Count == 0);
                 var access = BuildTableAccessPlan(table, tableName, select.TableAlias, schema, select.Where, parameters,
-                    needsSort: needsSort, orderBy: needsSort ? select.OrderBy : null);
+                    needsSort: needsSort, orderBy: needsSort ? select.OrderBy : null,
+                    fetchLimit: select.Limit.HasValue ? (Int64)(select.OffsetValue ?? 0) + select.Limit.Value : null);
                 scanType = access.PlanType;
                 key = access.KeyText;
                 providesOrder = access.ProvidesOrder;

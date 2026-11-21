@@ -1,4 +1,4 @@
-﻿using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Tx;
 
@@ -137,10 +137,11 @@ partial class SqlEngine
     /// <param name="where">WHERE 条件</param>
     /// <param name="parameters">参数字典</param>
     /// <param name="allowSecondaryIndex">是否允许使用二级索引（UPDATE/DELETE 仅复用主键路径）</param>
-    /// <param name="needsSort">结果是否需要排序，排序成本按估算输出行数计入</param>
-    /// <param name="orderBy">ORDER BY 子句，可被索引顺序满足时产生免排序候选</param>
+    /// <param name="needsSort">查询是否带 ORDER BY（需要排序时计入排序成本）</param>
+    /// <param name="orderBy">ORDER BY 子句，用于尝试免排序的索引顺序扫描</param>
+    /// <param name="fetchLimit">LIMIT 提示（OFFSET+LIMIT），可边扫边停的计划只按该行数计成本</param>
     /// <returns>访问计划</returns>
-    private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true, Boolean needsSort = false, List<OrderByClause>? orderBy = null)
+    private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true, Boolean needsSort = false, List<OrderByClause>? orderBy = null, Int64? fetchLimit = null)
     {
         // 统计信息缺失或过期时为 null，此时沿用原有规则优先级，行为与引入代价模型前一致
         var stats = table == null ? null : GetTableStatistics(tableName, table);
@@ -269,10 +270,10 @@ partial class SqlEngine
         else
         {
             chosen = fullScan;
-            var bestCost = EstimatePlanCost(fullScan, stats, needsSort);
+            var bestCost = EstimatePlanCost(fullScan, stats, needsSort, fetchLimit);
             foreach (var candidate in candidates)
             {
-                var cost = EstimatePlanCost(candidate, stats, needsSort);
+                var cost = EstimatePlanCost(candidate, stats, needsSort, fetchLimit);
                 if (cost < bestCost)
                 {
                     chosen = candidate;
@@ -283,14 +284,14 @@ partial class SqlEngine
             chosen.Reason = "stats";
         }
 
-        chosen.Cost = EstimatePlanCost(chosen, stats, needsSort);
+        chosen.Cost = EstimatePlanCost(chosen, stats, needsSort, fetchLimit);
         return chosen;
     }
 
     /// <summary>估算计划总代价，需要排序且计划本身不保序时叠加排序成本</summary>
-    private static Double EstimatePlanCost(TableAccessPlan plan, TableStatistics? stats, Boolean needsSort)
+    private static Double EstimatePlanCost(TableAccessPlan plan, TableStatistics? stats, Boolean needsSort, Int64? fetchLimit = null)
     {
-        var cost = plan.Kind == TableAccessKind.IndexMerge ? EstimateMergeCost(plan, stats) : SqlCostModel.EstimateCost(plan, stats);
+        var cost = plan.Kind == TableAccessKind.IndexMerge ? EstimateMergeCost(plan, stats) : SqlCostModel.EstimateCost(plan, stats, fetchLimit);
         if (needsSort && !plan.ProvidesOrder) cost += SqlCostModel.EstimateSortCost(plan.EstimatedRows ?? stats?.RowCount ?? 0L);
 
         return cost;
@@ -397,14 +398,62 @@ partial class SqlEngine
         {
             if (index.Columns.Count == 0 || order.Count > index.Columns.Count) continue;
 
-            // 排序列必须是索引最左前缀，且列本身可空性与排序口径都与 SQL 一致
-            var matched = true;
-            for (var i = 0; i < order.Count && matched; i++)
+            // 排序列允许在索引中后移：前面的索引列只要被单值等值条件完整覆盖，顺序扫描仍按索引键序产出
+            var start = -1;
+            var leadingKeys = new List<Object>();
+            var leadingUsed = new List<SqlExpression>();
+            for (var s = 0; s + order.Count <= index.Columns.Count && start < 0; s++)
             {
-                if (!String.Equals(index.Columns[i], order[i].Column, StringComparison.OrdinalIgnoreCase)) matched = false;
-                else if (!schema.HasColumn(index.Columns[i]) || !CanUseOrderIndex(schema.GetColumn(index.Columns[i]))) matched = false;
+                if (!String.Equals(index.Columns[s], order[0].Column, StringComparison.OrdinalIgnoreCase)) continue;
+
+                var keys = new List<Object>();
+                var usedKeys = new List<SqlExpression>();
+                var ok = true;
+                for (var k = 0; k < s && ok; k++)
+                {
+                    if (!schema.HasColumn(index.Columns[k]))
+                    {
+                        ok = false;
+                        break;
+                    }
+
+                    var prefixColumn = schema.GetColumn(index.Columns[k]);
+                    if (!CanUseEqualityIndex(prefixColumn.DataType))
+                    {
+                        ok = false;
+                        break;
+                    }
+
+                    var prefixUsed = new List<SqlExpression>();
+                    var prefixValues = CollectEqualityKeys(conjuncts, prefixColumn, tableName, tableAlias, parameters, prefixUsed);
+                    if (prefixValues == null || prefixValues.Count != 1)
+                    {
+                        ok = false;
+                        break;
+                    }
+
+                    keys.Add(prefixValues[0]);
+                    usedKeys.AddRange(prefixUsed);
+                }
+
+                if (!ok) continue;
+
+                // 排序列必须紧跟等值前缀，且各列不可空、类型排序与 SQL 一致
+                var matched = true;
+                for (var i = 0; i < order.Count && matched; i++)
+                {
+                    var columnName = index.Columns[s + i];
+                    if (!String.Equals(columnName, order[i].Column, StringComparison.OrdinalIgnoreCase)) matched = false;
+                    else if (!schema.HasColumn(columnName) || !CanUseOrderIndex(schema.GetColumn(columnName))) matched = false;
+                }
+                if (!matched) continue;
+
+                start = s;
+                leadingKeys = keys;
+                leadingUsed = usedKeys;
             }
-            if (!matched) continue;
+
+            if (start < 0) continue;
 
             // 索引首列就是主键时，主键索引本身就是等价且更廉价的顺序来源（主键唯一，后续索引列不影响顺序）
             if (pkCol != null && String.Equals(index.Columns[0], pkCol.Name, StringComparison.OrdinalIgnoreCase)) continue;
@@ -420,7 +469,7 @@ partial class SqlEngine
                 OrderDescending = descending,
             };
 
-            var used = new List<SqlExpression>();
+            var used = new List<SqlExpression>(leadingUsed);
             if (index.Columns.Count == 1)
             {
                 // 单列索引：同列范围条件可直接限定跳表扫描区间
@@ -431,11 +480,11 @@ partial class SqlEngine
             }
             else
             {
-                // 联合索引：排序列上的等值条件可限定扫描分组，后续列仍按索引键序产出
-                var prefix = new List<Object>();
+                // 联合索引：等值前缀 + 排序列上的等值条件都可限定扫描分组，后续列仍按索引键序产出
+                var prefix = new List<Object>(leadingKeys);
                 for (var i = 0; i < order.Count; i++)
                 {
-                    var column = schema.GetColumn(index.Columns[i]);
+                    var column = schema.GetColumn(index.Columns[start + i]);
                     if (!CanUseEqualityIndex(column.DataType)) break;
 
                     var columnUsed = new List<SqlExpression>();
@@ -1239,7 +1288,7 @@ partial class SqlEngine
     /// 直接按索引顺序输出会与「扫描后排序」的结果不同，故只对数值列免排序。
     /// </remarks>
     private static Boolean CanUseOrderIndex(ColumnDefinition column, Boolean isPrimaryKey = false)
-        => column.DataType is DataType.Int32 or DataType.Int64 or DataType.Double or DataType.Decimal
+        => column.DataType is DataType.Int32 or DataType.Int64 or DataType.Double or DataType.Decimal or DataType.DateTime
             && (isPrimaryKey || !column.Nullable);
 
     /// <summary>把 ORDER BY 解析成列清单，含表别名限定列名；存在无法识别的列时返回 null</summary>
