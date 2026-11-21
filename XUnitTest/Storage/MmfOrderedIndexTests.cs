@@ -189,7 +189,77 @@ public class MmfOrderedIndexTests : IDisposable
         Assert.Equal(new[] { 1, 2 }, ScanValues(reopened));
     }
 
-    [Fact(DisplayName = "run 数量超阈值时自动压缩")]
+    [Fact(DisplayName = "多 run 归并时降序扫描")]
+    public void MultiRunDescending()
+    {
+        using var index = MmfOrderedIndex.Open(_testFile, _codec, flushEntries: 1);
+        for (var i = 1; i <= 10; i++) index.Add([Entry(i, 1)]);
+
+        Assert.True(index.RunCount > 1);
+        var asc = ScanValues(index, from: 3, to: 7);
+        var desc = ScanValues(index, from: 3, to: 7, descending: true);
+        Assert.Equal("3,4,5,6,7", String.Join(",", asc));
+        Assert.Equal("7,6,5,4,3", String.Join(",", desc));
+    }
+
+    [Fact(DisplayName = "增量分层合并后数据完整且有序")]
+    public void MergeRunsKeepsAllEntries()
+    {
+        const Int32 count = 400;
+
+        using (var index = MmfOrderedIndex.Open(_testFile, _codec, flushEntries: 4))
+        {
+            for (var i = 0; i < count; i += 4)
+            {
+                var batch = new List<OrderedIndexEntry>(4);
+                for (var j = 0; j < 4; j++) batch.Add(Entry(i + j, (UInt64)(i + j + 1)));
+                index.Add(batch);
+            }
+            index.Flush();
+
+            // 反复超阈值只会做局部分层合并，存活 run 数量被压在阈值内
+            Assert.True(index.RunCount <= 16);
+
+            var values = ScanValues(index);
+            Assert.Equal(count, values.Count);
+            for (var i = 0; i < count; i++) Assert.Equal(i, values[i]);
+        }
+
+        // 重新打开后 run 索引仍然自洽
+        using var reopened = MmfOrderedIndex.Open(_testFile, _codec);
+        var reread = ScanValues(reopened);
+        Assert.Equal(count, reread.Count);
+        for (var i = 0; i < count; i++) Assert.Equal(i, reread[i]);
+    }
+
+    [Fact(DisplayName = "增量分层合并后删除标记仍生效")]
+    public void MergeRunsKeepsTombstones()
+    {
+        using var index = MmfOrderedIndex.Open(_testFile, _codec, flushEntries: 2);
+
+        for (var i = 1; i <= 40; i++)
+        {
+            index.Add([Entry(i, 1)]);
+            index.Flush();
+        }
+
+        // 键 20 在后续 run 里打上删除标记，分层合并不得让它复活
+        index.Add([Entry(20, 1, deletedTx: 9)]);
+        index.Flush();
+
+        var values = ScanValues(index);
+        Assert.Equal(39, values.Count);
+        Assert.DoesNotContain(20, values);
+        Assert.False(index.TryGetLive(Encode(20), out _));
+
+        // 范围扫描与降序同样不受影响
+        var range = ScanValues(index, from: 18, to: 22);
+        Assert.Equal(new[] { 18, 19, 21, 22 }, range);
+        var desc = ScanValues(index, from: 18, to: 22, descending: true);
+        Assert.Equal(new[] { 22, 21, 19, 18 }, desc);
+    }
+
+    [Fact(DisplayName = "run 数量超阈值时自动合并")]
     public void AutoCompactWhenTooManyRuns()
     {
         using var index = MmfOrderedIndex.Open(_testFile, _codec, flushEntries: 1);
@@ -200,7 +270,7 @@ public class MmfOrderedIndexTests : IDisposable
             index.Flush();
         }
 
-        Assert.True(index.RunCount <= 8);
+        Assert.True(index.RunCount <= 16);
         Assert.Equal(20, ScanValues(index).Count);
     }
 

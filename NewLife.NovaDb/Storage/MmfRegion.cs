@@ -224,12 +224,13 @@ internal sealed class MmfRegion : IDisposable
         _view!.Write(offset, value);
     }
 
-    /// <summary>把映射内容刷到磁盘</summary>
-    public void Flush()
+    /// <summary>把映射视图的脏页刷到磁盘</summary>
+    /// <param name="syncView">是否强制回写映射视图。索引是派生数据，周期性刷盘只需保证元数据落盘，崩溃后按行日志重建尾部</param>
+    public void Flush(Boolean syncView = true)
     {
         if (_disposed) return;
 
-        _view?.Flush();
+        if (syncView) _view?.Flush();
         _stream?.Flush();
     }
 

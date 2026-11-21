@@ -223,7 +223,7 @@ internal sealed class MmfHashIndex : IDisposable
     {
         if (_disposed) return;
 
-        if (!_readOnly) Flush();
+        if (!_readOnly) Flush(true);
 
         _region.Dispose();
         _disposed = true;
@@ -392,6 +392,9 @@ internal sealed class MmfHashIndex : IDisposable
             _writePosition += reserved;
             _meta.ArenaEnd = _writePosition;
             SaveMeta();
+
+            // 节点就写在预留区里；预留区之外不允许上移，否则每批都会留下一整份死区
+            _writePosition = reservedStart;
         }
 
         // 2) 写节点并挂链
@@ -413,7 +416,7 @@ internal sealed class MmfHashIndex : IDisposable
             }
         }
 
-        // 预留多于实际使用时记为死区，由压缩回收
+        // 预留多于实际使用时记为死区，由压缩回收；_writePosition 已停在真实使用量处
         if (reserved > 0)
         {
             var used = _writePosition - reservedStart;
@@ -421,9 +424,6 @@ internal sealed class MmfHashIndex : IDisposable
             {
                 var wasted = reserved - used;
                 _meta.DeadBytes += wasted;
-
-                // 未使用的预留空间不参与后续追加
-                _writePosition = _writePosition - wasted;
                 _meta.ArenaEnd = _writePosition;
             }
         }
@@ -450,7 +450,7 @@ internal sealed class MmfHashIndex : IDisposable
 
     /// <summary>把映射内容刷到磁盘，并推进持久化的已应用偏移</summary>
     /// <remarks>元数据中的偏移只在刷盘时前进：崩溃后偏移落后于行日志，启动时按行日志重建</remarks>
-    public void Flush()
+    public void Flush(Boolean syncView = false)
     {
         if (_persistedOffset != _meta.AppliedOffset)
         {
@@ -458,7 +458,7 @@ internal sealed class MmfHashIndex : IDisposable
             SaveMeta();
         }
 
-        _region.Flush();
+        _region.Flush(syncView);
     }
 
     /// <summary>只推进内存中的已应用偏移，不刷盘</summary>
@@ -1022,37 +1022,23 @@ internal sealed class MmfHashIndex : IDisposable
 
         var oldCapacity = _meta.Capacity;
         var oldBucketOffset = _meta.BucketOffset;
-        var oldDead = 0L;
 
+        // 原地重链：只改每个键节点的 NextKey 指针，不复制节点，避免 O(N) 拷贝与键数组分配
         for (var bucket = 0L; bucket < oldCapacity; bucket++)
         {
             var node = _region.ReadInt64(oldBucketOffset + bucket * sizeof(Int64));
             while (node != 0)
             {
                 var next = _region.ReadInt64(node + KeyNextKey);
-                var keyLength = _region.ReadInt32(node + KeyLength);
-                var key = _region.ReadBytes(node + KeyHeaderSize, keyLength);
                 var hash = _region.ReadInt64(node + KeyHash);
 
                 var newBucket = (Int64)((UInt64)hash & (UInt64)(newCapacity - 1));
                 var newSlot = bucketOffset + newBucket * sizeof(Int64);
                 var head = _region.ReadInt64(newSlot);
 
-                var copy = _writePosition;
-                var size = Align(KeyHeaderSize + keyLength);
-                _writePosition += size;
-                _region.EnsureCapacity(_writePosition);
+                _region.WriteInt64(node + KeyNextKey, head);
+                _region.WriteInt64(newSlot, node);
 
-                _region.WriteInt64(copy + KeyNextKey, head);
-                _region.WriteInt64(copy + KeyHash, hash);
-                _region.WriteInt32(copy + KeyLength, keyLength);
-                _region.WriteInt32(copy + KeyValueCount, _region.ReadInt32(node + KeyValueCount));
-                _region.WriteInt64(copy + KeyValueHead, _region.ReadInt64(node + KeyValueHead));
-                _region.WriteInt64(copy + KeyValueTail, _region.ReadInt64(node + KeyValueTail));
-                _region.Write(copy + KeyHeaderSize, key, 0, keyLength);
-                _region.WriteInt64(newSlot, copy);
-
-                oldDead += size;
                 node = next;
             }
         }
@@ -1060,7 +1046,7 @@ internal sealed class MmfHashIndex : IDisposable
         _meta.Capacity = newCapacity;
         _meta.BucketOffset = bucketOffset;
         _meta.ArenaEnd = _writePosition;
-        _meta.DeadBytes += oldDead;
+        if (oldBucketOffset > 0) _meta.DeadBytes += oldCapacity * sizeof(Int64);
     }
 
     #endregion

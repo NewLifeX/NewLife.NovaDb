@@ -41,7 +41,8 @@ internal struct OrderedIndexEntry
 /// </code>
 /// 提交时条目先进内存写缓冲（有序），缓冲满或关闭时整体写出一个新 run；
 /// 读取时对所有 run 与写缓冲做归并，同一键只输出最新的存活版本。
-/// run 数量超过阈值时归并重写整个文件，旧版本与已删除条目在归并时丢弃。
+/// run 数量超过阈值时按体量分层合并少量 run（只重写同量级的小 run，避免全表重写造成秒级停顿）；
+/// 文件垃圾占比过半时才做一次全量重写，回收空间并丢弃旧版本与已删除条目。
 /// </remarks>
 internal sealed class MmfOrderedIndex : IDisposable
 {
@@ -87,8 +88,10 @@ internal sealed class MmfOrderedIndex : IDisposable
     private const Int32 EntryHeaderSize = 44;
     private const Int32 EntryFlagHasPrefix = 1;
 
-    private const Int32 DefaultFlushEntries = 16384;
-    private const Int32 MaxRuns = 16;
+    private const Int32 DefaultFlushEntries = 65536;
+    private const Int32 MaxRuns = 12;
+    private const Int32 MergeFanIn = 4;
+    private const Int64 MinCompactGarbage = 8L << 20;
     #endregion
 
     #region 属性
@@ -99,6 +102,9 @@ internal sealed class MmfOrderedIndex : IDisposable
     private MmfRegion _region;
     private OrderedMeta _meta;
     private readonly List<RunInfo> _runs = [];
+    private readonly List<Int32> _runSlots = [];
+    private readonly List<Int32> _freeSlots = [];
+    private Int32 _runSlotCount;
     private readonly List<OrderedIndexEntry> _buffer = [];
     private Byte[] _probeBuffer = new Byte[256];
     private Int64 _pendingOffset = -1;
@@ -213,8 +219,12 @@ internal sealed class MmfOrderedIndex : IDisposable
 
         if (appliedOffset >= 0) _pendingOffset = appliedOffset;
 
-        if (_runs.Count >= MaxRuns)
+        if (_runSlotCount >= RunIndexCapacity - 1)
+        {
             Compact();
+        }
+        else if (_runs.Count >= MaxRuns)
+            MergeRuns();
         else if (_buffer.Count >= _flushEntries)
             Flush();
     }
@@ -231,7 +241,7 @@ internal sealed class MmfOrderedIndex : IDisposable
     }
 
     /// <summary>把写缓冲刷成一个 run</summary>
-    public void Flush()
+    public void Flush(Boolean syncView = false)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(MmfOrderedIndex));
         if (_readOnly) return;
@@ -239,7 +249,7 @@ internal sealed class MmfOrderedIndex : IDisposable
         if (_buffer.Count == 0)
         {
             SaveMeta();
-            _region.Flush();
+            _region.Flush(syncView);
             return;
         }
 
@@ -274,22 +284,15 @@ internal sealed class MmfOrderedIndex : IDisposable
             position += Align(EntryHeaderSize + entry.Key.Length);
         }
 
-        var runIndexSlot = RunIndexOffset + (Int64)_runs.Count * RunIndexEntrySize;
-        _region.WriteInt64(runIndexSlot, runOffset);
-        _region.WriteInt64(runIndexSlot + 8, runLength);
-        _region.WriteInt64(runIndexSlot + 16, entryCount);
-        _region.WriteInt64(runIndexSlot + 24, 0);
+        _region.Flush(syncView);
 
-        _region.Flush();
+        AppendRunSlot(new RunInfo(runOffset, entryCount, entriesOffset, entriesLength, directoryOffset));
 
-        _runs.Add(new RunInfo(runOffset, entryCount, entriesOffset, entriesLength, directoryOffset));
-
-        _meta.RunCount = _runs.Count;
         _meta.ArenaEnd = end;
         _meta.EntryCount += entryCount;
         if (_pendingOffset >= 0) _meta.AppliedOffset = _pendingOffset;
         SaveMeta();
-        _region.Flush();
+        _region.Flush(syncView);
 
         _buffer.Clear();
         _bufferSorted = true;
@@ -303,6 +306,9 @@ internal sealed class MmfOrderedIndex : IDisposable
         _buffer.Clear();
         _bufferSorted = true;
         _runs.Clear();
+        _runSlots.Clear();
+        _freeSlots.Clear();
+        _runSlotCount = 0;
         _pendingOffset = -1;
 
         _meta.RunCount = 0;
@@ -392,7 +398,7 @@ internal sealed class MmfOrderedIndex : IDisposable
             {
                 if (!cursor.HasValue) continue;
 
-                if (best == null || CompareCursor(cursor, best) < 0)
+                if (best == null || CompareCursor(cursor, best) * direction < 0)
                     best = cursor;
             }
 
@@ -773,6 +779,261 @@ internal sealed class MmfOrderedIndex : IDisposable
     #endregion
 
     #region 压缩
+    /// <summary>按体量分层合并少量 run</summary>
+    /// <remarks>
+    /// 全量重写会随表规模线性增长，大表上会出现秒级停顿。这里改为分层合并：
+    /// 只在最小的量级里挑不超过 <see cref="MergeFanIn"/> 个 run，归并后追加为新 run，
+    /// 旧 run 变成垃圾空间；等垃圾过半再触发一次全量重写回收。每个条目被重写的次数与层数成正比（对数级）。
+    /// </remarks>
+    private void MergeRuns()
+    {
+        if (_readOnly) return;
+
+        Flush();
+        if (_runs.Count < 2) return;
+
+        var picks = SelectMergeGroup();
+        if (picks.Count < 2) return;
+
+        // 先写新 run 并登记到元数据，再把旧 run 标记失效：
+        // 任何崩溃点都能从元数据引用的 run 里读回全部条目，最坏只是重复合并
+        var merged = AppendMergedRun(picks);
+
+        AppendRunSlot(merged);
+        _meta.ArenaEnd = merged.EndOffset;
+        SaveMeta();
+        _region.Flush(false);
+
+        foreach (var pick in picks)
+        {
+            var index = _runs.IndexOf(pick);
+            if (index < 0) continue;
+
+            var slotIndex = _runSlots[index];
+            var slot = (Int64)RunIndexOffset + (Int64)slotIndex * RunIndexEntrySize;
+            _region.WriteInt64(slot, 0);
+            _region.WriteInt64(slot + 8, 0);
+            _region.WriteInt64(slot + 16, 0);
+            _region.WriteInt64(slot + 24, 0);
+            _freeSlots.Add(slotIndex);
+        }
+        _region.Flush(false);
+
+        foreach (var pick in picks)
+        {
+            var index = _runs.IndexOf(pick);
+            if (index < 0) continue;
+
+            _runs.RemoveAt(index);
+            _runSlots.RemoveAt(index);
+        }
+
+        if (ShouldCompact()) Compact();
+    }
+
+    /// <summary>在 run 索引末尾登记一个 run，优先复用已失效的槽位</summary>
+    private void AppendRunSlot(RunInfo run)
+    {
+        Int32 slotIndex;
+        if (_freeSlots.Count > 0)
+        {
+            slotIndex = _freeSlots[^1];
+            _freeSlots.RemoveAt(_freeSlots.Count - 1);
+        }
+        else
+        {
+            slotIndex = _runSlotCount++;
+            _meta.RunCount = _runSlotCount;
+        }
+
+        var slot = (Int64)RunIndexOffset + (Int64)slotIndex * RunIndexEntrySize;
+        _region.WriteInt64(slot, run.Offset);
+        _region.WriteInt64(slot + 8, run.EndOffset - run.Offset);
+        _region.WriteInt64(slot + 16, run.EntryCount);
+        _region.WriteInt64(slot + 24, 0);
+
+        _runs.Add(run);
+        _runSlots.Add(slotIndex);
+    }
+
+    /// <summary>挑选同一量级里最小的若干个 run，不足时退化为最小的两个</summary>
+    private List<RunInfo> SelectMergeGroup()
+    {
+        var levels = new List<Int32>(_runs.Count);
+        foreach (var run in _runs) levels.Add(SizeLevel(run.EntryCount));
+
+        var bestLevel = Int32.MaxValue;
+        foreach (var level in levels)
+        {
+            if (level < bestLevel && CountLevel(levels, level) >= 2) bestLevel = level;
+        }
+
+        var picks = new List<RunInfo>(MergeFanIn);
+        if (bestLevel != Int32.MaxValue)
+        {
+            var indexes = new List<Int32>(_runs.Count);
+            for (var i = 0; i < _runs.Count; i++)
+            {
+                if (levels[i] == bestLevel) indexes.Add(i);
+            }
+
+            // 同量级里取条目最少的，控制单次重写量
+            indexes.Sort((a, b) => _runs[a].EntryCount.CompareTo(_runs[b].EntryCount));
+            for (var i = 0; i < indexes.Count && picks.Count < MergeFanIn; i++) picks.Add(_runs[indexes[i]]);
+
+            return picks;
+        }
+
+        // 各量级都只有一个 run：直接取最小的两个
+        var first = -1;
+        var second = -1;
+        for (var i = 0; i < _runs.Count; i++)
+        {
+            if (first < 0 || _runs[i].EntryCount < _runs[first].EntryCount)
+            {
+                second = first;
+                first = i;
+            }
+            else if (second < 0 || _runs[i].EntryCount < _runs[second].EntryCount)
+                second = i;
+        }
+
+        if (first >= 0) picks.Add(_runs[first]);
+        if (second >= 0) picks.Add(_runs[second]);
+
+        return picks;
+    }
+
+    /// <summary>统计已出现过的指定量级个数</summary>
+    private static Int32 CountLevel(List<Int32> levels, Int32 level)
+    {
+        var count = 0;
+        foreach (var item in levels)
+        {
+            if (item == level) count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>按条目数取量级（2 的幂次下标）</summary>
+    private static Int32 SizeLevel(Int64 entryCount)
+    {
+        var level = 0;
+        var size = 1L;
+        while (size < entryCount && level < 62)
+        {
+            size <<= 1;
+            level++;
+        }
+
+        return level;
+    }
+
+    /// <summary>把选中的 run 归并后追加为单个新 run，返回新 run 信息</summary>
+    private RunInfo AppendMergedRun(List<RunInfo> sources)
+    {
+        // 第一遍：统计条目数与条目区长度
+        var entryCount = 0;
+        var entriesLength = 0L;
+        MergeRunEntries(sources, cursor =>
+        {
+            entryCount++;
+            entriesLength += Align(EntryHeaderSize + cursor.KeyLength);
+            return true;
+        });
+
+        var runOffset = Align(_meta.ArenaEnd);
+        var entriesOffset = runOffset + RunHeaderSize;
+        var directoryOffset = entriesOffset + entriesLength;
+        var runLength = RunHeaderSize + entriesLength + entryCount * sizeof(Int64);
+        var end = runOffset + runLength;
+
+        _region.EnsureCapacity(end);
+
+        // 先写 run 数据，再改 run 索引与元数据：崩溃时元数据仍指向旧 run
+        var header = new Byte[RunHeaderSize];
+        WriteUInt32(header, RunMagicOffset, RunMagic);
+        header[RunVersionOffset] = FileVersion;
+        WriteInt64(header, RunEntryCountOffset, entryCount);
+        WriteInt64(header, RunEntriesOffset, entriesOffset);
+        WriteInt64(header, RunEntriesLengthOffset, entriesLength);
+        _region.Write(runOffset, header, 0, header.Length);
+
+        // 第二遍：写条目与偏移目录
+        var position = entriesOffset;
+        var index = 0;
+        MergeRunEntries(sources, cursor =>
+        {
+            WriteCursorEntry(position, cursor);
+            _region.WriteInt64(directoryOffset + (Int64)index * sizeof(Int64), position);
+            position += Align(EntryHeaderSize + cursor.KeyLength);
+            index++;
+            return true;
+        });
+
+        _region.Flush(false);
+
+        return new RunInfo(runOffset, entryCount, entriesOffset, entriesLength, directoryOffset);
+    }
+
+    /// <summary>对指定 run 做升序归并，逐条回调（保留全部版本，包括删除标记）</summary>
+    private void MergeRunEntries(List<RunInfo> sources, Func<Cursor, Boolean> visitor)
+    {
+        var cursors = new List<Cursor>(sources.Count);
+        foreach (var run in sources)
+        {
+            var cursor = CreateRunCursor(run, null, true, false, 0, false, 0, false);
+            if (cursor != null) cursors.Add(cursor);
+        }
+
+        while (true)
+        {
+            Cursor? best = null;
+            foreach (var cursor in cursors)
+            {
+                if (!cursor.HasValue) continue;
+                if (best == null)
+                {
+                    best = cursor;
+                    continue;
+                }
+
+                var cmp = CompareCursor(cursor, best);
+                if (cmp < 0 || (cmp == 0 && cursor.CreatedTx < best.CreatedTx)) best = cursor;
+            }
+
+            if (best == null) break;
+            if (!visitor(best)) return;
+
+            Advance(best);
+        }
+    }
+
+    /// <summary>把游标当前条目写入指定位置（键长取自游标，不写满容量）</summary>
+    private void WriteCursorEntry(Int64 offset, Cursor cursor)
+    {
+        _region.WriteInt64(offset + EntrySortPrefix, cursor.SortPrefix);
+        _region.WriteInt64(offset + EntryCreatedTx, (Int64)cursor.CreatedTx);
+        _region.WriteInt64(offset + EntryDeletedTx, (Int64)cursor.DeletedTx);
+        _region.WriteInt64(offset + EntryDataOffset, cursor.DataOffset);
+        _region.WriteInt32(offset + EntryDataLength, cursor.DataLength);
+        _region.WriteInt32(offset + EntryFlags, cursor.HasPrefix ? EntryFlagHasPrefix : 0);
+        _region.WriteInt32(offset + EntryKeyLength, cursor.KeyLength);
+        _region.Write(offset + EntryHeaderSize, cursor.Key, 0, cursor.KeyLength);
+    }
+    /// <summary>垃圾空间是否已过半（含最小阈值），需要全量重写回收</summary>
+    private Boolean ShouldCompact()
+    {
+        var live = (Int64)ArenaStart;
+        foreach (var run in _runs) live += run.EndOffset - run.Offset;
+
+        var garbage = _meta.ArenaEnd - live;
+        if (garbage <= 0) return false;
+
+        return garbage > Math.Max(MinCompactGarbage, live) * 3;
+    }
+
     /// <summary>归并所有 run，丢弃旧版本与已删除条目，重写文件</summary>
     public void Compact()
     {
@@ -817,48 +1078,49 @@ internal sealed class MmfOrderedIndex : IDisposable
                 // 残留临时文件不影响下次压缩
             }
         }
+
     }
 
     /// <summary>把来源索引的存活条目重写为单个 run</summary>
     private void RewriteSingleRun(MmfOrderedIndex source, Int64 appliedOffset)
     {
-        // 第一遍：统计条目数与条目区长度
-        var entryCount = 0;
-        var entriesLength = 0L;
-        source.MergeScan(null, true, null, true, false, 0, entry =>
-        {
-            entryCount++;
-            entriesLength += Align(EntryHeaderSize + entry.Key.Length);
-            return true;
-        });
-
+        // 单遍写：先占位 run 头，边归并边写条目，最后写偏移目录并回填头部
         var runOffset = (Int64)ArenaStart;
         var entriesOffset = runOffset + RunHeaderSize;
-        var directoryOffset = entriesOffset + entriesLength;
-        var runLength = RunHeaderSize + entriesLength + entryCount * sizeof(Int64);
-        var end = runOffset + runLength;
+        var position = entriesOffset;
+        var entryCount = 0;
+        var directory = new List<Int64>();
 
-        _region.EnsureCapacity(end);
-
+        _region.EnsureCapacity(entriesOffset + RunHeaderSize);
         var header = new Byte[RunHeaderSize];
         WriteUInt32(header, RunMagicOffset, RunMagic);
         header[RunVersionOffset] = FileVersion;
+        _region.Write(runOffset, header, 0, header.Length);
+
+        source.MergeScan(null, true, null, true, false, 0, entry =>
+        {
+            var size = Align(EntryHeaderSize + entry.Key.Length);
+            _region.EnsureCapacity(position + size);
+
+            WriteEntry(position, entry);
+            directory.Add(position);
+            position += size;
+            entryCount++;
+
+            return true;
+        });
+
+        var directoryOffset = position;
+        var entriesLength = directoryOffset - entriesOffset;
+        var runLength = RunHeaderSize + entriesLength + entryCount * sizeof(Int64);
+
+        _region.EnsureCapacity(directoryOffset + entryCount * sizeof(Int64));
+        for (var i = 0; i < directory.Count; i++) _region.WriteInt64(directoryOffset + (Int64)i * sizeof(Int64), directory[i]);
+
         WriteInt64(header, RunEntryCountOffset, entryCount);
         WriteInt64(header, RunEntriesOffset, entriesOffset);
         WriteInt64(header, RunEntriesLengthOffset, entriesLength);
         _region.Write(runOffset, header, 0, header.Length);
-
-        // 第二遍：写条目与目录
-        var position = entriesOffset;
-        var index = 0;
-        source.MergeScan(null, true, null, true, false, 0, entry =>
-        {
-            WriteEntry(position, entry);
-            _region.WriteInt64(directoryOffset + (Int64)index * sizeof(Int64), position);
-            position += Align(EntryHeaderSize + entry.Key.Length);
-            index++;
-            return true;
-        });
 
         var runIndexSlot = (Int64)RunIndexOffset;
         _region.WriteInt64(runIndexSlot, runOffset);
@@ -868,11 +1130,15 @@ internal sealed class MmfOrderedIndex : IDisposable
 
         _runs.Clear();
         _runs.Add(new RunInfo(runOffset, entryCount, entriesOffset, entriesLength, directoryOffset));
+        _runSlots.Clear();
+        _runSlots.Add(0);
+        _freeSlots.Clear();
+        _runSlotCount = 1;
         _buffer.Clear();
         _bufferSorted = true;
 
         _meta.RunCount = 1;
-        _meta.ArenaEnd = end;
+        _meta.ArenaEnd = runOffset + runLength;
         _meta.EntryCount = entryCount;
         _meta.AppliedOffset = appliedOffset;
         SaveMeta();
@@ -900,6 +1166,9 @@ internal sealed class MmfOrderedIndex : IDisposable
         public readonly Int64 EntriesOffset;
         public readonly Int64 EntriesLength;
         public readonly Int64 DirectoryOffset;
+
+        /// <summary>run 在文件中的结束位置（指向偏移目录之后）</summary>
+        public Int64 EndOffset => DirectoryOffset + EntryCount * sizeof(Int64);
 
         public RunInfo(Int64 offset, Int64 entryCount, Int64 entriesOffset, Int64 entriesLength, Int64 directoryOffset)
         {
@@ -937,7 +1206,7 @@ internal sealed class MmfOrderedIndex : IDisposable
         };
 
         SaveMeta();
-        _region.Flush();
+        _region.Flush(false);
     }
 
     /// <summary>加载元数据与 run 目录</summary>
@@ -967,12 +1236,22 @@ internal sealed class MmfOrderedIndex : IDisposable
             throw new NovaException(ErrorCode.FileCorrupted, "Ordered index metadata is inconsistent: {0}", FilePath);
 
         _runs.Clear();
+        _runSlots.Clear();
+        _freeSlots.Clear();
+        _runSlotCount = (Int32)_meta.RunCount;
         for (var i = 0; i < _meta.RunCount; i++)
         {
             var slot = RunIndexOffset + i * RunIndexEntrySize;
             var offset = _region.ReadInt64(slot);
             var length = _region.ReadInt64(slot + 8);
             var count = _region.ReadInt64(slot + 16);
+
+            // 增量合并会把旧 run 的槽位清零，读到 0 直接跳过并留作复用
+            if (offset == 0 && length == 0 && count == 0)
+            {
+                _freeSlots.Add(i);
+                continue;
+            }
 
             if (offset < ArenaStart || length <= RunHeaderSize || offset + length > _meta.ArenaEnd || count < 0)
                 throw new NovaException(ErrorCode.FileCorrupted, "Ordered index run {0} is corrupted: {1}", i, FilePath);
@@ -988,6 +1267,7 @@ internal sealed class MmfOrderedIndex : IDisposable
                 throw new NovaException(ErrorCode.FileCorrupted, "Ordered index run {0} layout is invalid: {1}", i, FilePath);
 
             _runs.Add(new RunInfo(offset, count, entriesOffset, entriesLength, directoryOffset));
+            _runSlots.Add(i);
         }
     }
 
@@ -1153,3 +1433,8 @@ internal sealed class MmfOrderedIndex : IDisposable
 
     #endregion
 }
+
+
+
+
+

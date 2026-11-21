@@ -280,8 +280,8 @@ internal sealed class NovaPrimaryIndex : IDisposable
     /// <summary>把索引完整刷新到磁盘（含有序段写缓冲）</summary>
     public void Flush()
     {
-        _hash.Flush();
-        _ordered.Flush();
+        _hash.Flush(true);
+        _ordered.Flush(true);
     }
 
     /// <summary>只刷新哈希索引元数据，用于每次提交</summary>
