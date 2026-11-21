@@ -1045,12 +1045,13 @@ internal sealed class MmfHashIndex : IDisposable
         _meta.ArenaEnd = _writePosition;
 
         _region.EnsureCapacity(_writePosition);
-        ZeroRegion(bucketOffset, bucketBytes);
 
         var oldCapacity = _meta.Capacity;
         var oldBucketOffset = _meta.BucketOffset;
 
-        // 原地重链：只改每个键节点的 NextKey 指针，不复制节点，避免 O(N) 拷贝与键数组分配
+        // 原地重链：只改每个键节点的 NextKey 指针，不复制节点，避免 O(N) 拷贝与键数组分配。
+        // 新桶表先建在托管数组里、最后整块顺序写回，把每个节点的两次随机映射访问省掉。
+        var heads = new Int64[newCapacity];
         for (var bucket = 0L; bucket < oldCapacity; bucket++)
         {
             var node = _region.ReadInt64(oldBucketOffset + bucket * sizeof(Int64));
@@ -1060,15 +1061,14 @@ internal sealed class MmfHashIndex : IDisposable
                 var hash = _region.ReadInt64(node + KeyHash);
 
                 var newBucket = (Int64)((UInt64)hash & (UInt64)(newCapacity - 1));
-                var newSlot = bucketOffset + newBucket * sizeof(Int64);
-                var head = _region.ReadInt64(newSlot);
-
-                _region.WriteInt64(node + KeyNextKey, head);
-                _region.WriteInt64(newSlot, node);
+                _region.WriteInt64(node + KeyNextKey, heads[newBucket]);
+                heads[newBucket] = node;
 
                 node = next;
             }
         }
+
+        WriteBucketArray(bucketOffset, heads);
 
         _meta.Capacity = newCapacity;
         _meta.BucketOffset = bucketOffset;
@@ -1085,9 +1085,24 @@ internal sealed class MmfHashIndex : IDisposable
     /// <summary>8 字节对齐</summary>
     private static Int64 Align(Int64 length) => (length + 7) & ~7L;
 
-    /// <summary>清零一段区域</summary>
-    private void ZeroRegion(Int64 offset, Int64 length)
+    /// <summary>把桶表整块顺序写回映射视图</summary>
+    private void WriteBucketArray(Int64 offset, Int64[] heads)
     {
+        var chunk = new Byte[32 * 1024];
+        var index = 0;
+        var perChunk = chunk.Length / sizeof(Int64);
+        while (index < heads.Length)
+        {
+            var count = Math.Min(heads.Length - index, perChunk);
+            for (var i = 0; i < count; i++) WriteInt64(chunk, i * sizeof(Int64), heads[index + i]);
+
+            _region.Write(offset + (Int64)index * sizeof(Int64), chunk, 0, count * sizeof(Int64));
+            index += count;
+        }
+    }
+
+    /// <summary>清零一段区域</summary>
+    private void ZeroRegion(Int64 offset, Int64 length)    {
         var buffer = new Byte[4096];
         var position = offset;
         var end = offset + length;
