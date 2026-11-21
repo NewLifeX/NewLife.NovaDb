@@ -846,8 +846,9 @@ partial class SqlEngine
     /// <param name="tx">事务</param>
     /// <param name="maxRows">最大行数，0 表示不限制</param>
     /// <param name="cancellationToken">取消令牌</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
     /// <returns>候选行列表</returns>
-    private List<Object?[]> FetchPlanRows(TableAccessPlan plan, NovaTable table, Transaction tx, Int32 maxRows, CancellationToken cancellationToken = default)
+    private List<Object?[]> FetchPlanRows(TableAccessPlan plan, NovaTable table, Transaction tx, Int32 maxRows, CancellationToken cancellationToken = default, Boolean[]? neededColumns = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -861,7 +862,7 @@ partial class SqlEngine
                     {
                         if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
-                        var row = table.Get(tx, key);
+                        var row = table.Get(tx, key, neededColumns);
                         if (row != null) rows.Add(row);
                         if (maxRows > 0 && rows.Count >= maxRows) break;
                     }
@@ -872,7 +873,7 @@ partial class SqlEngine
                 return table.GetRange(tx,
                     plan.HasLower ? plan.Lower : null, !plan.HasLower || plan.LowerInclusive,
                     plan.HasUpper ? plan.Upper : null, !plan.HasUpper || plan.UpperInclusive,
-                    maxRows, cancellationToken, plan.ProvidesOrder && plan.OrderDescending);
+                    maxRows, cancellationToken, plan.ProvidesOrder && plan.OrderDescending, neededColumns);
 
             case TableAccessKind.IndexLookup:
                 {
@@ -884,7 +885,7 @@ partial class SqlEngine
                     {
                         if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
-                        var row = table.Get(tx, pk);
+                        var row = table.Get(tx, pk, neededColumns);
                         if (row != null) rows.Add(row);
                         if (maxRows > 0 && rows.Count >= maxRows) break;
                     }
@@ -895,7 +896,7 @@ partial class SqlEngine
                 return table.ScanIndexOrder(tx, plan.IndexName!, plan.OrderPrefix,
                     plan.HasLower ? plan.Lower : null, plan.HasLower, plan.LowerInclusive,
                     plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive,
-                    plan.OrderDescending, maxRows, cancellationToken);
+                    plan.OrderDescending, maxRows, cancellationToken, neededColumns);
 
             case TableAccessKind.IndexMerge:
                 {
@@ -909,7 +910,7 @@ partial class SqlEngine
                     {
                         if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
-                        var row = table.Get(tx, pk);
+                        var row = table.Get(tx, pk, neededColumns);
                         if (row != null) rows.Add(row);
                     }
                     return rows;
@@ -918,9 +919,11 @@ partial class SqlEngine
             default:
                 // 全表扫描：LIMIT 下推时同样只反序列化需要的行；ORDER BY 主键降序时反向扫描
                 if (plan.ProvidesOrder && plan.OrderDescending)
-                    return table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, descending: true);
+                    return table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, descending: true, neededColumns);
 
-                return maxRows > 0 ? table.GetRange(tx, null, true, null, true, maxRows, cancellationToken) : table.GetAll(tx, cancellationToken);
+                return maxRows > 0
+                    ? table.GetRange(tx, null, true, null, true, maxRows, cancellationToken, descending: false, neededColumns)
+                    : table.GetAll(tx, cancellationToken, neededColumns);
         }
     }
 

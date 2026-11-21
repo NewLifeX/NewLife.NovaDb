@@ -262,7 +262,7 @@ public partial class NovaTable
                 if (recordType == RecordType_Put && dataLength > 0)
                 {
                     // 只解析主键，载荷留在文件里按需映射读取
-                    var row = DeserializeRow(buf, 1, dataLength);
+                    var row = DeserializeRow(buf, 1, dataLength, null);
                     var pkValue = row[pkCol.Ordinal];
                     if (pkValue == null) continue;
 

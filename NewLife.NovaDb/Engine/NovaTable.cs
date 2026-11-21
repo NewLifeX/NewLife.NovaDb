@@ -268,7 +268,14 @@ public partial class NovaTable : IDisposable
     /// <param name="tx">事务</param>
     /// <param name="key">主键值</param>
     /// <returns>行数据（如果存在），否则返回 null</returns>
-    public Object?[]? Get(Transaction tx, Object key)
+    public Object?[]? Get(Transaction tx, Object key) => Get(tx, key, null);
+
+    /// <summary>根据主键查询行</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="key">主键值</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
+    /// <returns>行数据（如果存在），否则返回 null</returns>
+    public Object?[]? Get(Transaction tx, Object key, Boolean[]? neededColumns)
     {
         if (tx == null)
             throw new ArgumentNullException(nameof(tx));
@@ -300,7 +307,7 @@ public partial class NovaTable : IDisposable
             _hotIndexManager.AccessKey(key);
 
             // 反序列化行数据
-            return DeserializeVersion(visibleVersion);
+            return DeserializeVersion(visibleVersion, neededColumns);
         }
     }
 
@@ -557,7 +564,14 @@ public partial class NovaTable : IDisposable
     /// <param name="tx">事务</param>
     /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
     /// <returns>行数据列表</returns>
-    public List<Object?[]> GetAll(Transaction tx, CancellationToken cancellationToken)
+    public List<Object?[]> GetAll(Transaction tx, CancellationToken cancellationToken) => GetAll(tx, cancellationToken, null);
+
+    /// <summary>获取所有可见行，支持协作式取消与列裁剪</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
+    /// <returns>行数据列表</returns>
+    public List<Object?[]> GetAll(Transaction tx, CancellationToken cancellationToken, Boolean[]? neededColumns)
     {
         if (tx == null)
             throw new ArgumentNullException(nameof(tx));
@@ -577,7 +591,7 @@ public partial class NovaTable : IDisposable
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
                     {
-                        var row = DeserializeVersion(ver);
+                        var row = DeserializeVersion(ver, neededColumns);
                         result.Add(row);
                         break;
                     }
@@ -608,8 +622,9 @@ public partial class NovaTable : IDisposable
     /// <param name="maxRows">最大返回行数，0 表示不限制</param>
     /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
     /// <param name="descending">是否按主键降序返回；边界语义不变，只是扫描方向相反</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
     /// <returns>按主键升序（或 <paramref name="descending"/> 为 true 时降序）排列的行数据列表</returns>
-    public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows, CancellationToken cancellationToken, Boolean descending = false)
+    public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows, CancellationToken cancellationToken, Boolean descending = false, Boolean[]? neededColumns = null)
     {
         if (tx == null)
             throw new ArgumentNullException(nameof(tx));
@@ -638,7 +653,7 @@ public partial class NovaTable : IDisposable
                     {
                         if (ver.IsVisible(_txManager, tx.TxId))
                         {
-                            result.Add(DeserializeVersion(ver));
+                            result.Add(DeserializeVersion(ver, neededColumns));
                             visible = true;
                             break;
                         }
@@ -983,12 +998,13 @@ public partial class NovaTable : IDisposable
     /// <param name="descending">是否按索引键降序扫描</param>
     /// <param name="maxRows">最大返回行数，0 表示不限制</param>
     /// <param name="cancellationToken">取消令牌</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
     /// <returns>按索引键顺序排列的可见行；索引不存在时返回空列表</returns>
     /// <remarks>
     /// 同一索引键下的主键始终按升序回表，与“全表扫描后按同一列稳定排序”的并列行顺序一致；
     /// 索引键列含 NULL 的行不进索引，调用方需保证排序列不可空。
     /// </remarks>
-    public List<Object?[]> ScanIndexOrder(Transaction tx, String indexName, Object?[]? prefixValues, Object? lower, Boolean hasLower, Boolean includeLower, Object? upper, Boolean hasUpper, Boolean includeUpper, Boolean descending, Int32 maxRows, CancellationToken cancellationToken)
+    public List<Object?[]> ScanIndexOrder(Transaction tx, String indexName, Object?[]? prefixValues, Object? lower, Boolean hasLower, Boolean includeLower, Object? upper, Boolean hasUpper, Boolean includeUpper, Boolean descending, Int32 maxRows, CancellationToken cancellationToken, Boolean[]? neededColumns = null)
     {
         if (tx == null) throw new ArgumentNullException(nameof(tx));
         if (indexName == null) throw new ArgumentNullException(nameof(indexName));
@@ -1026,7 +1042,7 @@ public partial class NovaTable : IDisposable
                     var entries = idx.GetRange(fromKey, includeFrom, toKey, includeTo, SecondaryIndexPrefixScanChunkSize, descending);
                     foreach (var entry in entries)
                     {
-                        if (AppendIndexEntryRows(tx, entry.Value, result, maxRows, cancellationToken)) return result;
+                        if (AppendIndexEntryRows(tx, entry.Value, result, maxRows, cancellationToken, neededColumns)) return result;
                     }
 
                     if (entries.Count < SecondaryIndexPrefixScanChunkSize) break;
@@ -1067,7 +1083,7 @@ public partial class NovaTable : IDisposable
                     }
 
                     if (descending) collected.Add(entry.Value);
-                    else if (AppendIndexEntryRows(tx, entry.Value, result, maxRows, cancellationToken)) return result;
+                    else if (AppendIndexEntryRows(tx, entry.Value, result, maxRows, cancellationToken, neededColumns)) return result;
                 }
 
                 if (stop || entries.Count < SecondaryIndexPrefixScanChunkSize) break;
@@ -1078,7 +1094,7 @@ public partial class NovaTable : IDisposable
 
             for (var i = collected.Count - 1; i >= 0; i--)
             {
-                if (AppendIndexEntryRows(tx, collected[i], result, maxRows, cancellationToken)) return result;
+                if (AppendIndexEntryRows(tx, collected[i], result, maxRows, cancellationToken, neededColumns)) return result;
             }
 
             return result;
@@ -1091,15 +1107,16 @@ public partial class NovaTable : IDisposable
     /// <param name="rows">结果行列表</param>
     /// <param name="maxRows">最大返回行数，0 表示不限制</param>
     /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
     /// <returns>是否已达到行数上限</returns>
-    private Boolean AppendIndexEntryRows(Transaction tx, List<ComparableObject> primaryKeys, List<Object?[]> rows, Int32 maxRows, CancellationToken cancellationToken)
+    private Boolean AppendIndexEntryRows(Transaction tx, List<ComparableObject> primaryKeys, List<Object?[]> rows, Int32 maxRows, CancellationToken cancellationToken, Boolean[]? neededColumns = null)
     {
         var count = 0;
         foreach (var pk in primaryKeys)
         {
             if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
-            var row = Get(tx, pk.Value!);
+            var row = Get(tx, pk.Value!, neededColumns);
             if (row == null) continue;
 
             rows.Add(row);
@@ -1685,11 +1702,12 @@ public partial class NovaTable : IDisposable
 
     /// <summary>反序列化指定版本的行数据</summary>
     /// <param name="version">行版本</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列；未选中的列返回 null</param>
     /// <returns>行数据</returns>
-    private Object?[] DeserializeVersion(RowVersion version)
+    private Object?[] DeserializeVersion(RowVersion version, Boolean[]? neededColumns = null)
     {
         // 未提交或未开启行日志时载荷仍在内存
-        if (version.Payload != null) return DeserializeRow(version.Payload);
+        if (version.Payload != null) return DeserializeRow(version.Payload, 0, version.Payload.Length, neededColumns);
 
         if (version.DataOffset <= 0 || version.DataLength <= 0 || _rowStore == null)
             throw new NovaException(ErrorCode.FileCorrupted, "Row payload of key '{0}' is missing", version.Key);
@@ -1699,7 +1717,7 @@ public partial class NovaTable : IDisposable
         try
         {
             _rowStore.Read(version.DataOffset, buffer, version.DataLength);
-            return DeserializeRow(buffer, version.DataLength);
+            return DeserializeRow(buffer, 0, version.DataLength, neededColumns);
         }
         finally
         {
@@ -1714,14 +1732,15 @@ public partial class NovaTable : IDisposable
     /// <param name="payload">载荷所在的缓冲区</param>
     /// <param name="payloadLength">载荷有效字节数</param>
     /// <returns>行数据</returns>
-    private Object?[] DeserializeRow(Byte[] payload, Int32 payloadLength) => DeserializeRow(payload, 0, payloadLength);
+    private Object?[] DeserializeRow(Byte[] payload, Int32 payloadLength) => DeserializeRow(payload, 0, payloadLength, null);
 
     /// <summary>反序列化行数据（缓冲区可能大于载荷）</summary>
     /// <param name="payload">载荷所在的缓冲区</param>
     /// <param name="offset">载荷起始位置</param>
     /// <param name="payloadLength">载荷有效字节数</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列；未选中的列直接跳过解码并返回 null</param>
     /// <returns>行数据</returns>
-    private Object?[] DeserializeRow(Byte[] payload, Int32 offset, Int32 payloadLength)
+    private Object?[] DeserializeRow(Byte[] payload, Int32 offset, Int32 payloadLength, Boolean[]? neededColumns)
     {
         var pos = offset;
         var end = offset + payloadLength;
@@ -1731,10 +1750,17 @@ public partial class NovaTable : IDisposable
         for (var i = 0; i < colCount; i++)
         {
             var length = ReadInt32(payload, ref pos, end);
-            var colDef = _schema.Columns[i];
             if (length < 0 || pos + length > end)
                 throw new NovaException(ErrorCode.FileCorrupted, "Row payload column {0} is out of range", i);
 
+            // 未引用的列跳过解码：省掉字符串/二进制复制与装箱，这是全表扫描的主要开销
+            if (neededColumns != null && i < neededColumns.Length && !neededColumns[i])
+            {
+                pos += length;
+                continue;
+            }
+
+            var colDef = _schema.Columns[i];
             if (length == 1 && payload[pos] == 0x00)
                 row[i] = null;
             else

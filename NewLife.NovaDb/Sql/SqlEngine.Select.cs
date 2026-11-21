@@ -69,8 +69,9 @@ partial class SqlEngine
             if (canStopEarly) maxRows = (stmt.OffsetValue ?? 0) + stmt.Limit.Value;
         }
 
-        // 2. 取候选行
-        var rows = FetchPlanRows(plan, table, tx, maxRows, cancellationToken);
+        // 2. 取候选行（只反序列化语句引用到的列）
+        var neededColumns = BuildNeededColumnMask(stmt, schema);
+        var rows = FetchPlanRows(plan, table, tx, maxRows, cancellationToken, neededColumns);
 
         // 3. WHERE 过滤（索引只缩小候选集，语义仍以条件复核为准）
         if (stmt.Where != null)
@@ -924,13 +925,18 @@ partial class SqlEngine
 
         cancellationToken.ThrowIfCancellationRequested();
 
+        // ORDER BY 作用于分组结果：按投影里的普通列（或同名原列）比较，聚合列别名排序不支持时保持分组顺序
+        var groupList = filteredGroups.Select(g => new KeyValuePair<String, List<Object?[]>>(g.Key, g.Value)).ToList();
+        if (stmt.OrderBy != null && stmt.OrderBy.Count > 0 && groupList.Count > 1)
+            SortGroups(stmt, groupList, schema);
+
         // 构建结果
         var result = new SqlResult();
         var colNames = BuildColumnNames(stmt, schema);
         result.ColumnNames = colNames;
 
         var groupIndex = 0;
-        foreach (var group in filteredGroups)
+        foreach (var group in groupList)
         {
             if ((groupIndex++ & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
@@ -962,8 +968,56 @@ partial class SqlEngine
         return result;
     }
 
-    #region 窗口分组（F17）
+    /// <summary>按 ORDER BY 对分组结果排序</summary>
+    /// <param name="stmt">查询语句</param>
+    /// <param name="groups">分组列表，原地排序</param>
+    /// <param name="schema">表结构</param>
+    /// <remarks>
+    /// 只支持按分组键或投影中的普通列排序（如 <c>GROUP BY b ORDER BY b</c>）：
+    /// 取分组内第一行（代表行）的值比较。聚合列的别名排序需要先算聚合值，
+    /// 这里不重算，保持原分组顺序，避免出现"看起来排了但值不对"的结果。
+    /// </remarks>
+    private static void SortGroups(SelectStatement stmt, List<KeyValuePair<String, List<Object?[]>>> groups, TableSchema schema)
+    {
+        // ORDER BY 列 → 代表行中的列序号；解析不到时放弃排序
+        var ordinals = new Int32[stmt.OrderBy!.Count];
+        for (var i = 0; i < stmt.OrderBy.Count; i++)
+        {
+            var name = stmt.OrderBy[i].ColumnName;
+            var ordinal = FindColumnOrdinal(schema, name);
+            if (ordinal < 0)
+            {
+                // 投影里是普通列引用时，也能按该列排序（别名场景）
+                var selectColumn = stmt.Columns.FirstOrDefault(c => String.Equals(c.Alias, name, StringComparison.OrdinalIgnoreCase)
+                    || String.Equals((c.Expression as ColumnRefExpression)?.ColumnName, name, StringComparison.OrdinalIgnoreCase));
+                if (selectColumn?.Expression is ColumnRefExpression columnRef)
+                    ordinal = FindColumnOrdinal(schema, columnRef.ColumnName);
 
+                if (ordinal < 0) return;
+            }
+
+            ordinals[i] = ordinal;
+        }
+
+        groups.Sort((left, right) =>
+        {
+            var leftRow = left.Value[0];
+            var rightRow = right.Value[0];
+
+            for (var i = 0; i < ordinals.Length; i++)
+            {
+                var ordinal = ordinals[i];
+                var leftValue = ordinal < leftRow.Length ? leftRow[ordinal] : null;
+                var rightValue = ordinal < rightRow.Length ? rightRow[ordinal] : null;
+                var cmp = CompareValues(leftValue, rightValue);
+                if (cmp != 0) return stmt.OrderBy[i].Descending ? -cmp : cmp;
+            }
+
+            return 0;
+        });
+    }
+
+    #region 窗口分组（F17）
     /// <summary>创建窗口分组状态列表，与 GROUP BY 项按位置对齐</summary>
     /// <param name="stmt">查询语句</param>
     /// <returns>状态列表，无窗口函数时返回 null</returns>
