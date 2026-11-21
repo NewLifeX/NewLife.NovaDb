@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace NewLife.NovaDb.Sql;
 
 /// <summary>EXPLAIN 查询计划执行器</summary>
@@ -57,7 +59,8 @@ public partial class SqlEngine
             {
                 _tables.TryGetValue(tableName, out var table);
 
-                var access = BuildTableAccessPlan(table, tableName, select.TableAlias, schema, select.Where, parameters);
+                var needsSort = select.OrderBy != null && select.OrderBy.Count > 0;
+                var access = BuildTableAccessPlan(table, tableName, select.TableAlias, schema, select.Where, parameters, needsSort: needsSort);
                 scanType = access.PlanType;
                 key = access.KeyText;
 
@@ -68,6 +71,8 @@ public partial class SqlEngine
 
                 if (!access.CoversWhere)
                     extra = "Residual WHERE filter";
+
+                extra = AppendCost(extra, access);
             }
         }
         else if (String.IsNullOrEmpty(tableName))
@@ -148,6 +153,7 @@ public partial class SqlEngine
         var scanType = update.Where != null ? "FILTERED SCAN" : "FULL SCAN";
         var key = "";
         var estimatedRows = "?";
+        var extra = $"Update {update.SetClauses?.Count ?? 0} column(s)";
 
         // UPDATE 只复用主键访问路径，与执行阶段保持一致
         if (update.Where != null)
@@ -158,17 +164,20 @@ public partial class SqlEngine
                 _tables.TryGetValue(update.TableName, out var table);
 
                 var access = BuildTableAccessPlan(table, update.TableName, null, schema, update.Where, parameters, allowSecondaryIndex: false);
+                if (access.EstimatedRows.HasValue)
+                    estimatedRows = access.EstimatedRows.Value.ToString();
+
                 if (access.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange)
                 {
                     scanType = access.PlanType;
                     key = access.KeyText;
-                    if (access.EstimatedRows.HasValue)
-                        estimatedRows = access.EstimatedRows.Value.ToString();
                 }
+
+                extra = AppendCost(extra, access);
             }
         }
 
-        plan.Add(["1", scanType, update.TableName, key, estimatedRows, $"Update {update.SetClauses?.Count ?? 0} column(s)"]);
+        plan.Add(["1", scanType, update.TableName, key, estimatedRows, extra]);
     }
 
     /// <summary>生成 DELETE 计划</summary>
@@ -177,6 +186,7 @@ public partial class SqlEngine
         var scanType = delete.Where != null ? "FILTERED SCAN" : "FULL SCAN";
         var key = "";
         var estimatedRows = "?";
+        var extra = "Soft delete (mark version)";
 
         // DELETE 只复用主键访问路径，与执行阶段保持一致
         if (delete.Where != null)
@@ -187,16 +197,26 @@ public partial class SqlEngine
                 _tables.TryGetValue(delete.TableName, out var table);
 
                 var access = BuildTableAccessPlan(table, delete.TableName, null, schema, delete.Where, parameters, allowSecondaryIndex: false);
+                if (access.EstimatedRows.HasValue)
+                    estimatedRows = access.EstimatedRows.Value.ToString();
+
                 if (access.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange)
                 {
                     scanType = access.PlanType;
                     key = access.KeyText;
-                    if (access.EstimatedRows.HasValue)
-                        estimatedRows = access.EstimatedRows.Value.ToString();
                 }
+
+                extra = AppendCost(extra, access);
             }
         }
 
-        plan.Add(["1", scanType, delete.TableName, key, estimatedRows, "Soft delete (mark version)"]);
+        plan.Add(["1", scanType, delete.TableName, key, estimatedRows, extra]);
+    }
+
+    /// <summary>在 extra 列追加计划代价，保留已有说明文字</summary>
+    private static String AppendCost(String extra, TableAccessPlan plan)
+    {
+        var cost = plan.Cost.ToString("0.0", CultureInfo.InvariantCulture);
+        return String.IsNullOrEmpty(extra) ? $"cost={cost}" : $"{extra}; cost={cost}";
     }
 }

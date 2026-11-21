@@ -42,7 +42,7 @@ partial class SqlEngine
         using var tx = _txManager.BeginTransaction();
 
         // 1. 访问计划：能走主键/二级索引就不全表扫描
-        var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters);
+        var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters, needsSort: stmt.OrderBy != null && stmt.OrderBy.Count > 0);
 
         // LIMIT 下推：无排序/分组/聚合且条件被索引完整覆盖时，只需取 offset+limit 行
         // 二级索引与主键索引不同步于 MVCC 可见性，故只对主键/全表扫描计划下推

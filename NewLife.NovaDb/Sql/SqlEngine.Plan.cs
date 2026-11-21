@@ -4,96 +4,102 @@ using NewLife.NovaDb.Tx;
 
 namespace NewLife.NovaDb.Sql;
 
+/// <summary>单表访问路径类型</summary>
+internal enum TableAccessKind
+{
+    /// <summary>全表扫描</summary>
+    FullScan,
+
+    /// <summary>主键等值查找</summary>
+    PrimaryKeyLookup,
+
+    /// <summary>主键范围扫描</summary>
+    PrimaryKeyRange,
+
+    /// <summary>二级索引等值查找</summary>
+    IndexLookup,
+}
+
+/// <summary>单表访问计划。由 WHERE 条件推导，SELECT/UPDATE/DELETE 与 EXPLAIN 共用</summary>
+internal sealed class TableAccessPlan
+{
+    /// <summary>访问路径</summary>
+    public TableAccessKind Kind { get; set; }
+
+    /// <summary>表名</summary>
+    public String TableName { get; set; } = String.Empty;
+
+    /// <summary>二级索引名（仅 IndexLookup）</summary>
+    public String? IndexName { get; set; }
+
+    /// <summary>二级索引列名（仅 IndexLookup）</summary>
+    public String? IndexColumn { get; set; }
+
+    /// <summary>等值查询键（已转换为列类型）</summary>
+    public List<Object> Keys { get; } = [];
+
+    /// <summary>范围下界</summary>
+    public Object? Lower { get; set; }
+
+    /// <summary>是否包含下界</summary>
+    public Boolean LowerInclusive { get; set; }
+
+    /// <summary>范围上界</summary>
+    public Object? Upper { get; set; }
+
+    /// <summary>是否包含上界</summary>
+    public Boolean UpperInclusive { get; set; }
+
+    /// <summary>二级索引命中的主键列表，供执行阶段复用</summary>
+    public List<Object>? IndexMatches { get; set; }
+
+    /// <summary>候选集是否已完整表达 WHERE，没有剩余条件</summary>
+    public Boolean CoversWhere { get; set; }
+
+    /// <summary>估算行数</summary>
+    public Int64? EstimatedRows { get; set; }
+
+    /// <summary>计划总代价，单位与 <see cref="SqlCostModel"/> 的常量一致</summary>
+    public Double Cost { get; set; }
+
+    /// <summary>计划选择依据：stats 表示按统计代价比较，fallback 表示统计缺失时沿用规则优先级</summary>
+    public String Reason { get; set; } = "fallback";
+
+    /// <summary>计划类型文本</summary>
+    public String PlanType => Kind switch
+    {
+        TableAccessKind.PrimaryKeyLookup => "PK LOOKUP",
+        TableAccessKind.PrimaryKeyRange => "PK RANGE",
+        TableAccessKind.IndexLookup => "INDEX LOOKUP",
+        _ => "FULL SCAN",
+    };
+
+    /// <summary>使用的索引描述</summary>
+    public String KeyText => Kind switch
+    {
+        TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange => PrimaryKeyText,
+        TableAccessKind.IndexLookup => $"{IndexName}({IndexColumn})",
+        _ => String.Empty,
+    };
+
+    /// <summary>主键索引描述</summary>
+    public String PrimaryKeyText { get; set; } = String.Empty;
+
+    /// <summary>是否有下界</summary>
+    public Boolean HasLower { get; set; }
+
+    /// <summary>是否有上界</summary>
+    public Boolean HasUpper { get; set; }
+}
+
 partial class SqlEngine
 {
     #region 访问计划
 
-    /// <summary>单表访问路径类型</summary>
-    private enum TableAccessKind
-    {
-        /// <summary>全表扫描</summary>
-        FullScan,
-
-        /// <summary>主键等值查找</summary>
-        PrimaryKeyLookup,
-
-        /// <summary>主键范围扫描</summary>
-        PrimaryKeyRange,
-
-        /// <summary>二级索引等值查找</summary>
-        IndexLookup,
-    }
-
-    /// <summary>单表访问计划。由 WHERE 条件推导，SELECT/UPDATE/DELETE 与 EXPLAIN 共用</summary>
-    private sealed class TableAccessPlan
-    {
-        /// <summary>访问路径</summary>
-        public TableAccessKind Kind { get; set; }
-
-        /// <summary>表名</summary>
-        public String TableName { get; set; } = String.Empty;
-
-        /// <summary>二级索引名（仅 IndexLookup）</summary>
-        public String? IndexName { get; set; }
-
-        /// <summary>二级索引列名（仅 IndexLookup）</summary>
-        public String? IndexColumn { get; set; }
-
-        /// <summary>等值查询键（已转换为列类型）</summary>
-        public List<Object> Keys { get; } = [];
-
-        /// <summary>范围下界</summary>
-        public Object? Lower { get; set; }
-
-        /// <summary>是否包含下界</summary>
-        public Boolean LowerInclusive { get; set; }
-
-        /// <summary>范围上界</summary>
-        public Object? Upper { get; set; }
-
-        /// <summary>是否包含上界</summary>
-        public Boolean UpperInclusive { get; set; }
-
-        /// <summary>二级索引命中的主键列表，供执行阶段复用</summary>
-        public List<Object>? IndexMatches { get; set; }
-
-        /// <summary>候选集是否已完整表达 WHERE，没有剩余条件</summary>
-        public Boolean CoversWhere { get; set; }
-
-        /// <summary>估算行数</summary>
-        public Int64? EstimatedRows { get; set; }
-
-        /// <summary>计划类型文本</summary>
-        public String PlanType => Kind switch
-        {
-            TableAccessKind.PrimaryKeyLookup => "PK LOOKUP",
-            TableAccessKind.PrimaryKeyRange => "PK RANGE",
-            TableAccessKind.IndexLookup => "INDEX LOOKUP",
-            _ => "FULL SCAN",
-        };
-
-        /// <summary>使用的索引描述</summary>
-        public String KeyText => Kind switch
-        {
-            TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange => PrimaryKeyText,
-            TableAccessKind.IndexLookup => $"{IndexName}({IndexColumn})",
-            _ => String.Empty,
-        };
-
-        /// <summary>主键索引描述</summary>
-        public String PrimaryKeyText { get; set; } = String.Empty;
-
-        /// <summary>是否有下界</summary>
-        public Boolean HasLower { get; set; }
-
-        /// <summary>是否有上界</summary>
-        public Boolean HasUpper { get; set; }
-    }
-
     /// <summary>二级索引命中行数达到该阈值且超过全表比例时才回退全表扫描，避免小表误判</summary>
     private const Int32 FullScanFallbackMinRows = 32;
 
-    /// <summary>根据 WHERE 条件推导单表访问计划</summary>
+    /// <summary>根据 WHERE 条件推导单表访问计划：先枚举全部候选路径，再按代价选择</summary>
     /// <param name="table">表实例，为空时只做语法层推导（如 EXPLAIN 未知表）</param>
     /// <param name="tableName">表名</param>
     /// <param name="tableAlias">表别名</param>
@@ -101,82 +107,130 @@ partial class SqlEngine
     /// <param name="where">WHERE 条件</param>
     /// <param name="parameters">参数字典</param>
     /// <param name="allowSecondaryIndex">是否允许使用二级索引（UPDATE/DELETE 仅复用主键路径）</param>
+    /// <param name="needsSort">结果是否需要排序，排序成本按估算输出行数计入</param>
     /// <returns>访问计划</returns>
-    private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true)
+    private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true, Boolean needsSort = false)
     {
-        var plan = new TableAccessPlan { Kind = TableAccessKind.FullScan, TableName = tableName };
-
-        // 统计信息缺失或过期时为 null，后续全部回退到 RowCount 粗估
+        // 统计信息缺失或过期时为 null，此时沿用原有规则优先级，行为与引入代价模型前一致
         var stats = table == null ? null : GetTableStatistics(tableName, table);
-        if (stats != null) plan.EstimatedRows = stats.RowCount;
 
-        if (where == null)
+        Int64? rowCount = null;
+        if (stats != null) rowCount = stats.RowCount;
+        else if (table != null) rowCount = table.RowCount;
+
+        // 候选一：全表扫描，始终可用；代价相同时优先选它，保证计划稳定
+        var fullScan = new TableAccessPlan
         {
-            plan.CoversWhere = true;
-            return plan;
-        }
+            Kind = TableAccessKind.FullScan,
+            TableName = tableName,
+            CoversWhere = where == null,
+            EstimatedRows = rowCount,
+        };
 
-        var conjuncts = new List<SqlExpression>();
-        CollectConjuncts(where, conjuncts);
+        TableAccessPlan? lookupPlan = null;
+        TableAccessPlan? rangePlan = null;
+        var indexPlans = new List<TableAccessPlan>();
+        var candidates = new List<TableAccessPlan> { fullScan };
 
-        // 1. 主键等值/IN：主键索引直接定位单行或少量行
-        var pkCol = schema.GetPrimaryKeyColumn();
-        if (pkCol != null && CanUseEqualityIndex(pkCol.DataType))
+        if (where != null)
         {
-            plan.PrimaryKeyText = $"PRIMARY({pkCol.Name})";
+            var conjuncts = new List<SqlExpression>();
+            CollectConjuncts(where, conjuncts);
 
-            var used = new List<SqlExpression>();
-            var keys = CollectEqualityKeys(conjuncts, pkCol, tableName, tableAlias, parameters, used);
-            if (keys != null)
+            var pkCol = schema.GetPrimaryKeyColumn();
+            if (pkCol != null)
             {
-                plan.Kind = TableAccessKind.PrimaryKeyLookup;
-                plan.Keys.AddRange(keys);
-                plan.CoversWhere = used.Count == conjuncts.Count;
-                plan.EstimatedRows = keys.Count;
-                return plan;
-            }
-        }
+                var primaryKeyText = $"PRIMARY({pkCol.Name})";
 
-        // 2. 二级索引等值：只支持单列索引（联合索引键为数组，暂不参与等值匹配）
-        if (allowSecondaryIndex)
-        {
-            var indexPlan = BuildIndexAccessPlan(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats);
-            if (indexPlan != null) return indexPlan;
-        }
-
-        // 3. 主键范围扫描（字符串等类型缺少与 SQL 一致的大小写/区域性排序，不做范围下推）
-        if (pkCol != null && CanUseRangeIndex(pkCol.DataType))
-        {
-            plan.PrimaryKeyText = $"PRIMARY({pkCol.Name})";
-
-            var used = new List<SqlExpression>();
-            CollectRangeBounds(conjuncts, pkCol, tableName, tableAlias, parameters, plan, used);
-            if (plan.HasLower || plan.HasUpper)
-            {
-                plan.Kind = TableAccessKind.PrimaryKeyRange;
-                plan.CoversWhere = used.Count == conjuncts.Count;
-
-                // 有统计时用等深直方图估算范围行数，缺失时由 EXPLAIN 回退到 RowCount
-                if (stats != null)
+                // 候选二：主键等值/IN，主键索引直接定位单行或少量行
+                if (CanUseEqualityIndex(pkCol.DataType))
                 {
-                    var estimated = stats.EstimateRange(pkCol.Name, plan.Lower, plan.Upper, plan.HasLower, plan.HasUpper, -1);
-                    if (estimated >= 0) plan.EstimatedRows = estimated;
+                    var used = new List<SqlExpression>();
+                    var keys = CollectEqualityKeys(conjuncts, pkCol, tableName, tableAlias, parameters, used);
+                    if (keys != null)
+                    {
+                        lookupPlan = new TableAccessPlan
+                        {
+                            Kind = TableAccessKind.PrimaryKeyLookup,
+                            TableName = tableName,
+                            PrimaryKeyText = primaryKeyText,
+                            CoversWhere = used.Count == conjuncts.Count,
+                            EstimatedRows = keys.Count,
+                        };
+                        lookupPlan.Keys.AddRange(keys);
+                        candidates.Add(lookupPlan);
+                    }
                 }
 
-                return plan;
+                // 候选三：主键范围（字符串等类型缺少与 SQL 一致的大小写/区域性排序，不做范围下推）
+                if (CanUseRangeIndex(pkCol.DataType))
+                {
+                    var rangeCandidate = new TableAccessPlan
+                    {
+                        Kind = TableAccessKind.PrimaryKeyRange,
+                        TableName = tableName,
+                        PrimaryKeyText = primaryKeyText,
+                    };
+
+                    var used = new List<SqlExpression>();
+                    CollectRangeBounds(conjuncts, pkCol, tableName, tableAlias, parameters, rangeCandidate, used);
+                    if (rangeCandidate.HasLower || rangeCandidate.HasUpper)
+                    {
+                        rangeCandidate.CoversWhere = used.Count == conjuncts.Count;
+                        rangeCandidate.EstimatedRows = EstimateRangeRows(stats, pkCol, rangeCandidate, rowCount);
+                        rangePlan = rangeCandidate;
+                        candidates.Add(rangeCandidate);
+                    }
+                }
             }
 
-            plan.Lower = null;
-            plan.Upper = null;
-            plan.HasLower = false;
-            plan.HasUpper = false;
+            // 候选四：单列二级索引等值（联合索引键为数组，暂不参与等值匹配）
+            if (allowSecondaryIndex)
+            {
+                CollectIndexPlans(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, indexPlans);
+                candidates.AddRange(indexPlans);
+            }
         }
 
-        return plan;
+        TableAccessPlan chosen;
+        if (stats == null)
+        {
+            // 无统计：保持原有规则优先级，避免因缺少统计而选错
+            chosen = lookupPlan ?? (indexPlans.Count > 0 ? indexPlans[0] : null) ?? rangePlan ?? fullScan;
+            chosen.Reason = "fallback";
+        }
+        else
+        {
+            chosen = fullScan;
+            var bestCost = EstimatePlanCost(fullScan, stats, needsSort);
+            foreach (var candidate in candidates)
+            {
+                var cost = EstimatePlanCost(candidate, stats, needsSort);
+                if (cost < bestCost)
+                {
+                    chosen = candidate;
+                    bestCost = cost;
+                }
+            }
+
+            chosen.Reason = "stats";
+        }
+
+        chosen.Cost = EstimatePlanCost(chosen, stats, needsSort);
+        return chosen;
     }
 
-    /// <summary>尝试为单列二级索引构造等值访问计划</summary>
-    private TableAccessPlan? BuildIndexAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats)
+    /// <summary>估算计划总代价，需要排序时叠加排序成本</summary>
+    private static Double EstimatePlanCost(TableAccessPlan plan, TableStatistics? stats, Boolean needsSort)
+    {
+        var cost = SqlCostModel.EstimateCost(plan, stats);
+        if (needsSort) cost += SqlCostModel.EstimateSortCost(plan.EstimatedRows ?? stats?.RowCount ?? 0L);
+
+        return cost;
+    }
+
+    /// <summary>收集全部可用的单列二级索引等值候选</summary>
+    private void CollectIndexPlans(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, List<TableAccessPlan> plans)
     {
         foreach (var index in schema.Indexes)
         {
@@ -202,19 +256,34 @@ partial class SqlEngine
 
             if (table != null)
             {
-                // 命中行数优先用统计估算（行数/NDV），无统计时退回索引实际命中的候选行数
+                // 命中行数优先用统计估算（行数/NDV），统计缺失或该列无统计时退回索引实际命中的候选行数
                 var estimated = EstimateIndexMatches(stats, column.Name, keys);
-                candidate.IndexMatches = LookupIndexMatches(table, candidate);
-                candidate.EstimatedRows = estimated ?? candidate.IndexMatches.Count;
+                if (estimated.HasValue)
+                    candidate.EstimatedRows = estimated.Value;
+                else
+                {
+                    candidate.IndexMatches = LookupIndexMatches(table, candidate);
+                    candidate.EstimatedRows = candidate.IndexMatches.Count;
+                }
 
-                // 命中行占比过高时，随机回表比顺序全表扫描更慢，放弃索引
+                // 命中行占比过高时，随机回表比顺序全表扫描更慢，保留为候选过滤的保底阈值
                 if (IsIndexUnselective(table, candidate.EstimatedRows.Value, stats)) continue;
             }
 
-            return candidate;
+            plans.Add(candidate);
+        }
+    }
+
+    /// <summary>估算主键范围命中行数，统计缺失或无法估算时退回表行数</summary>
+    private static Int64? EstimateRangeRows(TableStatistics? stats, ColumnDefinition pkCol, TableAccessPlan candidate, Int64? rowCount)
+    {
+        if (stats != null)
+        {
+            var estimated = stats.EstimateRange(pkCol.Name, candidate.Lower, candidate.Upper, candidate.HasLower, candidate.HasUpper, -1);
+            if (estimated >= 0) return estimated;
         }
 
-        return null;
+        return rowCount;
     }
 
     /// <summary>按计划取候选行，索引只负责缩小范围，WHERE 仍需在结果上复核</summary>

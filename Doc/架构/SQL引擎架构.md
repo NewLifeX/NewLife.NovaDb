@@ -365,6 +365,12 @@ public List<Dictionary<String, Object?>> Query(String sql,
 - 命中行数超过全表 1/4 且超过 32 行时，回退全表扫描：随机回表比顺序扫描更慢。
 - 字符串主键不做范围下推：SkipList 的字符串排序是区域性敏感比较，与 SQL 的大小写不敏感比较不一致，下推可能漏行。
 
+代价选择（s2 起）：先枚举候选（全扫 / 主键点查 / 主键范围 / 单列索引等值），再由 `Sql/SqlCostModel.cs` 估算比较。
+- 成本单位＝一次行反序列化：顺序扫描 1、索引探测 1、回表 4、残余过滤 0.2、索引顺序扫描 0.5；有 `ORDER BY` 时另计 `0.1*n*log2(n)`（索引顺序免排序留给 s4）。
+- 有统计时取成本最小者，并列优先全表扫描（`reason=stats`）；统计缺失时沿用原优先级：主键点查 → 索引 → 主键范围 → 全扫（`reason=fallback`）。
+- 索引候选命中超过全表 1/4 且超过 32 行时直接排除（随机回表比顺序扫描更慢）。
+- `EXPLAIN` 的 `extra` 追加 `cost=...`，`rows` 显示估算行数。
+
 ```csharp
 // 执行阶段的形态
 var plan = BuildTableAccessPlan(table, tableName, alias, schema, stmt.Where, parameters);
