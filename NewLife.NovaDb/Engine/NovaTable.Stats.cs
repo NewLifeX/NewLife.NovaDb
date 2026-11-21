@@ -1,4 +1,4 @@
-﻿using NewLife.NovaDb.Tx;
+using NewLife.NovaDb.Tx;
 
 namespace NewLife.NovaDb.Engine;
 
@@ -45,19 +45,19 @@ partial class NovaTable
                 Owner = this,
             };
 
-            // 第一遍：统计可见行并水库采样，样本只保留载荷引用，扫描结束后再反序列化
-            var samples = new List<Byte[]>();
+            // 第一遍：统计可见行并水库采样，样本只保留行版本，扫描结束后再反序列化
+            var samples = new List<RowVersion>();
             var random = new Random(20260101);
             var seenRows = 0L;
-            var visibleRows = ScanPrimaryIndex(tx, (key, payload) =>
+            var visibleRows = ScanPrimaryIndex(tx, (key, version) =>
             {
                 if (samples.Count < StatisticsSampleRows)
-                    samples.Add(payload);
+                    samples.Add(version);
                 else
                 {
                     // 水库采样：已有 seenRows 行时，以 1/(seenRows+1) 的概率替换样本
                     var slot = (Int32)(random.NextDouble() * (seenRows + 1));
-                    if (slot < StatisticsSampleRows) samples[slot] = payload;
+                    if (slot < StatisticsSampleRows) samples[slot] = version;
                 }
 
                 seenRows++;
@@ -76,7 +76,7 @@ partial class NovaTable
                 var minValue = (Object?)null;
                 ComparableObject? previousKey = null;
 
-                ScanPrimaryIndex(tx, (key, payload) =>
+                ScanPrimaryIndex(tx, (key, version) =>
                 {
                     if (previousKey == null || previousKey.CompareTo(key) != 0) distinct++;
                     previousKey = key;
@@ -120,8 +120,8 @@ partial class NovaTable
 
                 // 非索引列：按采样值估算 NDV 与直方图
                 var rows = new List<Object?[]>(samples.Count);
-                foreach (var payload in samples)
-                    rows.Add(DeserializeRow(payload));
+                foreach (var version in samples)
+                    rows.Add(DeserializeVersion(version));
 
                 foreach (var column in _schema.Columns)
                 {
@@ -142,9 +142,9 @@ partial class NovaTable
 
     /// <summary>扫描主键索引并逐个回调可见行，分块持锁避免长时间阻塞写入</summary>
     /// <param name="tx">事务</param>
-    /// <param name="onVisible">可见行回调（主键键、行载荷）</param>
+    /// <param name="onVisible">可见行回调（主键键、行版本）</param>
     /// <returns>可见行数</returns>
-    private Int64 ScanPrimaryIndex(Transaction tx, Action<ComparableObject, Byte[]>? onVisible)
+    private Int64 ScanPrimaryIndex(Transaction tx, Action<ComparableObject, RowVersion>? onVisible)
     {
         var count = 0L;
         ComparableObject? from = null;
@@ -160,11 +160,11 @@ partial class NovaTable
 
                 foreach (var entry in chunk)
                 {
-                    var payload = FindVisibleVersion(entry.Value, tx.TxId)?.Payload;
-                    if (payload == null) continue;
+                    var version = FindVisibleVersion(entry.Value, tx.TxId);
+                    if (version == null) continue;
 
                     count++;
-                    onVisible?.Invoke(entry.Key, payload);
+                    onVisible?.Invoke(entry.Key, version);
                 }
 
                 from = chunk[chunk.Count - 1].Key;

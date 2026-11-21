@@ -1,4 +1,6 @@
-﻿using System.Globalization;
+using System.Buffers;
+using System.Buffers.Binary;
+using System.Globalization;
 using NewLife.Buffers;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
@@ -222,7 +224,7 @@ public partial class NovaTable : IDisposable
 
             // 注册提交动作：事务提交时才持久化到行日志
             var persistPayload = payload;
-            tx.RegisterCommitAction(() => PersistPut(persistPayload));
+            tx.RegisterCommitAction(() => PersistPut(persistPayload, rowVersion));
 
             // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
             var changedPk = pkValue;
@@ -297,7 +299,7 @@ public partial class NovaTable : IDisposable
             _hotIndexManager.AccessKey(key);
 
             // 反序列化行数据
-            return DeserializeRow(visibleVersion.Payload!);
+            return DeserializeVersion(visibleVersion);
         }
     }
 
@@ -347,7 +349,7 @@ public partial class NovaTable : IDisposable
             List<SecondaryIndexDeltaEntry>? indexDeltas = null;
             if (_secondaryIndexes.Count > 0 || _fullTextIndexes.Count > 0)
             {
-                oldRow = DeserializeRow(visibleVersion.Payload!);
+                oldRow = DeserializeVersion(visibleVersion);
                 if (_secondaryIndexes.Count > 0)
                 {
                     indexDeltas = [];
@@ -393,7 +395,7 @@ public partial class NovaTable : IDisposable
 
             // 注册提交动作：事务提交时才持久化新版本
             var persistPayload = payload;
-            tx.RegisterCommitAction(() => PersistPut(persistPayload));
+            tx.RegisterCommitAction(() => PersistPut(persistPayload, newVersion));
 
             // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
             var changedPk = key;
@@ -476,7 +478,7 @@ public partial class NovaTable : IDisposable
             Object?[]? deletedRow = null;
             if (_secondaryIndexes.Count > 0)
             {
-                deletedRow = DeserializeRow(visibleVersion.Payload!);
+                deletedRow = DeserializeVersion(visibleVersion);
                 var indexDeltas = new List<SecondaryIndexDeltaEntry>();
                 RemoveFromSecondaryIndexes(deletedRow, comparableKey, indexDeltas);
 
@@ -572,7 +574,7 @@ public partial class NovaTable : IDisposable
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
                     {
-                        var row = DeserializeRow(ver.Payload!);
+                        var row = DeserializeVersion(ver);
                         result.Add(row);
                         break;
                     }
@@ -633,7 +635,7 @@ public partial class NovaTable : IDisposable
                     {
                         if (ver.IsVisible(_txManager, tx.TxId))
                         {
-                            result.Add(DeserializeRow(ver.Payload!));
+                            result.Add(DeserializeVersion(ver));
                             visible = true;
                             break;
                         }
@@ -706,7 +708,7 @@ public partial class NovaTable : IDisposable
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
                     {
-                        var row = DeserializeRow(ver.Payload!);
+                        var row = DeserializeVersion(ver);
 
                         // 索引键列含 NULL 时跳过该行（MySQL 语义）
                         if (HasNullColumn(row, colOrdinals)) break;
@@ -1101,7 +1103,7 @@ public partial class NovaTable : IDisposable
                 {
                     if (ver.IsVisible(_txManager, tx.TxId))
                     {
-                        var row = DeserializeRow(ver.Payload!);
+                        var row = DeserializeVersion(ver);
                         var docId = row[pkCol.Ordinal]!;
                         var text = BuildFullText(row, colOrdinals);
                         idx.Add(docId, text);
@@ -1452,9 +1454,9 @@ public partial class NovaTable : IDisposable
         {
             foreach (var ver in entry.Value)
             {
-                if (ver.Payload == null) continue;
+                if (ver.Payload == null && ver.DataOffset <= 0) continue;
 
-                var row = DeserializeRow(ver.Payload);
+                var row = DeserializeVersion(ver);
 
                 // 索引键列含 NULL 时跳过该行（MySQL 语义）
                 if (HasNullColumn(row, colOrdinals)) break;
@@ -1579,27 +1581,76 @@ public partial class NovaTable : IDisposable
         return w.Buffer.AsSpan(0, w.WrittenCount).ToArray();
     }
 
-    /// <summary>反序列化行数据</summary>
-    private Object?[] DeserializeRow(Byte[] payload)
+    /// <summary>反序列化指定版本的行数据</summary>
+    /// <param name="version">行版本</param>
+    /// <returns>行数据</returns>
+    private Object?[] DeserializeVersion(RowVersion version)
     {
-        var reader = new SpanReader(payload);
+        // 未提交或未开启行日志时载荷仍在内存
+        if (version.Payload != null) return DeserializeRow(version.Payload);
 
-        var colCount = reader.ReadInt32();
+        if (version.DataOffset <= 0 || version.DataLength <= 0 || _rowStore == null)
+            throw new NovaException(ErrorCode.FileCorrupted, "Row payload of key '{0}' is missing", version.Key);
+
+        // 借池化缓冲区读取，避免逐行分配；载荷自描述，边界由 DeserializeRow 校验
+        var buffer = ArrayPool<Byte>.Shared.Rent(version.DataLength);
+        try
+        {
+            _rowStore.Read(version.DataOffset, buffer, version.DataLength);
+            return DeserializeRow(buffer, version.DataLength);
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>反序列化行数据</summary>
+    private Object?[] DeserializeRow(Byte[] payload) => DeserializeRow(payload, payload.Length);
+
+    /// <summary>反序列化行数据（缓冲区可能大于载荷）</summary>
+    /// <param name="payload">载荷所在的缓冲区</param>
+    /// <param name="payloadLength">载荷有效字节数</param>
+    /// <returns>行数据</returns>
+    private Object?[] DeserializeRow(Byte[] payload, Int32 payloadLength) => DeserializeRow(payload, 0, payloadLength);
+
+    /// <summary>反序列化行数据（缓冲区可能大于载荷）</summary>
+    /// <param name="payload">载荷所在的缓冲区</param>
+    /// <param name="offset">载荷起始位置</param>
+    /// <param name="payloadLength">载荷有效字节数</param>
+    /// <returns>行数据</returns>
+    private Object?[] DeserializeRow(Byte[] payload, Int32 offset, Int32 payloadLength)
+    {
+        var pos = offset;
+        var end = offset + payloadLength;
+        var colCount = ReadInt32(payload, ref pos, end);
         var row = new Object?[colCount];
 
         for (var i = 0; i < colCount; i++)
         {
-            var length = reader.ReadInt32();
+            var length = ReadInt32(payload, ref pos, end);
             var colDef = _schema.Columns[i];
-            // 检查 null 标记：长度为 1 且首字节为 NullFlag
-            if (length == 1 && payload[reader.Position] == 0x00)
+            if (length < 0 || pos + length > end)
+                throw new NovaException(ErrorCode.FileCorrupted, "Row payload column {0} is out of range", i);
+
+            if (length == 1 && payload[pos] == 0x00)
                 row[i] = null;
             else
-                row[i] = _codec.Decode(payload, reader.Position, colDef.DataType);
-            reader.Advance(length);
+                row[i] = _codec.Decode(payload, pos, colDef.DataType);
+            pos += length;
         }
 
         return row;
+    }
+
+    private static Int32 ReadInt32(Byte[] buffer, ref Int32 pos, Int32 limit)
+    {
+        if (pos + 4 > limit)
+            throw new NovaException(ErrorCode.FileCorrupted, "Row payload is truncated");
+
+        var value = BinaryPrimitives.ReadInt32LittleEndian(buffer.AsSpan(pos, 4));
+        pos += 4;
+        return value;
     }
 
     #endregion
@@ -1621,6 +1672,7 @@ public partial class NovaTable : IDisposable
 
             _walWriter?.Dispose();
             _dataPager?.Dispose();
+            _rowStore?.Dispose();
             _rowLogStream?.Dispose();
             _disposed = true;
         }

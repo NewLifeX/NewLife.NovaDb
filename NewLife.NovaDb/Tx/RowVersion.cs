@@ -13,7 +13,14 @@ public class RowVersion
     public Object? Key { get; set; }
 
     /// <summary>行数据负载（序列化后的列值）</summary>
+    /// <remarks>提交并写入行日志后置空，之后按 <see cref="DataOffset"/>/<see cref="DataLength"/> 从行日志读取，避免整表载荷常驻内存</remarks>
     public Byte[]? Payload { get; set; }
+
+    /// <summary>行数据负载在行日志文件中的起始偏移（0 表示载荷仍在内存）</summary>
+    public Int64 DataOffset { get; set; }
+
+    /// <summary>行数据负载在行日志文件中的字节长度</summary>
+    public Int32 DataLength { get; set; }
 
     /// <summary>创建新的行版本</summary>
     /// <param name="createdByTx">创建事务 ID</param>
