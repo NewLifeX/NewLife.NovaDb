@@ -1833,7 +1833,7 @@ public partial class NovaTable : IDisposable
                     if (!readOnly) ResetSecondaryIndexDelta(indexDef.IndexName);
 
                     _secondaryIndexes[indexDef.IndexName] = idx;
-                    _secondaryIndexBaselineCounts[indexDef.IndexName] = (Int32)idx.KeyCount;
+                _secondaryIndexBaselineCounts[indexDef.IndexName] = (Int32)idx.LiveCount;
                     continue;
                 }
 
@@ -1850,8 +1850,10 @@ public partial class NovaTable : IDisposable
 
             idx = NovaSecondaryIndex.Recreate(path, indexDef, _codec, keyTypes, pkType);
 
-            // 单列索引优先用 .idx 基线 + .idxl 回放填充哈希；联合索引旧文件格式不支持，直接从主键索引重建
-            var loaded = indexDef.Columns.Count == 1 && TryLoadSecondaryIndexFile(indexDef, idx) && ReplaySecondaryIndexDelta(indexDef, idx) >= 0;
+            // 联合索引旧文件格式不支持基线，直接从主键索引重建
+            // .idx 基线只在增量已清空时直接加载；增量非空时本应回放，而回放要逐条值链去重，
+            // 低基数列上是 O(N²)（百万行分钟级），改为直接从主键索引重建（O(N)，秒级）
+            var loaded = indexDef.Columns.Count == 1 && TryLoadSecondaryIndexFile(indexDef, idx) && !HasSecondaryIndexDelta(indexDef);
             if (!loaded)
             {
                 ResetSecondaryIndexDelta(indexDef.IndexName);
@@ -1860,7 +1862,24 @@ public partial class NovaTable : IDisposable
 
             idx.Commit(_rowLogLength);
             _secondaryIndexes[indexDef.IndexName] = idx;
-            _secondaryIndexBaselineCounts[indexDef.IndexName] = (Int32)idx.KeyCount;
+            _secondaryIndexBaselineCounts[indexDef.IndexName] = (Int32)idx.LiveCount;
+        }
+    }
+
+    /// <summary>判断二级索引是否还有待回放的增量记录</summary>
+    /// <param name="indexDef">索引定义</param>
+    /// <returns>增量文件存在且含有记录时返回 true</returns>
+    private Boolean HasSecondaryIndexDelta(IndexDefinition indexDef)
+    {
+        var path = _fileManager.GetSecondaryIndexDeltaFilePath(indexDef.IndexName);
+
+        try
+        {
+            return File.Exists(path) && new FileInfo(path).Length > FileHeader.HeaderSize;
+        }
+        catch
+        {
+            return true;
         }
     }
 
@@ -1903,7 +1922,9 @@ public partial class NovaTable : IDisposable
                     var pk = _codec.Decode(bytes, baseOffset + reader.Position, _schema.GetPrimaryKeyColumn()!.DataType);
                     reader.Advance(pkLen);
 
-                    if (key != null && pk != null) idx.Add(key, pk, dedupe: true);
+                    // 基线由 EnumerateAll 写出，(键, 主键) 组合天然唯一，不需要值链去重；
+                    // 低基数列值链可达上万个主键，逐条去重会把加载退化成 O(N²)（百万行约 7 分钟）
+                    if (key != null && pk != null) idx.Add(key, pk);
                 }
             }
 

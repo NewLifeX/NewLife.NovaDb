@@ -249,7 +249,7 @@ public class SecondaryIndexDeltaTests : IDisposable
         Assert.Equal(new[] { "3" }, QueryIds(reopened, "SELECT id FROM t6_renamed WHERE name = 'mv3'"));
     }
 
-    [Fact(DisplayName = "有效增量走回放而非重建，结果与全表扫描一致")]
+    [Fact(DisplayName = "增量存在时回退全表重建，结果与全表扫描一致")]
     public void ValidDelta_ReplaysWithoutRebuild()
     {
         var snapshotDir = Path.Combine(Path.GetTempPath(), $"SecIdxDeltaReplay_{Guid.NewGuid():N}");
@@ -274,13 +274,13 @@ public class SecondaryIndexDeltaTests : IDisposable
             var deltaFile = GetDeltaPath("t7", "idx_t7_name", snapshotDir);
             Assert.True(File.Exists(deltaFile), "快照中应保留增量文件");
 
-            // 哈希文件仍在时直接复用、不读增量；删掉后才是"基线 + 增量回放"路径
+            // 哈希文件仍在时直接复用；删掉后回退全表重建（增量回放要逐条值链去重，低基数列上是 O(N²)）
             DeleteSecondaryHashFiles(snapshotDir);
 
             using var reopened = new SqlEngine(snapshotDir, new DbOptions { Path = snapshotDir, WalMode = WalMode.None });
 
-            // 增量完整时不应删除增量文件（删除即代表走了全表重建）
-            Assert.True(File.Exists(deltaFile), "增量完整时应回放而非重建");
+            // 存在增量时改走全表重建：增量文件必须被清空，避免下次启动继续背负陈旧增量
+            Assert.False(File.Exists(deltaFile), "增量存在时应回退全表重建并清空增量文件");
 
             var indexIds = QueryIds(reopened, "SELECT id FROM t7 WHERE name = 'x9'");
             Assert.Equal(ScanIds(reopened, "t7", "x9"), indexIds);
