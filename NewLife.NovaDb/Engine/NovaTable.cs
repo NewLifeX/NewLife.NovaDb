@@ -319,7 +319,7 @@ public partial class NovaTable : IDisposable
             {
                 oldRow = DeserializeVersion(visibleVersion);
                 if (_secondaryIndexes.Count > 0)
-                    RemoveFromSecondaryIndexes(oldRow, comparableKey, GetIndexDeltas(tx));
+                    RemoveFromSecondaryIndexes(oldRow, comparableKey, GetIndexDeltas(tx), keepRow: newRow);
             }
 
             // 创建新版本
@@ -349,7 +349,7 @@ public partial class NovaTable : IDisposable
 
             // 维护二级索引：插入新值
             if (_secondaryIndexes.Count > 0)
-                InsertIntoSecondaryIndexes(newRow, comparableKey, GetIndexDeltas(tx));
+                InsertIntoSecondaryIndexes(newRow, comparableKey, GetIndexDeltas(tx), skipRow: oldRow);
 
             // 维护全文索引（内存驻留，P2）：提交时先移除旧文档再插入新文档
             if (_fullTextIndexes.Count > 0)
@@ -1744,7 +1744,7 @@ public partial class NovaTable : IDisposable
     /// <param name="pk">主键</param>
     /// <param name="deltas">增量收集器，为空表示只维护内存索引（回滚路径）</param>
     /// <remarks>唯一性冲突必须在此前通过 <see cref="CheckUniqueIndexConflicts"/> 预检查，本方法不再抛出唯一性异常</remarks>
-    private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null)
+    private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null, Object?[]? skipRow = null)
     {
         foreach (var kvp in _secondaryIndexes)
         {
@@ -1757,6 +1757,12 @@ public partial class NovaTable : IDisposable
             if (HasNullColumn(row, colOrdinals)) continue;
 
             var indexKey = BuildIndexKey(row, colOrdinals);
+
+            // 更新时索引键未变：条目已存在，跳过删除与插入两侧
+            if (skipRow != null && !HasNullColumn(skipRow, colOrdinals) &&
+                ComparableObject.CompareValues(BuildIndexKey(skipRow, colOrdinals).Value, indexKey.Value) == 0)
+                continue;
+
             kvp.Value.Add(indexKey.Value, pk.Value!);
 
             // 联合索引不落盘，跳过增量记录，避免每条 DML 都走一次注定失败的编码
@@ -1769,7 +1775,7 @@ public partial class NovaTable : IDisposable
     /// <param name="row">行数据</param>
     /// <param name="pk">主键</param>
     /// <param name="deltas">增量收集器，为空表示只维护内存索引（回滚路径）</param>
-    private void RemoveFromSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null)
+    private void RemoveFromSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null, Object?[]? keepRow = null)
     {
         foreach (var kvp in _secondaryIndexes)
         {
@@ -1782,6 +1788,12 @@ public partial class NovaTable : IDisposable
             if (HasNullColumn(row, colOrdinals)) continue;
 
             var indexKey = BuildIndexKey(row, colOrdinals);
+
+            // 更新时索引键未变：不做「先删后插」，避免在长值链上白走一趟（低基数列一条链可达数千个主键）
+            if (keepRow != null && !HasNullColumn(keepRow, colOrdinals) &&
+                ComparableObject.CompareValues(BuildIndexKey(keepRow, colOrdinals).Value, indexKey.Value) == 0)
+                continue;
+
             kvp.Value.Remove(indexKey.Value, pk.Value!);
 
             // 联合索引不落盘，跳过增量记录
