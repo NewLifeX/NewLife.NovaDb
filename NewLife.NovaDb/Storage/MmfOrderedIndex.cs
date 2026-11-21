@@ -794,7 +794,8 @@ internal sealed class MmfOrderedIndex : IDisposable
     {
         if (_readOnly) return;
 
-        Flush();
+        // 不先刷写缓冲：让 run 规模保持均匀（都是 _flushEntries 条），
+        // 否则每次触发合并都会额外落一个小 run，把小 run 数量放大、合并频率变高
         if (_runs.Count < 2) return;
 
         var picks = SelectMergeGroup();
