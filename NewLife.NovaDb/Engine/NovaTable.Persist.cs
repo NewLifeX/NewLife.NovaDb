@@ -220,7 +220,11 @@ public partial class NovaTable
         if (_rowLogStream == null || _flushRegisteredTxId == tx.TxId) return;
 
         _flushRegisteredTxId = tx.TxId;
-        tx.RegisterPostCommitAction(() => _rowLogStream?.Flush());
+        tx.RegisterPostCommitAction(() =>
+        {
+            _rowLogStream?.Flush();
+            FlushSecondaryIndexDeltas();
+        });
     }
 
     #endregion
