@@ -255,7 +255,12 @@ partial class NovaTable
         var ndv = distinct;
         if (!exact)
         {
-            ndv = (Int64)Math.Round((Double)distinct * rowCount / samples.Count);
+            // 低基数（重复率高）时采样已覆盖全部取值，线性外推会把 5 个状态值放大成上千个，导致估算选择性严重失真；
+            // 只有高基数列（多数值只出现一次）才按采样比例外推。
+            ndv = distinct * 2 <= values.Count
+                ? distinct
+                : (Int64)Math.Round((Double)distinct * rowCount / values.Count);
+
             if (ndv < distinct) ndv = distinct;
             if (ndv > rowCount) ndv = rowCount;
         }
