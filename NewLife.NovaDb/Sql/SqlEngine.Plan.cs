@@ -876,7 +876,8 @@ partial class SqlEngine
 
             case TableAccessKind.IndexLookup:
                 {
-                    var pks = plan.IndexMatches ?? LookupIndexMatches(table, plan);
+                    // 可提前停止时把 LIMIT 传进索引探测，前缀扫描不必先物化全部主键
+                    var pks = plan.IndexMatches ?? LookupIndexMatches(table, plan, maxRows);
                     var rows = new List<Object?[]>(pks.Count);
                     var count = 0;
                     foreach (var pk in pks)
@@ -926,8 +927,9 @@ partial class SqlEngine
     /// <summary>通过二级索引取命中的主键，并按主键升序排列以保持与全表扫描一致的输出顺序</summary>
     /// <param name="table">表实例</param>
     /// <param name="plan">访问计划</param>
+    /// <param name="maxMatches">最多取多少主键（LIMIT 提前停止），0 表示不限制</param>
     /// <returns>命中的主键列表</returns>
-    private static List<Object> LookupIndexMatches(NovaTable table, TableAccessPlan plan)
+    private static List<Object> LookupIndexMatches(NovaTable table, TableAccessPlan plan, Int32 maxMatches = 0)
     {
         var result = new List<Object>();
         if (plan.IndexName == null) return result;
@@ -937,9 +939,12 @@ partial class SqlEngine
         {
             foreach (var prefix in plan.IndexPrefixes)
             {
+                var remaining = maxMatches > 0 ? maxMatches - result.Count : 0;
+                if (maxMatches > 0 && remaining <= 0) break;
+
                 var matches = table.LookupByIndexPrefix(plan.IndexName, prefix,
                     plan.HasLower ? plan.Lower : null, plan.HasLower, plan.LowerInclusive,
-                    plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive, 0);
+                    plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive, remaining);
                 if (matches == null) continue;
 
                 foreach (var pk in matches)

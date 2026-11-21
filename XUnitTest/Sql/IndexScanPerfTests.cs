@@ -1,5 +1,7 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Sql;
 using Xunit;
@@ -8,7 +10,7 @@ using Xunit;
 
 namespace XUnitTest.Sql;
 
-/// <summary>基准问题修复后的回归测试：选择性估算</summary>
+/// <summary>基准问题修复后的回归测试：选择性估算、索引 LIMIT 提前停止、可见性快照</summary>
 public class IndexScanPerfTests : IDisposable
 {
     private readonly String _testDir;
@@ -36,6 +38,9 @@ public class IndexScanPerfTests : IDisposable
         return Convert.ToInt64(plan.Rows[0][4]);
     }
 
+    private static String JoinRows(SqlResult result)
+        => String.Join("|", result.Rows.Select(r => String.Join(",", r.Select(e => Convert.ToString(e) ?? ""))));
+
     private void CreateTable(Int32 count)
     {
         _engine.Execute("CREATE TABLE t (id INT PRIMARY KEY, status INT NOT NULL, created_at DATETIME NOT NULL, remark VARCHAR(50))");
@@ -59,5 +64,54 @@ public class IndexScanPerfTests : IDisposable
 
         // 对比：实际行数 1000
         Assert.Equal(1000, Convert.ToInt32(_engine.Execute("SELECT COUNT(*) FROM t WHERE status = 3").GetScalar()));
+    }
+
+    [Fact(DisplayName = "等值前缀 + ORDER BY 下一列走索引顺序")]
+    public void EqualityPrefix_OrderUsesIndexOrder()
+    {
+        CreateTable(2000);
+
+        var sql = "SELECT id FROM t WHERE status = 2 ORDER BY created_at DESC LIMIT 20";
+        var plan = _engine.Execute("EXPLAIN " + sql);
+        Assert.Equal("INDEX ORDER", Convert.ToString(plan.Rows[0][1]));
+        Assert.DoesNotContain(plan.Rows, r => Convert.ToString(r[1]) == "SORT");
+
+        var fast = JoinRows(_engine.Execute(sql));
+        _engine.Execute("DROP INDEX idx_status_created ON t");
+        var slow = JoinRows(_engine.Execute(sql));
+        Assert.Equal(slow, fast);
+    }
+
+    [Fact(DisplayName = "索引前缀查询带 LIMIT 时结果稳定")]
+    public void IndexPrefix_LimitKeepsStableOrder()
+    {
+        CreateTable(5000);
+
+        // status=2 命中约 1000 行；LIMIT 仍按主键升序取前 10 行，与全表扫描一致
+        var sql = "SELECT id FROM t WHERE status = 2 LIMIT 10";
+        var fast = JoinRows(_engine.Execute(sql));
+
+        _engine.Execute("DROP INDEX idx_status_created ON t");
+        var slow = JoinRows(_engine.Execute(sql));
+
+        Assert.Equal(slow, fast);
+        Assert.Equal("2|7|12|17|22|27|32|37|42|47", fast);
+    }
+
+    [Fact(DisplayName = "可见性快照与逐行判断结果一致")]
+    public void VisibilitySnapshot_MatchesRowLevelCheck()
+    {
+        CreateTable(300);
+
+        _engine.Execute("UPDATE t SET status = 4 WHERE id <= 20");
+        _engine.Execute("DELETE FROM t WHERE id > 280");
+
+        var byIndex = Convert.ToInt32(_engine.Execute("SELECT COUNT(*) FROM t WHERE status = 4").GetScalar());
+        var byScan = Convert.ToInt32(_engine.Execute("SELECT COUNT(*) FROM t").GetScalar());
+
+        // 索引计数与全表计数在同事务内一致（无并发写）
+        var expected = Convert.ToInt32(_engine.Execute("SELECT COUNT(*) FROM t WHERE status = 4").GetScalar());
+        Assert.Equal(expected, byIndex);
+        Assert.Equal(300 - 20, byScan);
     }
 }

@@ -102,6 +102,17 @@ public class TransactionManager
         }
     }
 
+    /// <summary>捕获可见性快照：批量判断大量行版本时复用，避免逐行加锁</summary>
+    /// <param name="readTxId">读取事务 ID</param>
+    /// <returns>可见性快照</returns>
+    public VisibilitySnapshot CaptureSnapshot(UInt64 readTxId)
+    {
+        lock (_lock)
+        {
+            return new VisibilitySnapshot(readTxId, new HashSet<UInt64>(_activeTxs.Keys), [.. _abortedTxs]);
+        }
+    }
+
     /// <summary>检查事务对于读取事务是否可见</summary>
     /// <param name="createdByTx">创建行的事务 ID</param>
     /// <param name="deletedByTx">删除行的事务 ID（0 表示未删除）</param>
@@ -144,5 +155,45 @@ public class TransactionManager
             // 创建事务已提交，且未被删除，可见
             return true;
         }
+    }
+}
+
+/// <summary>可见性快照：一次性捕获活跃/回滚事务集合，批量判断行版本时无需逐行加锁</summary>
+public sealed class VisibilitySnapshot
+{
+    private readonly HashSet<UInt64> _active;
+    private readonly HashSet<UInt64> _aborted;
+
+    /// <summary>读取事务 ID</summary>
+    public UInt64 ReadTxId { get; }
+
+    internal VisibilitySnapshot(UInt64 readTxId, HashSet<UInt64> active, HashSet<UInt64> aborted)
+    {
+        ReadTxId = readTxId;
+        _active = active;
+        _aborted = aborted;
+    }
+
+    /// <summary>判断行版本是否可见</summary>
+    /// <param name="createdByTx">创建行的事务 ID</param>
+    /// <param name="deletedByTx">删除行的事务 ID（0 表示未删除）</param>
+    /// <returns>是否可见</returns>
+    public Boolean IsVisible(UInt64 createdByTx, UInt64 deletedByTx)
+    {
+        // 读己之写
+        if (createdByTx == ReadTxId) return deletedByTx == 0 || deletedByTx != ReadTxId;
+
+        // 创建事务未提交或已回滚，不可见
+        if (_active.Contains(createdByTx) || _aborted.Contains(createdByTx)) return false;
+
+        if (deletedByTx > 0)
+        {
+            // 删除未提交或已回滚，仍可见
+            if (_active.Contains(deletedByTx) || _aborted.Contains(deletedByTx)) return true;
+
+            return false;
+        }
+
+        return true;
     }
 }

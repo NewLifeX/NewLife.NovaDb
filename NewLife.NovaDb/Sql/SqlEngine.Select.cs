@@ -63,6 +63,7 @@ partial class SqlEngine
             && (stmt.GroupBy == null || stmt.GroupBy.Count == 0)
             && plan.CoversWhere)
         {
+            // LIMIT 提前停止只允许「顺序确定」的路径：强制停止会改变无 ORDER BY 查询返回的行集合
             var canStopEarly = plan.ProvidesOrder
                 || (stmt.OrderBy == null && plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange or TableAccessKind.FullScan);
             if (canStopEarly) maxRows = (stmt.OffsetValue ?? 0) + stmt.Limit.Value;

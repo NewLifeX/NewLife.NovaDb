@@ -1016,15 +1016,17 @@ public partial class NovaTable : IDisposable
 
         lock (_lock)
         {
+            // 可见性按语句级快照判断：统计大量主键时避免逐行加锁，与 Read Committed 语义一致
+            var snapshot = _txManager.CaptureSnapshot(tx.TxId);
             var count = 0;
             foreach (var pk in primaryKeys)
             {
                 if (pk == null) continue;
-                if (!_primaryIndex.TryGetValue(new ComparableObject(pk), out var versions) || versions == null) continue;
+                if (!_primaryIndex.TryGetValueUnlocked(new ComparableObject(pk), out var versions) || versions == null) continue;
 
                 foreach (var ver in versions)
                 {
-                    if (ver.IsVisible(_txManager, tx.TxId))
+                    if (snapshot.IsVisible(ver.CreatedByTx, ver.DeletedByTx))
                     {
                         count++;
                         break;

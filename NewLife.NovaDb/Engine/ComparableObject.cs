@@ -49,6 +49,10 @@ internal class ComparableObject : IComparable<ComparableObject>
         if (left.Equals(right))
             return 0;
 
+        // 同类型直接比较，避免数值路径上的类型转换开销（点查/计数在热路径上按主键反复比较）
+        if (left.GetType() == right.GetType() && left is IComparable sameType)
+            return sameType.CompareTo(right);
+
         // 数值类型允许跨类型比较：ALTER TABLE 改列类型后，存量行仍是旧类型，按值比较才不会抛异常也不会错序
         if (IsNumeric(left) && IsNumeric(right))
         {

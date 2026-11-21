@@ -162,6 +162,38 @@ public class SkipList<TKey, TValue> where TKey : IComparable<TKey>
         }
     }
 
+    /// <summary>查找键对应的值（调用方已持有外部锁时使用，跳过跳表内部锁）</summary>
+    /// <param name="key">键</param>
+    /// <param name="value">输出值</param>
+    /// <returns>是否找到</returns>
+    /// <remarks>仅供在表级锁内批量读取使用，避免每行重复加锁；不可在无外部同步的情况下调用</remarks>
+    internal Boolean TryGetValueUnlocked(TKey key, out TValue? value)
+    {
+        if (key == null)
+            throw new ArgumentNullException(nameof(key));
+
+        var current = _head;
+
+        for (var i = _level; i >= 0; i--)
+        {
+            while (current.Forward[i] != null && current.Forward[i]!.Key.CompareTo(key) < 0)
+            {
+                current = current.Forward[i]!;
+            }
+        }
+
+        current = current.Forward[0]!;
+
+        if (current != null && current.Key.CompareTo(key) == 0)
+        {
+            value = current.Value;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
+
     /// <summary>删除键</summary>
     /// <param name="key">键</param>
     /// <returns>是否删除成功</returns>
