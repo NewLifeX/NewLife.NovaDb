@@ -355,7 +355,7 @@ public List<Dictionary<String, Object?>> Query(String sql,
 | WHERE 形态 | 访问路径 | 实现 |
 |---|---|---|
 | `pk = v`、`pk IN (v...)` | `PK LOOKUP` | `NovaTable.Get` 逐键点查 |
-| `pk > v`、`pk BETWEEN...` 等范围（数值/日期类型） | `PK RANGE` | `NovaTable.GetRange` 走 SkipList 范围定位，只反序列化范围内行 |
+| `pk > v`、`pk >= a AND pk < b` 等范围（数值/日期类型） | `PK RANGE` | `NovaTable.GetRange` 走 SkipList 范围定位，只反序列化范围内行 |
 | `indexed_col = v`、`indexed_col IN (v...)`（单列索引） | `INDEX LOOKUP` | `NovaTable.LookupByIndex` 取主键后回表 |
 | 联合索引 `(a,b)`：`a = v`、`a = v AND b <范围>`、`a = v AND b = v` | `INDEX LOOKUP` | 前缀走 `LookupByIndexPrefix`（按键有序分块扫描），全列等值走 `LookupByIndex` |
 | `a = v OR b = v`（两侧都是可走索引的等值条件） | `INDEX MERGE` | 各路分别取主键后求并集去重，再统一回表 |

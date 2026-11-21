@@ -11,6 +11,7 @@ public sealed class BenchOptions
         ["tiny"] = 100,
         ["small"] = 10_000,
         ["medium"] = 1_000_000,
+        ["huge"] = 5_000_000,
         ["large"] = 20_000_000,
     };
 
