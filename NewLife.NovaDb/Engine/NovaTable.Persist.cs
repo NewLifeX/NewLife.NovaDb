@@ -37,6 +37,12 @@ public partial class NovaTable
     /// <summary>行日志文件流</summary>
     private FileStream? _rowLogStream;
 
+    /// <summary>行日志逻辑长度。缓冲写入未刷新时 FileStream.Length 会滞后，追加位置以本字段为准</summary>
+    private Int64 _rowLogLength;
+
+    /// <summary>已注册过「提交后刷新行日志」的事务 ID，避免一次提交注册多次刷新</summary>
+    private UInt64 _flushRegisteredTxId;
+
     /// <summary>行载荷读取器（内存映射窗口，按需映射，不把整份行日志读进内存）</summary>
     private RowStore? _rowStore;
 
@@ -53,7 +59,8 @@ public partial class NovaTable
         var isNew = !File.Exists(path) || new FileInfo(path).Length < RowLogHeaderSize;
 
         _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
-        _rowStore = new RowStore(_rowLogStream);
+        _rowLogLength = _rowLogStream.Length;
+        _rowStore = new RowStore(_rowLogStream, () => _rowLogLength);
 
         if (isNew)
         {
@@ -92,6 +99,7 @@ public partial class NovaTable
 #endif
 
         _rowLogStream.Flush();
+        _rowLogLength = RowLogHeaderSize;
     }
 
     /// <summary>校验行日志文件头</summary>
@@ -155,14 +163,22 @@ public partial class NovaTable
     /// <param name="recordType">记录类型</param>
     /// <param name="data">记录数据</param>
     /// <returns>记录数据的起始偏移（5B 记录头之后），失败返回 0</returns>
-    private Int64 WriteRecord(Byte recordType, Byte[] data) => WriteRecordTo(_rowLogStream!, recordType, data);
+    private Int64 WriteRecord(Byte recordType, Byte[] data)
+    {
+        var offset = WriteRecordTo(_rowLogStream!, _rowLogLength, recordType, data, out var end);
+        _rowLogLength = end;
+        return offset;
+    }
 
     /// <summary>向指定文件流追加一条记录</summary>
     /// <param name="stream">目标文件流</param>
+    /// <param name="startOffset">记录写入的起始偏移（调用方维护的逻辑长度）</param>
     /// <param name="recordType">记录类型</param>
     /// <param name="data">记录数据</param>
+    /// <param name="endOffset">写入后的文件逻辑长度</param>
     /// <returns>记录数据的起始偏移（5B 记录头之后）</returns>
-    private static Int64 WriteRecordTo(FileStream stream, Byte recordType, Byte[] data)
+    /// <remarks>不逐条刷新文件：一次提交只在最后刷新一次，否则每条记录都是一次系统调用</remarks>
+    private static Int64 WriteRecordTo(FileStream stream, Int64 startOffset, Byte recordType, Byte[] data, out Int64 endOffset)
     {
         // 格式：[RecordLength: 4B] [RecordType: 1B] [Data: variable] [Checksum: 4B]
         // RecordLength = 1 + data.Length + 4（不含 RecordLength 自身）
@@ -188,13 +204,23 @@ public partial class NovaTable
         // 5) 写 Checksum（小端）
         w.WriteUInt32(checksum);
 
-        // 6) 直接追加写入文件
-        var recordStart = stream.Length;
-        stream.Position = recordStart;
+        // 6) 直接追加写入文件（顺序追加时不重设位置，避免 Position 设置触发缓冲区刷新）
+        if (stream.Position != startOffset) stream.Position = startOffset;
         stream.Write(w.Buffer, 0, w.WrittenCount);
-        stream.Flush();
 
-        return recordStart + 5;
+        endOffset = startOffset + w.WrittenCount;
+
+        return startOffset + 5;
+    }
+
+    /// <summary>注册「提交后刷新行日志」，同一个事务只注册一次</summary>
+    /// <param name="tx">事务</param>
+    private void RegisterRowLogFlush(Transaction tx)
+    {
+        if (_rowLogStream == null || _flushRegisteredTxId == tx.TxId) return;
+
+        _flushRegisteredTxId = tx.TxId;
+        tx.RegisterPostCommitAction(() => _rowLogStream?.Flush());
     }
 
     #endregion
@@ -281,6 +307,7 @@ public partial class NovaTable
         _rowLogStream.SetLength(RowLogHeaderSize);
         _rowLogStream.Position = RowLogHeaderSize;
         _rowLogStream.Flush();
+        _rowLogLength = RowLogHeaderSize;
     }
 
     /// <summary>压缩行日志（重写仅包含存活行的日志）</summary>
@@ -322,12 +349,13 @@ public partial class NovaTable
                 RowLogMagic.AsSpan().CopyTo(header.AsSpan(0, 4));
                 header[4] = 1;
                 temp.Write(header, 0, header.Length);
+                var tempLength = (Int64)RowLogHeaderSize;
 
                 for (var i = 0; i < keeps.Count; i++)
                 {
                     var ver = keeps[i];
                     var payload = ver.Payload ?? _rowStore!.Read(ver.DataOffset, ver.DataLength);
-                    offsets[i] = WriteRecordTo(temp, RecordType_Put, payload);
+                    offsets[i] = WriteRecordTo(temp, tempLength, RecordType_Put, payload, out tempLength);
                     lengths[i] = payload.Length;
                 }
             }
@@ -339,7 +367,8 @@ public partial class NovaTable
             File.Move(tempPath, path);
 
             _rowLogStream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.Read);
-            _rowStore = new RowStore(_rowLogStream);
+            _rowLogLength = _rowLogStream.Length;
+            _rowStore = new RowStore(_rowLogStream, () => _rowLogLength);
             _rowLogStream.Position = _rowLogStream.Length;
 
             // 更新载荷偏移，释放内存副本

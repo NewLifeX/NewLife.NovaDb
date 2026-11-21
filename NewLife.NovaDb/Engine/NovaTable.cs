@@ -225,6 +225,7 @@ public partial class NovaTable : IDisposable
             // 注册提交动作：事务提交时才持久化到行日志
             var persistPayload = payload;
             tx.RegisterCommitAction(() => PersistPut(persistPayload, rowVersion));
+            RegisterRowLogFlush(tx);
 
             // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
             var changedPk = pkValue;
@@ -396,6 +397,7 @@ public partial class NovaTable : IDisposable
             // 注册提交动作：事务提交时才持久化新版本
             var persistPayload = payload;
             tx.RegisterCommitAction(() => PersistPut(persistPayload, newVersion));
+            RegisterRowLogFlush(tx);
 
             // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
             var changedPk = key;
@@ -507,6 +509,7 @@ public partial class NovaTable : IDisposable
             // 注册提交动作：事务提交时才持久化删除记录
             var persistKey = key;
             tx.RegisterCommitAction(() => PersistDelete(persistKey));
+            RegisterRowLogFlush(tx);
 
             // 注册提交动作：递增数据版本号并触发变更事件（物化视图增量捕获）
             var changedPk = key;
@@ -865,6 +868,105 @@ public partial class NovaTable : IDisposable
             }
 
             return result;
+        }
+    }
+
+    /// <summary>统计二级索引键命中的主键数量（不回表）</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="key">索引键值</param>
+    /// <returns>命中主键数</returns>
+    /// <remarks>仅在无并发写事务时可用：此时二级索引条目与可见行一一对应</remarks>
+    public Int64 CountIndexKey(String indexName, Object key)
+    {
+        lock (_lock)
+        {
+            if (!_secondaryIndexes.TryGetValue(indexName, out var idx)) return 0;
+
+            var normalized = NormalizeIndexValue(key);
+            if (normalized == null) return 0;
+
+            return idx.TryGetValue(new ComparableObject(normalized), out var list) && list != null ? list.Count : 0;
+        }
+    }
+
+    /// <summary>统计联合索引前缀范围内命中的主键数量（不回表）</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="prefixValues">前缀等值条件</param>
+    /// <param name="lower">下一列下界，null 表示不限</param>
+    /// <param name="hasLower">是否有下界</param>
+    /// <param name="includeLower">是否包含下界</param>
+    /// <param name="upper">下一列上界，null 表示不限</param>
+    /// <param name="hasUpper">是否有上界</param>
+    /// <param name="includeUpper">是否包含上界</param>
+    /// <returns>命中主键数</returns>
+    /// <remarks>仅在无并发写事务时可用</remarks>
+    public Int64 CountIndexPrefix(String indexName, Object?[] prefixValues, Object? lower, Boolean hasLower, Boolean includeLower, Object? upper, Boolean hasUpper, Boolean includeUpper)
+    {
+        lock (_lock)
+        {
+            if (!_secondaryIndexes.TryGetValue(indexName, out var idx)) return 0;
+
+            var indexDef = _schema.GetIndex(indexName);
+            if (indexDef == null || prefixValues == null || prefixValues.Length == 0 || indexDef.Columns.Count <= prefixValues.Length) return 0;
+
+            // 索引键列含 NULL 时不进索引，带 NULL 的前缀不可能命中
+            var prefix = new Object?[prefixValues.Length];
+            for (var i = 0; i < prefix.Length; i++)
+            {
+                prefix[i] = NormalizeIndexValue(prefixValues[i]);
+                if (prefix[i] == null) return 0;
+            }
+
+            var lowerKey = hasLower ? NormalizeIndexValue(lower) : null;
+            var upperKey = hasUpper ? NormalizeIndexValue(upper) : null;
+
+            var count = 0L;
+            var fromKey = new ComparableObject(prefix);
+            var includeFrom = true;
+
+            while (true)
+            {
+                var entries = idx.GetRange(fromKey, includeFrom, null, true, SecondaryIndexPrefixScanChunkSize);
+                var exhausted = entries.Count < SecondaryIndexPrefixScanChunkSize;
+                var stop = false;
+
+                foreach (var entry in entries)
+                {
+                    if (entry.Key.Value is not Object?[] keyValues || !MatchIndexPrefix(keyValues, prefix))
+                    {
+                        stop = true;
+                        break;
+                    }
+
+                    if (keyValues.Length > prefix.Length)
+                    {
+                        var next = keyValues[prefix.Length];
+                        if (hasLower)
+                        {
+                            var cmp = ComparableObject.CompareValues(next, lowerKey);
+                            if (cmp < 0 || (cmp == 0 && !includeLower)) continue;
+                        }
+                        if (hasUpper)
+                        {
+                            var cmp = ComparableObject.CompareValues(next, upperKey);
+                            if (cmp > 0 || (cmp == 0 && !includeUpper))
+                            {
+                                stop = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    count += entry.Value.Count;
+                }
+
+                if (stop || exhausted) break;
+
+                fromKey = entries[^1].Key;
+                includeFrom = false;
+            }
+
+            return count;
         }
     }
 

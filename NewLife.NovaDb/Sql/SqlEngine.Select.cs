@@ -164,6 +164,35 @@ partial class SqlEngine
         if (!IsIndexOnlyCount(stmt)) return null;
         if (plan.Kind != TableAccessKind.IndexLookup || plan.IndexName == null || !plan.CoversWhere) return null;
 
+        // 无并发写事务时二级索引条目与可见行一一对应，直接数条目，不必回表逐行判断可见性
+        if (!_txManager.HasOtherActiveTransactions(tx.TxId))
+        {
+            var total = 0L;
+            if (plan.IndexPrefixes.Count > 0)
+            {
+                foreach (var prefix in plan.IndexPrefixes)
+                {
+                    total += table.CountIndexPrefix(plan.IndexName, prefix,
+                        plan.HasLower ? plan.Lower : null, plan.HasLower, plan.LowerInclusive,
+                        plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive);
+                }
+            }
+            else
+            {
+                foreach (var key in plan.Keys)
+                {
+                    total += table.CountIndexKey(plan.IndexName, key);
+                }
+            }
+
+            var fast = new SqlResult
+            {
+                ColumnNames = BuildColumnNames(stmt, schema),
+            };
+            fast.Rows.Add([total]);
+            return fast;
+        }
+
         var pks = plan.IndexMatches ?? LookupIndexMatches(table, plan);
         plan.IndexMatches = pks;
 

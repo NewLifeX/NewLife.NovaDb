@@ -29,6 +29,7 @@ public class Transaction : IDisposable
 #endif
     private readonly List<Action> _rollbackActions = [];
     private readonly List<Action> _commitActions = [];
+    private readonly List<Action> _postCommitActions = [];
     private Boolean _disposed;
 
     /// <summary>事务 ID</summary>
@@ -97,9 +98,23 @@ public class Transaction : IDisposable
                 }
             }
 
+            // 执行后置动作（如把缓冲的写入刷到文件），确保一次提交只刷一次盘
+            for (var i = 0; i < _postCommitActions.Count; i++)
+            {
+                try
+                {
+                    _postCommitActions[i]();
+                }
+                catch
+                {
+                    // 后置动作异常不影响事务状态
+                }
+            }
+
             // 清除动作列表
             _commitActions.Clear();
             _rollbackActions.Clear();
+            _postCommitActions.Clear();
 
             // 从活跃事务列表移除
             _manager.RemoveTransaction(_txId);
@@ -133,6 +148,7 @@ public class Transaction : IDisposable
             _state = TransactionState.Aborted;
             _commitActions.Clear();
             _rollbackActions.Clear();
+            _postCommitActions.Clear();
 
             // 从活跃事务列表移除（标记为已回滚）
             _manager.RemoveTransaction(_txId, aborted: true);
@@ -168,6 +184,22 @@ public class Transaction : IDisposable
                 throw new NovaException(ErrorCode.TransactionError, "Cannot register rollback action on non-active transaction {0}", _txId);
 
             _rollbackActions.Add(action);
+        }
+    }
+
+    /// <summary>注册后置动作（全部提交动作执行完后执行，用于刷新缓冲写入）</summary>
+    /// <param name="action">后置动作</param>
+    public void RegisterPostCommitAction(Action action)
+    {
+        if (action == null)
+            throw new ArgumentNullException(nameof(action));
+
+        lock (_lock)
+        {
+            if (_state != TransactionState.Active)
+                throw new NovaException(ErrorCode.TransactionError, "Cannot register post commit action on non-active transaction {0}", _txId);
+
+            _postCommitActions.Add(action);
         }
     }
 

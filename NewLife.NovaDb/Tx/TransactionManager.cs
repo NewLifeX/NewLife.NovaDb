@@ -113,6 +113,21 @@ public class TransactionManager
         }
     }
 
+    /// <summary>是否存在除指定事务之外的活跃事务</summary>
+    /// <param name="txId">当前事务 ID</param>
+    /// <returns>存在其他活跃事务时返回 true</returns>
+    /// <remarks>没有并发写事务时二级索引条目与可见行一一对应，可用于免回表的索引计数</remarks>
+    public Boolean HasOtherActiveTransactions(UInt64 txId)
+    {
+        lock (_lock)
+        {
+            var count = _activeTxs.Count;
+            if (txId > 0 && _activeTxs.ContainsKey(txId)) count--;
+
+            return count > 0;
+        }
+    }
+
     /// <summary>检查事务对于读取事务是否可见</summary>
     /// <param name="createdByTx">创建行的事务 ID</param>
     /// <param name="deletedByTx">删除行的事务 ID（0 表示未删除）</param>

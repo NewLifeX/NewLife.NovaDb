@@ -1,8 +1,9 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NewLife.NovaDb.Core;
+using NewLife.NovaDb.Engine;
 using NewLife.NovaDb.Sql;
 using Xunit;
 
@@ -113,5 +114,63 @@ public class IndexScanPerfTests : IDisposable
         var expected = Convert.ToInt32(_engine.Execute("SELECT COUNT(*) FROM t WHERE status = 4").GetScalar());
         Assert.Equal(expected, byIndex);
         Assert.Equal(300 - 20, byScan);
+    }
+
+    [Fact(DisplayName = "索引计数快路径与回表计数结果一致")]
+    public void IndexOnlyCount_MatchesRowLookupCount()
+    {
+        CreateTable(3000);
+
+        var fast = Convert.ToInt64(_engine.Execute("SELECT COUNT(*) FROM t WHERE status = 3").GetScalar());
+        var slow = _engine.Execute("SELECT id FROM t WHERE status = 3").Rows.Count;
+
+        Assert.Equal(600, fast);
+        Assert.Equal(slow, fast);
+
+        // 更新与删除之后仍一致
+        _engine.Execute("UPDATE t SET status = 1 WHERE id <= 500");
+        _engine.Execute("DELETE FROM t WHERE id >= 501 AND id <= 600");
+
+        var fast2 = Convert.ToInt64(_engine.Execute("SELECT COUNT(*) FROM t WHERE status = 3").GetScalar());
+        var slow2 = _engine.Execute("SELECT id FROM t WHERE status = 3").Rows.Count;
+        Assert.Equal(slow2, fast2);
+    }
+
+    [Fact(DisplayName = "存在并发未提交写入时不使用索引计数快路径")]
+    public void IndexOnlyCount_FallsBackWithConcurrentWriter()
+    {
+        var txManager = new NewLife.NovaDb.Tx.TransactionManager();
+        var options = new DbOptions { Path = _testDir, WalMode = WalMode.None };
+        var schema = new TableSchema("t");
+        schema.AddColumn(new ColumnDefinition("id", DataType.Int32, nullable: false, isPrimaryKey: true));
+        schema.AddColumn(new ColumnDefinition("status", DataType.Int32, nullable: false));
+        var indexDef = new IndexDefinition("idx_status", ["status"]);
+        schema.AddIndex(indexDef);
+
+        using var table = new NovaTable(schema, _testDir, options, txManager);
+
+        using (var tx = txManager.BeginTransaction())
+        {
+            for (var i = 1; i <= 100; i++)
+                table.Insert(tx, [i, 3]);
+            tx.Commit();
+        }
+
+        using var reader = txManager.BeginTransaction();
+        Assert.False(txManager.HasOtherActiveTransactions(reader.TxId));
+
+        // 另一个事务插入未提交数据：索引里已有条目，但不可见，必须回表按可见性判断
+        var writer = txManager.BeginTransaction();
+        table.Insert(writer, [9001, 3]);
+
+        Assert.True(txManager.HasOtherActiveTransactions(reader.TxId));
+
+        var entries = table.CountIndexKey("idx_status", 3);
+        var visible = table.CountVisibleRows(reader, Enumerable.Range(1, 100).Cast<Object>().Concat([9001]).ToList());
+
+        Assert.Equal(101, entries);   // 索引条目包含未提交行
+        Assert.Equal(100, visible);   // 可见行不含未提交行
+
+        writer.Rollback();
     }
 }

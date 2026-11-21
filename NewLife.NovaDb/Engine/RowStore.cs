@@ -15,6 +15,7 @@ namespace NewLife.NovaDb.Engine;
 public sealed class RowStore : IDisposable
 {
     private readonly FileStream _stream;
+    private readonly Func<Int64> _lengthProvider;
     private readonly Int64 _windowSize;
     private MemoryMappedFile? _mmf;
     private MemoryMappedViewAccessor? _view;
@@ -34,13 +35,15 @@ public sealed class RowStore : IDisposable
 
     /// <summary>实例化行载荷存储</summary>
     /// <param name="stream">行日志文件流（只追加，读写打开）</param>
+    /// <param name="lengthProvider">逻辑长度来源，为空时取文件流长度</param>
     /// <param name="windowSize">映射窗口大小，默认 8MB</param>
-    public RowStore(FileStream stream, Int32 windowSize = 8 * 1024 * 1024)
+    public RowStore(FileStream stream, Func<Int64>? lengthProvider = null, Int32 windowSize = 8 * 1024 * 1024)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         if (stream.CanRead == false) throw new NovaException(ErrorCode.InvalidArgument, "Row log stream must be readable");
         if (windowSize <= 0) throw new NovaException(ErrorCode.InvalidArgument, "Row store window size must be positive");
 
+        _lengthProvider = lengthProvider ?? (() => stream.Length);
         _windowSize = windowSize;
     }
 
@@ -79,9 +82,18 @@ public sealed class RowStore : IDisposable
         var end = offset + count;
         if (_view != null && offset >= _windowStart && end <= _windowStart + _windowLength) return;
 
-        var length = _stream.Length;
-        if (end > length)
-            throw new NovaException(ErrorCode.FileCorrupted, "Row payload [{0},{1}) is beyond row log length {2}", offset, end, length);
+        if (end > _lengthProvider())
+            throw new NovaException(ErrorCode.FileCorrupted, "Row payload [{0},{1}) is beyond row log length {2}", offset, end, _lengthProvider());
+
+        // 缓冲写入可能还没落到文件，映射前先刷新一次（顺序扫描时不会走到这里）
+        var physical = _stream.Length;
+        if (end > physical)
+        {
+            _stream.Flush();
+            physical = _stream.Length;
+            if (end > physical)
+                throw new NovaException(ErrorCode.FileCorrupted, "Row payload [{0},{1}) is beyond row log file length {2}", offset, end, physical);
+        }
 
         // 文件增长后原有映射容量不足，必须重建映射对象
         if (_mmf == null || end > _mappedCapacity)
@@ -94,7 +106,7 @@ public sealed class RowStore : IDisposable
 #else
             _mmf = MemoryMappedFile.CreateFromFile(_stream, null, 0, MemoryMappedFileAccess.ReadWrite, HandleInheritability.None, true);
 #endif
-            _mappedCapacity = length;
+            _mappedCapacity = physical;
         }
         else
         {
