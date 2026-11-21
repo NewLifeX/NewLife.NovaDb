@@ -51,6 +51,9 @@ public partial class NovaTable : IDisposable
     // 二级索引文件格式版本。2 起索引键中的字符串统一大写，与 SQL 大小写不敏感比较语义一致
     private const Byte SecondaryIndexFileVersion = 2;
 
+    // 联合索引前缀扫描的分块大小：每次最多取这么多索引条目，避免一次性复制整个前缀区间
+    private const Int32 SecondaryIndexPrefixScanChunkSize = 512;
+
     /// <summary>表架构</summary>
     public TableSchema Schema => _schema;
 
@@ -760,7 +763,7 @@ public partial class NovaTable : IDisposable
 
             var values = new Object?[indexKeyValues.Length];
             for (var i = 0; i < indexKeyValues.Length; i++)
-                values[i] = NormalizeIndexValue(indexKeyValues[i]);
+                values[i] = NormalizeIndexKeyPart(indexKeyValues[i]);
 
             var indexKey = new ComparableObject(values.Length == 1 ? values[0]! : values);
             if (!idx.TryGetValue(indexKey, out var pkList))
@@ -772,6 +775,153 @@ public partial class NovaTable : IDisposable
 
             return result;
         }
+    }
+
+    /// <summary>按索引键前缀查询匹配的主键列表，支持联合索引最左前缀</summary>
+    /// <param name="indexName">索引名</param>
+    /// <param name="prefixValues">前缀列值，长度必须小于索引列数</param>
+    /// <param name="lower">下一列范围下界，null 表示不限</param>
+    /// <param name="hasLower">是否有下界</param>
+    /// <param name="includeLower">是否包含下界</param>
+    /// <param name="upper">下一列范围上界，null 表示不限</param>
+    /// <param name="hasUpper">是否有上界</param>
+    /// <param name="includeUpper">是否包含上界</param>
+    /// <param name="maxMatches">最大返回主键数，0 表示不限制</param>
+    /// <returns>匹配的主键值列表；索引不存在或不是联合索引时返回 null</returns>
+    /// <remarks>索引键按数组元素有序，前缀相等时下一列连续排列，因此按分块顺序扫描到前缀变化即可停止</remarks>
+    public List<Object>? LookupByIndexPrefix(String indexName, Object?[] prefixValues, Object? lower, Boolean hasLower, Boolean includeLower, Object? upper, Boolean hasUpper, Boolean includeUpper, Int32 maxMatches)
+    {
+        lock (_lock)
+        {
+            if (!_secondaryIndexes.TryGetValue(indexName, out var idx))
+                return null;
+
+            var indexDef = _schema.GetIndex(indexName);
+            if (indexDef == null || prefixValues == null || prefixValues.Length == 0 || indexDef.Columns.Count <= prefixValues.Length) return null;
+
+            // 索引键列含 NULL 时不进索引，带 NULL 的前缀不可能命中
+            var prefix = new Object?[prefixValues.Length];
+            for (var i = 0; i < prefix.Length; i++)
+            {
+                prefix[i] = NormalizeIndexValue(prefixValues[i]);
+                if (prefix[i] == null) return [];
+            }
+
+            var lowerKey = hasLower ? NormalizeIndexValue(lower) : null;
+            var upperKey = hasUpper ? NormalizeIndexValue(upper) : null;
+
+            var result = new List<Object>();
+            var fromKey = new ComparableObject(prefix);
+            var includeFrom = true;
+
+            while (true)
+            {
+                var entries = idx.GetRange(fromKey, includeFrom, null, true, SecondaryIndexPrefixScanChunkSize);
+                var exhausted = entries.Count < SecondaryIndexPrefixScanChunkSize;
+                var stop = false;
+
+                foreach (var entry in entries)
+                {
+                    // 单列索引键不是数组，与联合索引键不可比较，直接结束
+                    if (entry.Key.Value is not Object?[] keyValues || !MatchIndexPrefix(keyValues, prefix))
+                    {
+                        stop = true;
+                        break;
+                    }
+
+                    if (keyValues.Length > prefix.Length)
+                    {
+                        var next = keyValues[prefix.Length];
+                        if (hasLower)
+                        {
+                            var cmp = ComparableObject.CompareValues(next, lowerKey);
+                            if (cmp < 0 || (cmp == 0 && !includeLower)) continue;
+                        }
+                        if (hasUpper)
+                        {
+                            var cmp = ComparableObject.CompareValues(next, upperKey);
+                            if (cmp > 0 || (cmp == 0 && !includeUpper))
+                            {
+                                stop = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    foreach (var pk in entry.Value)
+                        result.Add(pk.Value!);
+
+                    if (maxMatches > 0 && result.Count >= maxMatches) return result;
+                }
+
+                if (stop || exhausted) break;
+
+                // 继续扫描下一块，跳过已处理的那条
+                fromKey = entries[^1].Key;
+                includeFrom = false;
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>统计指定主键中当前事务可见的行数，只检查行版本可见性，不反序列化行数据</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="primaryKeys">候选主键，调用方需保证已去重</param>
+    /// <returns>可见行数</returns>
+    public Int32 CountVisibleRows(Transaction tx, IList<Object> primaryKeys)
+    {
+        if (tx == null) throw new ArgumentNullException(nameof(tx));
+        if (primaryKeys == null || primaryKeys.Count == 0) return 0;
+
+        lock (_lock)
+        {
+            var count = 0;
+            foreach (var pk in primaryKeys)
+            {
+                if (pk == null) continue;
+                if (!_primaryIndex.TryGetValue(new ComparableObject(pk), out var versions) || versions == null) continue;
+
+                foreach (var ver in versions)
+                {
+                    if (ver.IsVisible(_txManager, tx.TxId))
+                    {
+                        count++;
+                        break;
+                    }
+                }
+            }
+
+            return count;
+        }
+    }
+
+    /// <summary>判断联合索引键是否以指定前缀开始</summary>
+    private static Boolean MatchIndexPrefix(Object?[] keyValues, Object?[] prefix)
+    {
+        if (keyValues.Length < prefix.Length) return false;
+
+        for (var i = 0; i < prefix.Length; i++)
+        {
+            if (ComparableObject.CompareValues(keyValues[i], prefix[i]) != 0) return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>规范化索引键的组成部分。联合索引键是数组，需逐元素规范化后再参与比较</summary>
+    private static Object? NormalizeIndexKeyPart(Object? value)
+    {
+        if (value is Object?[] parts)
+        {
+            var copy = new Object?[parts.Length];
+            for (var i = 0; i < parts.Length; i++)
+                copy[i] = NormalizeIndexValue(parts[i]);
+
+            return copy;
+        }
+
+        return NormalizeIndexValue(value);
     }
 
     #region 全文索引（P2）
@@ -996,7 +1146,10 @@ public partial class NovaTable : IDisposable
             }
 
             pkList!.Add(pk);
-            deltas?.Add(new SecondaryIndexDeltaEntry(kvp.Key, true, indexKey.Value, pk.Value));
+
+            // 联合索引不落盘，跳过增量记录，避免每条 DML 都走一次注定失败的编码
+            if (colOrdinals.Length == 1)
+                deltas?.Add(new SecondaryIndexDeltaEntry(kvp.Key, true, indexKey.Value, pk.Value));
         }
     }
 
@@ -1033,7 +1186,9 @@ public partial class NovaTable : IDisposable
                 if (pkList.Count == 0)
                     idx.Remove(indexKey);
 
-                deltas?.Add(new SecondaryIndexDeltaEntry(kvp.Key, false, indexKey.Value, pk.Value));
+                // 联合索引不落盘，跳过增量记录
+                if (colOrdinals.Length == 1)
+                    deltas?.Add(new SecondaryIndexDeltaEntry(kvp.Key, false, indexKey.Value, pk.Value));
             }
         }
     }
@@ -1052,11 +1207,20 @@ public partial class NovaTable : IDisposable
     private static Int32 CompareKeys(ComparableObject a, ComparableObject b) => a.CompareTo(b);
 
     /// <summary>恢复二级索引（优先 .idx 基线 + .idxl 增量回放，缺失或损坏时全表重建）</summary>
-    /// <remarks>引擎启动加载已有表时调用，保证二级索引跨连接/重启可用</remarks>
+    /// <remarks>引擎启动加载已有表时调用，保证二级索引跨连接/重启可用。联合索引键是数组、无文件编码方案，始终按行日志重建</remarks>
     private void RestoreSecondaryIndexes()
     {
         foreach (var indexDef in _schema.Indexes)
         {
+            if (indexDef.Columns.Count > 1)
+            {
+                // 联合索引不落盘：启动时按行日志重建，避免读到历史遗留的残缺基线
+                _secondaryIndexes[indexDef.IndexName] = RebuildSecondaryIndex(indexDef);
+                ResetSecondaryIndexDelta(indexDef.IndexName);
+                _secondaryIndexBaselineCounts[indexDef.IndexName] = _secondaryIndexes[indexDef.IndexName].Count;
+                continue;
+            }
+
             var idx = TryLoadSecondaryIndexFile(indexDef);
             if (idx != null)
             {
@@ -1173,10 +1337,12 @@ public partial class NovaTable : IDisposable
 
     /// <summary>将二级索引持久化到 .idx 文件（全量重写）</summary>
     /// <param name="indexName">索引名称</param>
+    /// <remarks>联合索引键是数组，当前文件格式只支持标量键，因此联合索引不落盘，启动时按行日志重建</remarks>
     private void PersistSecondaryIndex(String indexName)
     {
         var idxDef = _schema.GetIndex(indexName);
         if (idxDef == null) return;
+        if (idxDef.Columns.Count > 1) return;
 
         lock (_lock)
         {

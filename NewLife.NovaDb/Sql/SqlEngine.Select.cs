@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Engine;
+using NewLife.NovaDb.Tx;
 
 namespace NewLife.NovaDb.Sql;
 
@@ -43,6 +44,10 @@ partial class SqlEngine
 
         // 1. 访问计划：能走主键/二级索引就不全表扫描
         var plan = BuildTableAccessPlan(table, stmt.TableName, stmt.TableAlias, schema, stmt.Where, parameters, needsSort: stmt.OrderBy != null && stmt.OrderBy.Count > 0);
+
+        // 1.1 索引覆盖的 COUNT(*)：只按索引命中的主键统计可见行，不反序列化整行
+        var indexOnlyCount = TryExecuteIndexOnlyCount(stmt, plan, table, tx, schema);
+        if (indexOnlyCount != null) return indexOnlyCount;
 
         // LIMIT 下推：无排序/分组/聚合且条件被索引完整覆盖时，只需取 offset+limit 行
         // 二级索引与主键索引不同步于 MVCC 可见性，故只对主键/全表扫描计划下推
@@ -114,6 +119,50 @@ partial class SqlEngine
         }
 
         return filtered;
+    }
+
+    /// <summary>判断是否为可直接由索引回答的 COUNT(*)：单个 COUNT(*)，无分组/筛选/排序/分页/连接</summary>
+    /// <param name="stmt">SELECT 语句</param>
+    /// <returns>是否可走索引计数</returns>
+    private static Boolean IsIndexOnlyCount(SelectStatement stmt)
+    {
+        if (stmt.Columns.Count != 1) return false;
+        if (stmt.HasJoin) return false;
+        if (stmt.GroupBy != null && stmt.GroupBy.Count > 0) return false;
+        if (stmt.Having != null) return false;
+        if (stmt.OrderBy != null && stmt.OrderBy.Count > 0) return false;
+        if (stmt.Limit.HasValue || stmt.OffsetValue.HasValue) return false;
+
+        var expr = stmt.Columns[0].Expression;
+        if (expr is not FunctionExpression func || !func.IsAggregate) return false;
+        if (!String.Equals(func.FunctionName, "COUNT", StringComparison.OrdinalIgnoreCase)) return false;
+        if (func.Arguments.Count == 0) return true;
+
+        return func.Arguments.Count == 1 && func.Arguments[0] is ColumnRefExpression col && col.ColumnName == "*";
+    }
+
+    /// <summary>用索引直接回答 COUNT(*)：索引命中的主键按 MVCC 可见性累计，不反序列化行数据</summary>
+    /// <param name="stmt">SELECT 语句</param>
+    /// <param name="plan">访问计划</param>
+    /// <param name="table">表实例</param>
+    /// <param name="tx">事务</param>
+    /// <param name="schema">表架构</param>
+    /// <returns>计数结果；条件不满足（如需要回表复核）时返回 null 走原路径</returns>
+    private SqlResult? TryExecuteIndexOnlyCount(SelectStatement stmt, TableAccessPlan plan, NovaTable table, Transaction tx, TableSchema schema)
+    {
+        if (!IsIndexOnlyCount(stmt)) return null;
+        if (plan.Kind != TableAccessKind.IndexLookup || plan.IndexName == null || !plan.CoversWhere) return null;
+
+        var pks = plan.IndexMatches ?? LookupIndexMatches(table, plan);
+        plan.IndexMatches = pks;
+
+        var result = new SqlResult
+        {
+            ColumnNames = BuildColumnNames(stmt, schema),
+        };
+        result.Rows.Add([table.CountVisibleRows(tx, pks)]);
+
+        return result;
     }
 
     #region 系统表查询

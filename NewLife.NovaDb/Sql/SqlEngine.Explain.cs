@@ -72,6 +72,10 @@ public partial class SqlEngine
                 if (!access.CoversWhere)
                     extra = "Residual WHERE filter";
 
+                // 与执行阶段一致：COUNT(*) 可完全由索引回答时标注不回表
+                if (IsIndexOnlyCount(select) && access.Kind == TableAccessKind.IndexLookup && access.CoversWhere)
+                    extra = String.IsNullOrEmpty(extra) ? "Index-only COUNT" : $"{extra}; Index-only COUNT";
+
                 extra = AppendCost(extra, access);
             }
         }

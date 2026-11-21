@@ -18,6 +18,9 @@ internal enum TableAccessKind
 
     /// <summary>二级索引等值查找</summary>
     IndexLookup,
+
+    /// <summary>多路二级索引等值合并（顶层 OR 各分支取主键并集）</summary>
+    IndexMerge,
 }
 
 /// <summary>单表访问计划。由 WHERE 条件推导，SELECT/UPDATE/DELETE 与 EXPLAIN 共用</summary>
@@ -53,6 +56,12 @@ internal sealed class TableAccessPlan
     /// <summary>二级索引命中的主键列表，供执行阶段复用</summary>
     public List<Object>? IndexMatches { get; set; }
 
+    /// <summary>联合索引前缀探测值：每个元素是一组前缀列值，长度小于索引列数</summary>
+    public List<Object?[]> IndexPrefixes { get; } = [];
+
+    /// <summary>索引合并的各路等值子计划（仅 <see cref="TableAccessKind.IndexMerge"/>）</summary>
+    public List<TableAccessPlan> MergeBranches { get; } = [];
+
     /// <summary>候选集是否已完整表达 WHERE，没有剩余条件</summary>
     public Boolean CoversWhere { get; set; }
 
@@ -71,6 +80,7 @@ internal sealed class TableAccessPlan
         TableAccessKind.PrimaryKeyLookup => "PK LOOKUP",
         TableAccessKind.PrimaryKeyRange => "PK RANGE",
         TableAccessKind.IndexLookup => "INDEX LOOKUP",
+        TableAccessKind.IndexMerge => "INDEX MERGE",
         _ => "FULL SCAN",
     };
 
@@ -79,6 +89,7 @@ internal sealed class TableAccessPlan
     {
         TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange => PrimaryKeyText,
         TableAccessKind.IndexLookup => $"{IndexName}({IndexColumn})",
+        TableAccessKind.IndexMerge => String.Join(", ", MergeBranches.Select(e => e.KeyText)),
         _ => String.Empty,
     };
 
@@ -98,6 +109,12 @@ partial class SqlEngine
 
     /// <summary>二级索引命中行数达到该阈值且超过全表比例时才回退全表扫描，避免小表误判</summary>
     private const Int32 FullScanFallbackMinRows = 32;
+
+    /// <summary>索引合并时主键并集去重一行的成本</summary>
+    private const Double MergeDedupeRowCost = 0.6;
+
+    /// <summary>单个索引最多展开的探测组合数，超过时放弃该索引候选</summary>
+    private const Int32 MaxIndexProbeCombinations = 100;
 
     /// <summary>根据 WHERE 条件推导单表访问计划：先枚举全部候选路径，再按代价选择</summary>
     /// <param name="table">表实例，为空时只做语法层推导（如 EXPLAIN 未知表）</param>
@@ -129,6 +146,7 @@ partial class SqlEngine
 
         TableAccessPlan? lookupPlan = null;
         TableAccessPlan? rangePlan = null;
+        TableAccessPlan? mergePlan = null;
         var indexPlans = new List<TableAccessPlan>();
         var candidates = new List<TableAccessPlan> { fullScan };
 
@@ -184,11 +202,18 @@ partial class SqlEngine
                 }
             }
 
-            // 候选四：单列二级索引等值（联合索引键为数组，暂不参与等值匹配）
+            // 候选四：二级索引等值（单列索引）与联合索引最左前缀
             if (allowSecondaryIndex)
             {
                 CollectIndexPlans(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats, indexPlans);
                 candidates.AddRange(indexPlans);
+
+                // 候选五：顶层 OR 的多路索引等值合并，先分别取主键再求并集
+                if (table != null)
+                {
+                    mergePlan = BuildIndexMergePlan(table, tableName, tableAlias, schema, where, parameters, pkCol, stats);
+                    if (mergePlan != null) candidates.Add(mergePlan);
+                }
             }
         }
 
@@ -196,7 +221,7 @@ partial class SqlEngine
         if (stats == null)
         {
             // 无统计：保持原有规则优先级，避免因缺少统计而选错
-            chosen = lookupPlan ?? (indexPlans.Count > 0 ? indexPlans[0] : null) ?? rangePlan ?? fullScan;
+            chosen = lookupPlan ?? (indexPlans.Count > 0 ? indexPlans[0] : null) ?? mergePlan ?? rangePlan ?? fullScan;
             chosen.Reason = "fallback";
         }
         else
@@ -223,54 +248,362 @@ partial class SqlEngine
     /// <summary>估算计划总代价，需要排序时叠加排序成本</summary>
     private static Double EstimatePlanCost(TableAccessPlan plan, TableStatistics? stats, Boolean needsSort)
     {
-        var cost = SqlCostModel.EstimateCost(plan, stats);
+        var cost = plan.Kind == TableAccessKind.IndexMerge ? EstimateMergeCost(plan, stats) : SqlCostModel.EstimateCost(plan, stats);
         if (needsSort) cost += SqlCostModel.EstimateSortCost(plan.EstimatedRows ?? stats?.RowCount ?? 0L);
 
         return cost;
     }
 
-    /// <summary>收集全部可用的单列二级索引等值候选</summary>
+    /// <summary>估算索引合并代价：各路成本之和，再加上主键并集去重</summary>
+    private static Double EstimateMergeCost(TableAccessPlan plan, TableStatistics? stats)
+    {
+        var cost = 0.0;
+        foreach (var branch in plan.MergeBranches)
+            cost += SqlCostModel.EstimateCost(branch, stats);
+
+        return cost + (plan.EstimatedRows ?? 0L) * MergeDedupeRowCost;
+    }
+
+    /// <summary>收集可用的二级索引等值/前缀候选</summary>
     private void CollectIndexPlans(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, List<TableAccessPlan> plans)
     {
         foreach (var index in schema.Indexes)
         {
-            if (index.Columns.Count != 1 || !schema.HasColumn(index.Columns[0])) continue;
+            var columns = ResolveIndexColumns(schema, index);
+            if (columns == null) continue;
 
-            var column = schema.GetColumn(index.Columns[0]);
-            if (!CanUseEqualityIndex(column.DataType)) continue;
+            if (columns.Count == 1)
+            {
+                CollectSingleColumnIndexPlan(table, tableName, tableAlias, index, columns[0], conjuncts, parameters, pkCol, stats, plans);
+                continue;
+            }
+
+            var candidate = BuildCompositeIndexPlan(table, tableName, tableAlias, columns, index, conjuncts, parameters, pkCol, stats);
+            if (candidate != null) plans.Add(candidate);
+        }
+    }
+
+    /// <summary>取出索引列定义；存在未知列或类型不支持等值匹配时返回 null</summary>
+    private static List<ColumnDefinition>? ResolveIndexColumns(TableSchema schema, IndexDefinition index)
+    {
+        if (index.Columns.Count == 0) return null;
+
+        var columns = new List<ColumnDefinition>(index.Columns.Count);
+        foreach (var name in index.Columns)
+        {
+            if (!schema.HasColumn(name)) return null;
+
+            var column = schema.GetColumn(name);
+            if (!CanUseEqualityIndex(column.DataType)) return null;
+
+            columns.Add(column);
+        }
+
+        return columns;
+    }
+
+    /// <summary>收集单列二级索引的等值候选</summary>
+    private void CollectSingleColumnIndexPlan(NovaTable? table, String tableName, String? tableAlias, IndexDefinition index, ColumnDefinition column, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats, List<TableAccessPlan> plans)
+    {
+        var used = new List<SqlExpression>();
+        var keys = CollectEqualityKeys(conjuncts, column, tableName, tableAlias, parameters, used);
+        if (keys == null) return;
+
+        var candidate = new TableAccessPlan
+        {
+            Kind = TableAccessKind.IndexLookup,
+            TableName = tableName,
+            IndexName = index.IndexName,
+            IndexColumn = column.Name,
+            PrimaryKeyText = pkCol == null ? String.Empty : $"PRIMARY({pkCol.Name})",
+            CoversWhere = used.Count == conjuncts.Count,
+        };
+        candidate.Keys.AddRange(keys);
+
+        if (table != null)
+        {
+            // 命中行数优先用统计估算（行数/NDV），统计缺失或该列无统计时退回索引实际命中的候选行数
+            var estimated = EstimateIndexMatches(stats, column.Name, keys);
+            if (estimated.HasValue)
+                candidate.EstimatedRows = estimated.Value;
+            else
+            {
+                candidate.IndexMatches = LookupIndexMatches(table, candidate);
+                candidate.EstimatedRows = candidate.IndexMatches.Count;
+            }
+
+            // 命中行占比过高时，随机回表比顺序全表扫描更慢，保留为候选过滤的保底阈值
+            if (IsIndexUnselective(table, candidate.EstimatedRows.Value, stats)) return;
+        }
+
+        plans.Add(candidate);
+    }
+
+    /// <summary>收集联合索引候选：最左前缀等值（可叠加下一列范围），或全部列等值</summary>
+    private TableAccessPlan? BuildCompositeIndexPlan(NovaTable? table, String tableName, String? tableAlias, List<ColumnDefinition> columns, IndexDefinition index, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats)
+    {
+        var used = new List<SqlExpression>();
+        var prefixKeys = new List<List<Object>>();
+        foreach (var column in columns)
+        {
+            var columnUsed = new List<SqlExpression>();
+            var keys = CollectEqualityKeys(conjuncts, column, tableName, tableAlias, parameters, columnUsed);
+            if (keys == null) break;
+
+            prefixKeys.Add(keys);
+            used.AddRange(columnUsed);
+        }
+
+        if (prefixKeys.Count == 0) return null;
+
+        // 组合数过多时放弃该索引，避免 IN 列表把计划展开成笛卡尔积
+        if (CountCombinations(prefixKeys) > MaxIndexProbeCombinations) return null;
+
+        var candidate = new TableAccessPlan
+        {
+            Kind = TableAccessKind.IndexLookup,
+            TableName = tableName,
+            IndexName = index.IndexName,
+            IndexColumn = String.Join(",", index.Columns),
+            PrimaryKeyText = pkCol == null ? String.Empty : $"PRIMARY({pkCol.Name})",
+        };
+
+        if (prefixKeys.Count == columns.Count)
+        {
+            // 全部索引列都是等值条件：拼成完整联合键直接点查
+            foreach (var combo in BuildCombinations(prefixKeys))
+                candidate.Keys.Add(combo);
+        }
+        else
+        {
+            // 前缀等值：联合键按元素有序，前缀相同时下一列连续排列，可叠加下一列范围
+            foreach (var combo in BuildCombinations(prefixKeys))
+                candidate.IndexPrefixes.Add(combo);
+
+            var next = columns[prefixKeys.Count];
+            if (CanUseRangeIndex(next.DataType))
+            {
+                var rangeUsed = new List<SqlExpression>();
+                CollectRangeBounds(conjuncts, next, tableName, tableAlias, parameters, candidate, rangeUsed);
+                if (candidate.HasLower || candidate.HasUpper) used.AddRange(rangeUsed);
+            }
+        }
+
+        candidate.CoversWhere = used.Count == conjuncts.Count;
+
+        if (table != null)
+        {
+            var estimated = EstimateCompositeRows(stats, columns, prefixKeys, candidate);
+            if (estimated.HasValue)
+                candidate.EstimatedRows = estimated.Value;
+            else
+            {
+                candidate.IndexMatches = LookupIndexMatches(table, candidate);
+                candidate.EstimatedRows = candidate.IndexMatches.Count;
+            }
+
+            if (IsIndexUnselective(table, candidate.EstimatedRows.Value, stats)) return null;
+        }
+
+        return candidate;
+    }
+
+    /// <summary>用统计估算联合索引候选的命中行数，统计缺失时返回 null</summary>
+    /// <param name="stats">表统计信息</param>
+    /// <param name="columns">索引列</param>
+    /// <param name="prefixKeys">已收集等值条件的各列候选键</param>
+    /// <param name="plan">候选计划，提供下一列的范围边界</param>
+    private static Int64? EstimateCompositeRows(TableStatistics? stats, List<ColumnDefinition> columns, List<List<Object>> prefixKeys, TableAccessPlan plan)
+    {
+        if (stats == null || stats.RowCount <= 0) return null;
+
+        // 前缀列按 NDV 连乘估算（独立性假设），再乘下一列范围的选择率
+        var rows = (Double)stats.RowCount;
+        for (var i = 0; i < prefixKeys.Count; i++)
+        {
+            if (!stats.Columns.TryGetValue(columns[i].Name, out var col) || col.DistinctCount <= 0) return null;
+
+            rows = rows / col.DistinctCount * prefixKeys[i].Count;
+            if (rows < 1) rows = 1;
+        }
+
+        if (plan.HasLower || plan.HasUpper)
+        {
+            var next = columns[prefixKeys.Count];
+            var rangeRows = stats.EstimateRange(next.Name, plan.Lower, plan.Upper, plan.HasLower, plan.HasUpper, -1);
+            if (rangeRows < 0) return null;
+
+            rows *= (Double)rangeRows / stats.RowCount;
+        }
+
+        var estimate = (Int64)Math.Round(rows);
+        return estimate < 1 ? 1 : estimate > stats.RowCount ? stats.RowCount : estimate;
+    }
+
+    /// <summary>计算各列候选键展开后的组合数</summary>
+    private static Int64 CountCombinations(List<List<Object>> keyLists)
+    {
+        var total = 1L;
+        foreach (var keys in keyLists)
+        {
+            total *= keys.Count;
+            if (total > MaxIndexProbeCombinations) return total;
+        }
+
+        return total;
+    }
+
+    /// <summary>把各列候选键展开成联合键组合</summary>
+    private static List<Object[]> BuildCombinations(List<List<Object>> keyLists)
+    {
+        var combos = new List<Object[]> { new Object[0] };
+        foreach (var keys in keyLists)
+        {
+            var next = new List<Object[]>(combos.Count * keys.Count);
+            foreach (var combo in combos)
+            {
+                foreach (var key in keys)
+                {
+                    var values = new Object[combo.Length + 1];
+                    Array.Copy(combo, values, combo.Length);
+                    values[combo.Length] = key;
+                    next.Add(values);
+                }
+            }
+            combos = next;
+        }
+
+        return combos;
+    }
+
+    /// <summary>把顶层 OR 拆成多路等值索引分支，生成索引合并候选</summary>
+    private TableAccessPlan? BuildIndexMergePlan(NovaTable table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats)
+    {
+        if (where == null) return null;
+
+        var disjuncts = new List<SqlExpression>();
+        CollectDisjuncts(where, disjuncts);
+        if (disjuncts.Count < 2) return null;
+
+        var branches = new List<TableAccessPlan>();
+        foreach (var disjunct in disjuncts)
+        {
+            var conjuncts = new List<SqlExpression>();
+            CollectConjuncts(disjunct, conjuncts);
+
+            var branch = BuildEqualityBranch(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol);
+            if (branch == null) return null;
+
+            branches.Add(branch);
+        }
+
+        var plan = new TableAccessPlan
+        {
+            Kind = TableAccessKind.IndexMerge,
+            TableName = tableName,
+            PrimaryKeyText = pkCol == null ? String.Empty : $"PRIMARY({pkCol.Name})",
+            CoversWhere = false,
+        };
+        plan.MergeBranches.AddRange(branches);
+
+        // 各路命中行数之和是并集的上界，去重后实际回表行数不会更多
+        var total = 0L;
+        foreach (var branch in branches)
+            total += branch.EstimatedRows ?? 0L;
+
+        var rowCount = stats != null ? stats.RowCount : table.RowCount;
+        var estimate = Math.Min(rowCount, total);
+        plan.EstimatedRows = estimate < 1 ? 1 : estimate;
+
+        if (IsIndexUnselective(table, plan.EstimatedRows.Value, stats)) return null;
+
+        return plan;
+    }
+
+    /// <summary>为一个 OR 分支生成等值索引子计划，分支条件无法被单个索引完整覆盖时返回 null</summary>
+    private TableAccessPlan? BuildEqualityBranch(NovaTable table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol)
+    {
+        // 优先主键等值
+        if (pkCol != null && CanUseEqualityIndex(pkCol.DataType))
+        {
+            var used = new List<SqlExpression>();
+            var keys = CollectEqualityKeys(conjuncts, pkCol, tableName, tableAlias, parameters, used);
+            if (keys != null && used.Count == conjuncts.Count)
+            {
+                var plan = new TableAccessPlan
+                {
+                    Kind = TableAccessKind.PrimaryKeyLookup,
+                    TableName = tableName,
+                    PrimaryKeyText = $"PRIMARY({pkCol.Name})",
+                    CoversWhere = true,
+                    EstimatedRows = keys.Count,
+                };
+                plan.Keys.AddRange(keys);
+
+                return plan;
+            }
+        }
+
+        // 再找能完整覆盖分支条件的二级索引等值
+        foreach (var index in schema.Indexes)
+        {
+            var columns = ResolveIndexColumns(schema, index);
+            if (columns == null) continue;
 
             var used = new List<SqlExpression>();
-            var keys = CollectEqualityKeys(conjuncts, column, tableName, tableAlias, parameters, used);
-            if (keys == null) continue;
+            var prefixKeys = new List<List<Object>>();
+            foreach (var column in columns)
+            {
+                var columnUsed = new List<SqlExpression>();
+                var keys = CollectEqualityKeys(conjuncts, column, tableName, tableAlias, parameters, columnUsed);
+                if (keys == null) break;
 
-            var candidate = new TableAccessPlan
+                prefixKeys.Add(keys);
+                used.AddRange(columnUsed);
+            }
+
+            // 只有全部索引列都有等值条件时才作为合并分支，前缀扫描留给单表计划
+            if (prefixKeys.Count != columns.Count || used.Count != conjuncts.Count) continue;
+            if (CountCombinations(prefixKeys) > MaxIndexProbeCombinations) continue;
+
+            var plan = new TableAccessPlan
             {
                 Kind = TableAccessKind.IndexLookup,
                 TableName = tableName,
                 IndexName = index.IndexName,
-                IndexColumn = column.Name,
+                IndexColumn = String.Join(",", index.Columns),
                 PrimaryKeyText = pkCol == null ? String.Empty : $"PRIMARY({pkCol.Name})",
-                CoversWhere = used.Count == conjuncts.Count,
+                CoversWhere = true,
             };
-            candidate.Keys.AddRange(keys);
 
-            if (table != null)
+            if (columns.Count == 1)
+                plan.Keys.AddRange(prefixKeys[0]);
+            else
             {
-                // 命中行数优先用统计估算（行数/NDV），统计缺失或该列无统计时退回索引实际命中的候选行数
-                var estimated = EstimateIndexMatches(stats, column.Name, keys);
-                if (estimated.HasValue)
-                    candidate.EstimatedRows = estimated.Value;
-                else
-                {
-                    candidate.IndexMatches = LookupIndexMatches(table, candidate);
-                    candidate.EstimatedRows = candidate.IndexMatches.Count;
-                }
-
-                // 命中行占比过高时，随机回表比顺序全表扫描更慢，保留为候选过滤的保底阈值
-                if (IsIndexUnselective(table, candidate.EstimatedRows.Value, stats)) continue;
+                foreach (var combo in BuildCombinations(prefixKeys))
+                    plan.Keys.Add(combo);
             }
 
-            plans.Add(candidate);
+            plan.IndexMatches = LookupIndexMatches(table, plan);
+            plan.EstimatedRows = plan.IndexMatches.Count;
+
+            return plan;
+        }
+
+        return null;
+    }
+
+    /// <summary>把 WHERE 拆成顶层 OR 的分支条件</summary>
+    private static void CollectDisjuncts(SqlExpression expr, List<SqlExpression> disjuncts)
+    {
+        if (expr is BinaryExpression bin && bin.Operator == BinaryOperator.Or)
+        {
+            CollectDisjuncts(bin.Left, disjuncts);
+            CollectDisjuncts(bin.Right, disjuncts);
+        }
+        else
+        {
+            disjuncts.Add(expr);
         }
     }
 
@@ -336,6 +669,24 @@ partial class SqlEngine
                     return rows;
                 }
 
+            case TableAccessKind.IndexMerge:
+                {
+                    // 各路主键并集先去重，再统一回表；结果顺序按主键升序，与全表扫描一致
+                    var pks = plan.IndexMatches ?? LookupMergeMatches(table, plan);
+                    plan.IndexMatches = pks;
+
+                    var rows = new List<Object?[]>(pks.Count);
+                    var count = 0;
+                    foreach (var pk in pks)
+                    {
+                        if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+                        var row = table.Get(tx, pk);
+                        if (row != null) rows.Add(row);
+                    }
+                    return rows;
+                }
+
             default:
                 // 全表扫描：LIMIT 下推时同样只反序列化需要的行
                 return maxRows > 0 ? table.GetRange(tx, null, true, null, true, maxRows, cancellationToken) : table.GetAll(tx, cancellationToken);
@@ -352,12 +703,56 @@ partial class SqlEngine
         if (plan.IndexName == null) return result;
 
         var seen = new HashSet<Object>();
-        foreach (var key in plan.Keys)
+        if (plan.IndexPrefixes.Count > 0)
         {
-            var matches = table.LookupByIndex(plan.IndexName, [key]);
-            if (matches == null) continue;
+            foreach (var prefix in plan.IndexPrefixes)
+            {
+                var matches = table.LookupByIndexPrefix(plan.IndexName, prefix,
+                    plan.HasLower ? plan.Lower : null, plan.HasLower, plan.LowerInclusive,
+                    plan.HasUpper ? plan.Upper : null, plan.HasUpper, plan.UpperInclusive, 0);
+                if (matches == null) continue;
 
-            foreach (var pk in matches)
+                foreach (var pk in matches)
+                {
+                    if (seen.Add(pk)) result.Add(pk);
+                }
+            }
+        }
+        else
+        {
+            foreach (var key in plan.Keys)
+            {
+                var matches = table.LookupByIndex(plan.IndexName, [key]);
+                if (matches == null) continue;
+
+                foreach (var pk in matches)
+                {
+                    if (seen.Add(pk)) result.Add(pk);
+                }
+            }
+        }
+
+        if (result.Count > 1)
+            result.Sort((x, y) => CompareValues(x, y));
+
+        return result;
+    }
+
+    /// <summary>取索引合并各路命中主键的并集并去重，按主键升序保持与全表扫描一致的输出顺序</summary>
+    /// <param name="table">表实例</param>
+    /// <param name="plan">索引合并计划</param>
+    /// <returns>去重后的主键列表</returns>
+    private static List<Object> LookupMergeMatches(NovaTable table, TableAccessPlan plan)
+    {
+        var result = new List<Object>();
+        var seen = new HashSet<Object>();
+        foreach (var branch in plan.MergeBranches)
+        {
+            var pks = branch.Kind == TableAccessKind.PrimaryKeyLookup
+                ? branch.Keys
+                : branch.IndexMatches ?? LookupIndexMatches(table, branch);
+
+            foreach (var pk in pks)
             {
                 if (seen.Add(pk)) result.Add(pk);
             }

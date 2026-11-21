@@ -357,9 +357,14 @@ public List<Dictionary<String, Object?>> Query(String sql,
 | `pk = v`、`pk IN (v...)` | `PK LOOKUP` | `NovaTable.Get` 逐键点查 |
 | `pk > v`、`pk BETWEEN...` 等范围（数值/日期类型） | `PK RANGE` | `NovaTable.GetRange` 走 SkipList 范围定位，只反序列化范围内行 |
 | `indexed_col = v`、`indexed_col IN (v...)`（单列索引） | `INDEX LOOKUP` | `NovaTable.LookupByIndex` 取主键后回表 |
-| 其他（`LIKE`、函数、`OR`、未建索引列） | `FULL SCAN` | `GetAll` 顺序扫描 |
+| 联合索引 `(a,b)`：`a = v`、`a = v AND b <范围>`、`a = v AND b = v` | `INDEX LOOKUP` | 前缀走 `LookupByIndexPrefix`（按键有序分块扫描），全列等值走 `LookupByIndex` |
+| `a = v OR b = v`（两侧都是可走索引的等值条件） | `INDEX MERGE` | 各路分别取主键后求并集去重，再统一回表 |
+| 其他（`LIKE`、函数、未建索引列、OR 有一侧无索引） | `FULL SCAN` | `GetAll` 顺序扫描 |
 
 选择规则：
+- 联合索引只按最左前缀下推：前缀列全部等值后才用下一列范围，字符串列不做下一列范围下推（排序口径与 SQL 不一致）。前缀命中行数按各前缀列 NDV 连乘估算，下一列范围用直方图选择率折算。
+- 索引合并成本 = 各路成本之和 + 去重成本（`0.6/行`）；任一侧分支无法被单个索引完整覆盖时放弃合并，回退全表扫描。
+- `SELECT COUNT(*)` 且条件被索引完整覆盖（单列/联合等值、`IN`、联合前缀）时，直接统计索引主键中当前事务可见的版本数，不反序列化行；`EXPLAIN` 的 `extra` 标 `Index-only COUNT`。需要残余 WHERE 复核或走合并路径时不做该优化。
 - 索引只负责缩小候选集，**最终结果始终再走一遍完整 WHERE 复核**，语义与全表扫描一致。
 - 字符串索引键在写入时统一大写，与 SQL 大小写不敏感的 `=` 语义对齐（`.idx` 文件版本 2；旧版本文件启动时自动从行数据重建）。
 - 命中行数超过全表 1/4 且超过 32 行时，回退全表扫描：随机回表比顺序扫描更慢。
@@ -452,7 +457,6 @@ SELECT * FROM regional_sales WHERE total_sales > 1000;
 - 成本估算（基于统计信息）：当前只用“命中行数 / 表行数”做粗略选择性判断（见 9.2）
 - JOIN 顺序优化
 - JOIN 侧索引下推与 ON 条件下推
-- 联合索引的最左前缀匹配（当前只支持单列索引等值）
 
 ### 11.5 Hash Join / Merge Join
 - Hash Join: 适合等值连接,O(n+m) 复杂度
