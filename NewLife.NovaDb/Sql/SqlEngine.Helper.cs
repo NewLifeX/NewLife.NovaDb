@@ -270,6 +270,14 @@ partial class SqlEngine
         if (left == null) return -1;
         if (right == null) return 1;
 
+        // 时间按时间轴比较。默认 Convert.ToString 得到 "MM/dd/yyyy HH:mm:ss"，
+        // 直接做字典序会在跨月、跨年时颠倒顺序，导致范围查询与 ORDER BY 结果错误
+        if (left is DateTime || right is DateTime || left is DateTimeOffset || right is DateTimeOffset)
+        {
+            if (TryGetDateTime(left, out var leftTime) && TryGetDateTime(right, out var rightTime))
+                return leftTime.CompareTo(rightTime);
+        }
+
         // 布尔按 0/1 参与数值比较（MySQL 兼容：bool列 = 1、bool列 = '1'）
         if (left is Boolean || right is Boolean)
         {
@@ -283,6 +291,29 @@ partial class SqlEngine
 
         // 字符串比较
         return String.Compare(Convert.ToString(left, CultureInfo.InvariantCulture), Convert.ToString(right, CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>尝试把值转换为时间。字符串按不变文化解析，供时间列与时间参数比较</summary>
+    /// <param name="value">源值</param>
+    /// <param name="time">转换结果</param>
+    /// <returns>是否转换成功</returns>
+    private static Boolean TryGetDateTime(Object? value, out DateTime time)
+    {
+        switch (value)
+        {
+            case DateTime dt:
+                time = dt;
+                return true;
+            case DateTimeOffset dto:
+                time = dto.DateTime;
+                return true;
+            case String text when DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed):
+                time = parsed;
+                return true;
+            default:
+                time = default;
+                return false;
+        }
     }
 
     /// <summary>尝试把值转换为数值，布尔按 1/0 处理</summary>

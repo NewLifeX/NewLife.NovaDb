@@ -980,6 +980,47 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.Equal(15, Convert.ToInt32(cmd.ExecuteScalar()));
     }
 
+    [Fact(DisplayName = "嵌入式-日期范围与排序按时间轴比较")]
+    public void DateTimeComparisonUsesTimeline()
+    {
+        using var conn = CreateConnection();
+        using var cmd = conn.CreateCommand();
+
+        cmd.CommandText = "CREATE TABLE emb_fn_dt_order (id INT PRIMARY KEY, dt DATETIME)";
+        cmd.ExecuteNonQuery();
+
+        cmd.CommandText = "INSERT INTO emb_fn_dt_order (id, dt) VALUES (1,'2025-12-31 23:59:59'),(2,'2026-01-01 00:00:00'),(3,'2026-02-01 00:00:00'),(4,'2025-11-01 00:00:00')";
+        cmd.ExecuteNonQuery();
+
+        // 字符串字典序会把 2026-02 排到 2025-11 前面，按时间轴比较应为 2025-11 → 2025-12 → 2026-01 → 2026-02
+        cmd.CommandText = "SELECT id FROM emb_fn_dt_order ORDER BY dt ASC";
+        var ids = new List<Int32>();
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read()) ids.Add(reader.GetInt32(0));
+        }
+        Assert.Equal(new[] { 4, 1, 2, 3 }, ids);
+
+        // 日期参数与时间列比较同样走时间轴，跨年区间命中 2025-12-31 23:59:59 与 2026-01-01
+        cmd.CommandText = "SELECT id FROM emb_fn_dt_order WHERE dt >= @t1 AND dt < @t2 ORDER BY dt ASC";
+        cmd.Parameters.Clear();
+        var start = cmd.CreateParameter();
+        start.ParameterName = "@t1";
+        start.Value = new DateTime(2025, 12, 31, 12, 0, 0);
+        cmd.Parameters.Add(start);
+        var end = cmd.CreateParameter();
+        end.ParameterName = "@t2";
+        end.Value = new DateTime(2026, 1, 1, 12, 0, 0);
+        cmd.Parameters.Add(end);
+
+        var rangeIds = new List<Int32>();
+        using (var reader = cmd.ExecuteReader())
+        {
+            while (reader.Read()) rangeIds.Add(reader.GetInt32(0));
+        }
+        Assert.Equal(new[] { 1, 2 }, rangeIds);
+    }
+
     [Fact(DisplayName = "嵌入式-COALESCE和ISNULL")]
     public void CoalesceAndIsNull()
     {
