@@ -37,6 +37,7 @@ public class SqlParser
             SqlTokenType.Alter => ParseAlter(),
             SqlTokenType.Truncate => ParseTruncate(),
             SqlTokenType.Explain => ParseExplain(),
+            SqlTokenType.Analyze => ParseAnalyze(),
             SqlTokenType.Show => ParseShow(),
             SqlTokenType.Begin or SqlTokenType.Start => ParseBegin(),
             SqlTokenType.Commit => ParseTransaction(SqlStatementType.CommitTransaction),
@@ -357,6 +358,23 @@ public class SqlParser
         // 递归解析内部语句
         var inner = Parse();
         return new ExplainStatement { InnerStatement = inner };
+    }
+
+    /// <summary>解析 ANALYZE [TABLE] [表名]</summary>
+    /// <returns>ANALYZE 语句</returns>
+    private AnalyzeStatement ParseAnalyze()
+    {
+        Expect(SqlTokenType.Analyze);
+
+        // 可选 TABLE 关键字，ANALYZE t 与 ANALYZE TABLE t 等价
+        if (Peek().Type == SqlTokenType.Table) Advance();
+
+        var stmt = new AnalyzeStatement();
+        var token = Peek();
+        if (token.Type == SqlTokenType.Identifier || IsSoftKeyword(token.Type))
+            stmt.TableName = ParseTableName();
+
+        return stmt;
     }
 
     #region DDL
@@ -2054,7 +2072,8 @@ public class SqlParser
         or SqlTokenType.Comment or SqlTokenType.Index
         or SqlTokenType.Column or SqlTokenType.Database or SqlTokenType.Key
         or SqlTokenType.Offset or SqlTokenType.Left
-        or SqlTokenType.Right or SqlTokenType.Inner or SqlTokenType.Set => true,
+        or SqlTokenType.Right or SqlTokenType.Inner or SqlTokenType.Set
+        or SqlTokenType.Analyze => true,
         _ => false
     };
 

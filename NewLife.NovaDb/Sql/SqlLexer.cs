@@ -79,6 +79,7 @@ public class SqlLexer
         ["TRUNCATE"] = SqlTokenType.Truncate,
         ["DUPLICATE"] = SqlTokenType.Duplicate,
         ["EXPLAIN"] = SqlTokenType.Explain,
+        ["ANALYZE"] = SqlTokenType.Analyze,
         ["MERGE"] = SqlTokenType.Merge,
         ["IGNORE"] = SqlTokenType.Ignore,
         ["SHOW"] = SqlTokenType.Show,

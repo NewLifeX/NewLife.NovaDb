@@ -389,6 +389,15 @@ var joinedRows = PerformJoin(filteredLeft, rightRows, joinCondition);
 
 JOIN 的左右表仍为全表取数后嵌套循环连接；JOIN 侧索引下推（含别名解析与 ON 条件下推）尚未实现。
 
+### 9.5 统计信息与 ANALYZE
+
+`ANALYZE [TABLE] t`（不带表名时分析全库）由 `Engine/NovaTable.Stats.cs` 采集，经 `Sql/SqlEngine.Analyze.cs` 缓存并暴露给优化器：
+
+- 表级：行数、统计版本号、分析时间、采样行数；列级：NDV、可空、16 桶等深直方图；索引级：索引名 → 键数量。
+- 索引列直接遍历内存索引键（分块 ≤1024）得到精确 NDV 与直方图；非索引列水库采样 1000 行后按比例放大。
+- 数据版本/行数变化超过 20%（下限 64 次写入）或表结构变化后统计自动失效，优化器回退 `RowCount` 粗估。
+- `_sys.stats` 暴露统计明细，`information_schema.statistics.CARDINALITY` 使用真实 NDV，`EXPLAIN` 的 `rows` 列为统计估算值。
+
 ## 10. 设计决策
 
 ### D1: SQL 子集策略

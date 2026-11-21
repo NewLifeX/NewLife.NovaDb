@@ -108,6 +108,7 @@ partial class SqlEngine
             "columns" => BuildSysColumnsData(),
             "indexes" => BuildSysIndexesData(),
             "metrics" => BuildSysMetricsData(),
+            "stats" => BuildSysStatsData(),
             "version" => BuildSysVersionData(),
             "binlog" => BuildSysBinlogData(),
             "flux_compression" => BuildSysFluxCompressionData(),
@@ -296,6 +297,69 @@ partial class SqlEngine
 
         return (schema, rows);
     }
+
+    private (TableSchema Schema, List<Object?[]> Rows) BuildSysStatsData()
+    {
+        var schema = new TableSchema("_sys.stats");
+        schema.AddColumn(new ColumnDefinition("table_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("column_name", DataType.String, false));
+        schema.AddColumn(new ColumnDefinition("row_count", DataType.Int64, false));
+        schema.AddColumn(new ColumnDefinition("ndv", DataType.Int64, false));
+        schema.AddColumn(new ColumnDefinition("buckets", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("stat_version", DataType.Int64, false));
+        schema.AddColumn(new ColumnDefinition("analyzed_at", DataType.DateTime, false));
+
+        var rows = new List<Object?[]>();
+        var statistics = new List<TableStatistics>();
+        using (var rl5 = _metaLock.AcquireRead())
+        {
+            // 表已删除时同步清理缓存，避免统计目录持有已释放的表实例
+            lock (_statsLock)
+            {
+                var dropped = _statistics.Keys.Where(k => !_schemas.ContainsKey(k)).ToList();
+                foreach (var name in dropped)
+                    _statistics.Remove(name);
+            }
+
+            foreach (var tableName in _schemas.Keys)
+            {
+                var stats = GetCachedTableStatistics(tableName);
+                if (stats != null) statistics.Add(stats);
+            }
+        }
+
+        foreach (var stats in statistics)
+        {
+            foreach (var column in stats.Columns.Values)
+            {
+                rows.Add(
+                [
+                    stats.TableName,
+                    column.ColumnName,
+                    stats.RowCount,
+                    column.DistinctCount,
+                    FormatHistogram(column.Buckets),
+                    stats.StatVersion,
+                    stats.AnalyzedAt
+                ]);
+            }
+        }
+
+        return (schema, rows);
+    }
+
+    /// <summary>把等深直方图格式化为简表，例如 [(1:10),(2:10)]</summary>
+    private static String FormatHistogram(List<HistogramBucket> buckets)
+        => "[" + String.Join(",", buckets.Select(b => $"({FormatStatValue(b.UpperBound)}:{b.Count})")) + "]";
+
+    /// <summary>统计值格式化，数值使用不变区域性避免小数点随语言变化</summary>
+    private static String FormatStatValue(Object? value) => value switch
+    {
+        null => "NULL",
+        DateTime dt => dt.ToString("o", CultureInfo.InvariantCulture),
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? String.Empty,
+    };
 
     private (TableSchema Schema, List<Object?[]> Rows) BuildSysVersionData()
     {
@@ -487,6 +551,7 @@ partial class SqlEngine
         schema.AddColumn(new ColumnDefinition("SEQ_IN_INDEX", DataType.Int32, false));
         schema.AddColumn(new ColumnDefinition("COLUMN_NAME", DataType.String, false));
         schema.AddColumn(new ColumnDefinition("COLLATION", DataType.String, true));
+        schema.AddColumn(new ColumnDefinition("CARDINALITY", DataType.Int64, true));
         schema.AddColumn(new ColumnDefinition("INDEX_TYPE", DataType.String, true));
 
         var dbName = GetCurrentDatabaseName();
@@ -494,17 +559,24 @@ partial class SqlEngine
         using var _ = _metaLock.AcquireRead();
         foreach (var ts in _schemas.Values)
         {
+            // 已执行 ANALYZE 的表用真实 NDV 填充基数，未分析时为 NULL
+            var stats = GetCachedTableStatistics(ts.TableName);
+
             // 主键
             var pk = ts.GetPrimaryKeyColumn();
             if (pk != null)
-                rows.Add([dbName, ts.TableName, 0, "PRIMARY", 1, pk.Name, "A", "BTREE"]);
+            {
+                Object? cardinality = stats != null && stats.Indexes.TryGetValue("PRIMARY", out var pkStats) ? pkStats.KeyCount : null;
+                rows.Add([dbName, ts.TableName, 0, "PRIMARY", 1, pk.Name, "A", cardinality, "BTREE"]);
+            }
 
             // 二级索引
             foreach (var idx in ts.Indexes)
             {
+                Object? cardinality = stats != null && stats.Indexes.TryGetValue(idx.IndexName, out var idxStats) ? idxStats.KeyCount : null;
                 for (var i = 0; i < idx.Columns.Count; i++)
                 {
-                    rows.Add([dbName, ts.TableName, idx.IsUnique ? 0 : 1, idx.IndexName, i + 1, idx.Columns[i], "A", "BTREE"]);
+                    rows.Add([dbName, ts.TableName, idx.IsUnique ? 0 : 1, idx.IndexName, i + 1, idx.Columns[i], "A", cardinality, "BTREE"]);
                 }
             }
         }

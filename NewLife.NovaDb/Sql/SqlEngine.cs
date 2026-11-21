@@ -364,6 +364,7 @@ public partial class SqlEngine : IDisposable
             TruncateTableStatement truncate => TrackDdl(ExecuteTruncateTable(truncate), sql),
             CreateIndexStatement createIdx => TrackDdl(ExecuteCreateIndex(createIdx), sql),
             DropIndexStatement dropIdx => TrackDdl(ExecuteDropIndex(dropIdx), sql),
+            AnalyzeStatement analyze => TrackDdl(ExecuteAnalyze(analyze), sql),
 
             // DML 语句
             InsertStatement insert => TrackInsert(ExecuteInsert(insert, parameters, tx), sql),
@@ -443,6 +444,11 @@ public partial class SqlEngine : IDisposable
         }
         _tables.Clear();
         _schemas.Clear();
+
+        lock (_statsLock)
+        {
+            _statistics.Clear();
+        }
 
         _disposed = true;
     }

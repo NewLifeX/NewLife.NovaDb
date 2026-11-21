@@ -105,6 +105,11 @@ partial class SqlEngine
     private TableAccessPlan BuildTableAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, SqlExpression? where, Dictionary<String, Object?>? parameters, Boolean allowSecondaryIndex = true)
     {
         var plan = new TableAccessPlan { Kind = TableAccessKind.FullScan, TableName = tableName };
+
+        // 统计信息缺失或过期时为 null，后续全部回退到 RowCount 粗估
+        var stats = table == null ? null : GetTableStatistics(tableName, table);
+        if (stats != null) plan.EstimatedRows = stats.RowCount;
+
         if (where == null)
         {
             plan.CoversWhere = true;
@@ -135,7 +140,7 @@ partial class SqlEngine
         // 2. 二级索引等值：只支持单列索引（联合索引键为数组，暂不参与等值匹配）
         if (allowSecondaryIndex)
         {
-            var indexPlan = BuildIndexAccessPlan(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol);
+            var indexPlan = BuildIndexAccessPlan(table, tableName, tableAlias, schema, conjuncts, parameters, pkCol, stats);
             if (indexPlan != null) return indexPlan;
         }
 
@@ -150,6 +155,14 @@ partial class SqlEngine
             {
                 plan.Kind = TableAccessKind.PrimaryKeyRange;
                 plan.CoversWhere = used.Count == conjuncts.Count;
+
+                // 有统计时用等深直方图估算范围行数，缺失时由 EXPLAIN 回退到 RowCount
+                if (stats != null)
+                {
+                    var estimated = stats.EstimateRange(pkCol.Name, plan.Lower, plan.Upper, plan.HasLower, plan.HasUpper, -1);
+                    if (estimated >= 0) plan.EstimatedRows = estimated;
+                }
+
                 return plan;
             }
 
@@ -163,7 +176,7 @@ partial class SqlEngine
     }
 
     /// <summary>尝试为单列二级索引构造等值访问计划</summary>
-    private TableAccessPlan? BuildIndexAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol)
+    private TableAccessPlan? BuildIndexAccessPlan(NovaTable? table, String tableName, String? tableAlias, TableSchema schema, List<SqlExpression> conjuncts, Dictionary<String, Object?>? parameters, ColumnDefinition? pkCol, TableStatistics? stats)
     {
         foreach (var index in schema.Indexes)
         {
@@ -189,11 +202,13 @@ partial class SqlEngine
 
             if (table != null)
             {
+                // 命中行数优先用统计估算（行数/NDV），无统计时退回索引实际命中的候选行数
+                var estimated = EstimateIndexMatches(stats, column.Name, keys);
                 candidate.IndexMatches = LookupIndexMatches(table, candidate);
-                candidate.EstimatedRows = candidate.IndexMatches.Count;
+                candidate.EstimatedRows = estimated ?? candidate.IndexMatches.Count;
 
                 // 命中行占比过高时，随机回表比顺序全表扫描更慢，放弃索引
-                if (IsIndexUnselective(table, candidate.IndexMatches.Count)) continue;
+                if (IsIndexUnselective(table, candidate.EstimatedRows.Value, stats)) continue;
             }
 
             return candidate;
@@ -276,13 +291,33 @@ partial class SqlEngine
         return result;
     }
 
+    /// <summary>统计估算二级索引等值命中的行数，统计缺失或列无统计时返回 null</summary>
+    private static Int64? EstimateIndexMatches(TableStatistics? stats, String columnName, List<Object> keys)
+    {
+        if (stats == null) return null;
+
+        var total = 0L;
+        foreach (var key in keys)
+        {
+            var estimated = stats.EstimateEquals(columnName, key, -1);
+            if (estimated < 0) return null;
+
+            total += estimated;
+        }
+
+        return total;
+    }
+
     /// <summary>判断二级索引是否因命中过多而不值得走索引</summary>
-    private static Boolean IsIndexUnselective(NovaTable table, Int32 matchCount)
+    /// <param name="table">表实例</param>
+    /// <param name="matchCount">估算命中行数</param>
+    /// <param name="stats">统计信息，为空时用索引条目数作为全表行数</param>
+    private static Boolean IsIndexUnselective(NovaTable table, Int64 matchCount, TableStatistics? stats)
     {
         if (matchCount <= FullScanFallbackMinRows) return false;
 
-        var total = table.RowCount;
-        return total > 0 && (Int64)matchCount * 4 > total;
+        var total = stats != null ? stats.RowCount : table.RowCount;
+        return total > 0 && matchCount * 4 > total;
     }
 
     /// <summary>把 WHERE 拆成顶层 AND 的子条件</summary>

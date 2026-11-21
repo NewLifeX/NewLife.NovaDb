@@ -51,6 +51,8 @@ public enum SqlStatementType
     FlushBinlogs,
     /// <summary>RENAME TABLE</summary>
     RenameTable,
+    /// <summary>ANALYZE 统计信息收集</summary>
+    Analyze,
 }
 
 /// <summary>SHOW 命令子类型</summary>
@@ -244,6 +246,16 @@ public class ExplainStatement : SqlStatement
 
     /// <summary>被解释的内部语句</summary>
     public SqlStatement InnerStatement { get; set; } = null!;
+}
+
+/// <summary>ANALYZE 语句（收集表统计信息）</summary>
+public class AnalyzeStatement : SqlStatement
+{
+    /// <summary>语句类型</summary>
+    public override SqlStatementType StatementType => SqlStatementType.Analyze;
+
+    /// <summary>表名。为空表示分析全库所有表</summary>
+    public String? TableName { get; set; }
 }
 
 /// <summary>CREATE INDEX 语句</summary>

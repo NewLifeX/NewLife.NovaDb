@@ -138,6 +138,8 @@ public enum SqlTokenType
     Duplicate,
     /// <summary>EXPLAIN</summary>
     Explain,
+    /// <summary>ANALYZE</summary>
+    Analyze,
     /// <summary>MERGE</summary>
     Merge,
     /// <summary>SHOW</summary>
