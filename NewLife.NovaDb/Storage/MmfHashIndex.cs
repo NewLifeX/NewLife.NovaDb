@@ -104,6 +104,9 @@ internal sealed class MmfHashIndex : IDisposable
     private const Int32 MetaDeadBytes = 56;
     private const Int32 MetaAppliedOffset = 64;
     private const Int32 MetaLiveCount = 72;
+    private const Int32 MetaOldCapacity = 80;
+    private const Int32 MetaOldBucketOffset = 88;
+    private const Int32 MetaMigrateCursor = 96;
     private const Int32 MetaCrc = 152;
 
     private const Int32 KeyNextKey = 0;
@@ -126,6 +129,9 @@ internal sealed class MmfHashIndex : IDisposable
     private const Int32 MinCapacity = 16;
     private const Int32 GrowNumerator = 3;
     private const Int32 GrowDenominator = 4;
+
+    /// <summary>单次写入最多迁移的键节点数，把扩容重链摊到多次提交</summary>
+    private const Int32 DefaultRehashChunkNodes = 32768;
     #endregion
 
     #region 属性
@@ -138,6 +144,7 @@ internal sealed class MmfHashIndex : IDisposable
     private Byte[]? _keyBuffer;
     private Byte[]? _payloadBuffer;
     private Byte[] _nodeBuffer = new Byte[128];
+    private readonly Int32 _rehashChunkNodes;
     private Boolean _disposed;
 
     /// <summary>索引文件路径</summary>
@@ -167,13 +174,14 @@ internal sealed class MmfHashIndex : IDisposable
     #endregion
 
     #region 构造
-    private MmfHashIndex(MmfRegion region, IndexKeyCodec codec, HashMeta meta, Boolean readOnly)
+    private MmfHashIndex(MmfRegion region, IndexKeyCodec codec, HashMeta meta, Boolean readOnly, Int32 rehashChunk = 0)
     {
         _region = region;
         _codec = codec;
         _meta = meta;
         _writePosition = meta.ArenaEnd;
         _readOnly = readOnly;
+        _rehashChunkNodes = rehashChunk > 0 ? rehashChunk : DefaultRehashChunkNodes;
     }
 
     /// <summary>打开或创建哈希索引</summary>
@@ -181,7 +189,7 @@ internal sealed class MmfHashIndex : IDisposable
     /// <param name="codec">键编解码器</param>
     /// <param name="readOnly">是否只读</param>
     /// <returns>索引实例</returns>
-    public static MmfHashIndex Open(String path, IndexKeyCodec codec, Boolean readOnly = false)
+    public static MmfHashIndex Open(String path, IndexKeyCodec codec, Boolean readOnly = false, Int32 rehashChunk = 0)
     {
         if (path == null) throw new ArgumentNullException(nameof(path));
         if (codec == null) throw new ArgumentNullException(nameof(codec));
@@ -200,7 +208,7 @@ internal sealed class MmfHashIndex : IDisposable
 
         try
         {
-            var index = new MmfHashIndex(region, codec, default, readOnly);
+            var index = new MmfHashIndex(region, codec, default, readOnly, rehashChunk);
             if (isNew)
             {
                 index.Initialize();
@@ -334,6 +342,9 @@ internal sealed class MmfHashIndex : IDisposable
         _meta.LiveCount = 0;
         _meta.DeadBytes = 0;
         _meta.AppliedOffset = 0;
+        _meta.OldCapacity = 0;
+        _meta.OldBucketOffset = 0;
+        _meta.MigrateCursor = 0;
         _persistedOffset = 0;
         _meta.ArenaEnd = _meta.BucketOffset + _meta.Capacity * sizeof(Int64);
         _writePosition = _meta.ArenaEnd;
@@ -429,9 +440,11 @@ internal sealed class MmfHashIndex : IDisposable
             }
         }
 
-        // 3) 载重过高时扩容
-        if (_meta.KeyCount >= _meta.Capacity * GrowNumerator / GrowDenominator)
-            Rehash(_meta.Capacity * 2);
+        // 3) 载重过高时开始分块扩容；已在迁移中则继续推进迁移
+        if (_meta.OldCapacity > 0)
+            MigrateBuckets(_rehashChunkNodes);
+        else if (_meta.KeyCount >= _meta.Capacity * GrowNumerator / GrowDenominator)
+            StartRehash(_meta.Capacity * 2);
 
         // 4) 落最终元数据
         if (appliedOffset >= 0) _meta.AppliedOffset = appliedOffset;
@@ -492,7 +505,7 @@ internal sealed class MmfHashIndex : IDisposable
             var batch = new List<MmfHashChange>(4096);
             var total = 0L;
             var lastOffset = -1L;
-            using (var target = Build(tempPath, _codec))
+            using (var target = Build(tempPath, _codec, _rehashChunkNodes))
             {
                 foreach (var (key, payload) in Enumerate())
                 {
@@ -545,26 +558,40 @@ internal sealed class MmfHashIndex : IDisposable
     /// <remarks>每次产出一份键与负载的副本，仅在低频路径使用</remarks>
     public IEnumerable<(Byte[] Key, Byte[] Payload)> Enumerate()
     {
+        // 迁移期间键分布在新旧两张桶表里：新表完整遍历，旧表只遍历尚未迁走的部分
         for (var bucket = 0L; bucket < _meta.Capacity; bucket++)
         {
-            var node = _region.ReadInt64(_meta.BucketOffset + bucket * sizeof(Int64));
+            foreach (var item in EnumerateBucket(_meta.BucketOffset + bucket * sizeof(Int64))) yield return item;
+        }
 
-            while (node != 0)
+        if (_meta.OldCapacity > 0)
+        {
+            for (var bucket = _meta.MigrateCursor; bucket < _meta.OldCapacity; bucket++)
             {
-                var keyLength = _region.ReadInt32(node + KeyLength);
-                var key = _region.ReadBytes(node + KeyHeaderSize, keyLength);
-
-                var value = _region.ReadInt64(node + KeyValueHead);
-                while (value != 0)
-                {
-                    var payload = ReadValue(value);
-                    yield return (key, payload);
-
-                    value = _region.ReadInt64(value + ValueNextValue);
-                }
-
-                node = _region.ReadInt64(node + KeyNextKey);
+                foreach (var item in EnumerateBucket(_meta.OldBucketOffset + bucket * sizeof(Int64))) yield return item;
             }
+        }
+    }
+
+    /// <summary>枚举单个桶链上的全部键值</summary>
+    private IEnumerable<(Byte[] Key, Byte[] Payload)> EnumerateBucket(Int64 slot)
+    {
+        var node = _region.ReadInt64(slot);
+        while (node != 0)
+        {
+            var keyLength = _region.ReadInt32(node + KeyLength);
+            var key = _region.ReadBytes(node + KeyHeaderSize, keyLength);
+
+            var value = _region.ReadInt64(node + KeyValueHead);
+            while (value != 0)
+            {
+                var payload = ReadValue(value);
+                yield return (key, payload);
+
+                value = _region.ReadInt64(value + ValueNextValue);
+            }
+
+            node = _region.ReadInt64(node + KeyNextKey);
         }
     }
 
@@ -572,11 +599,11 @@ internal sealed class MmfHashIndex : IDisposable
     /// <param name="path">文件路径</param>
     /// <param name="codec">键编解码器</param>
     /// <returns>索引实例</returns>
-    public static MmfHashIndex Build(String path, IndexKeyCodec codec)
+    public static MmfHashIndex Build(String path, IndexKeyCodec codec, Int32 rehashChunk = 0)
     {
         if (File.Exists(path)) File.Delete(path);
 
-        return Open(path, codec);
+        return Open(path, codec, rehashChunk: rehashChunk);
     }
 
     #endregion
@@ -594,6 +621,15 @@ internal sealed class MmfHashIndex : IDisposable
         public Int64 DeadBytes;
         public Int64 AppliedOffset;
         public Int64 LiveCount;
+
+        /// <summary>扩容迁移中的旧桶表容量，0 表示没有迁移</summary>
+        public Int64 OldCapacity;
+
+        /// <summary>扩容迁移中的旧桶表偏移</summary>
+        public Int64 OldBucketOffset;
+
+        /// <summary>扩容迁移游标：旧桶 [0, Cursor) 已迁入新桶表</summary>
+        public Int64 MigrateCursor;
     }
 
     /// <summary>初始化新文件</summary>
@@ -628,6 +664,9 @@ internal sealed class MmfHashIndex : IDisposable
             DeadBytes = 0,
             AppliedOffset = 0,
             LiveCount = 0,
+            OldCapacity = 0,
+            OldBucketOffset = 0,
+            MigrateCursor = 0,
         };
         _writePosition = arenaEnd;
         _persistedOffset = 0;
@@ -662,6 +701,12 @@ internal sealed class MmfHashIndex : IDisposable
         if (_meta.Capacity < MinCapacity || (Int64)BucketRegionStart > _meta.BucketOffset || _meta.ArenaEnd < _meta.BucketOffset + _meta.Capacity * sizeof(Int64))
             throw new NovaException(ErrorCode.FileCorrupted, "Hash index metadata is inconsistent: {0}", FilePath);
 
+        // 迁移状态：旧桶表必须完整落在文件内，游标必须在 [0, 旧容量] 区间
+        if (_meta.OldCapacity > 0 &&
+            (_meta.OldBucketOffset < BucketRegionStart || _meta.MigrateCursor < 0 || _meta.MigrateCursor > _meta.OldCapacity ||
+             _meta.ArenaEnd < _meta.OldBucketOffset + _meta.OldCapacity * sizeof(Int64)))
+            throw new NovaException(ErrorCode.FileCorrupted, "Hash index migration state is inconsistent: {0}", FilePath);
+
         _writePosition = _meta.ArenaEnd;
         _persistedOffset = _meta.AppliedOffset;
     }
@@ -694,6 +739,9 @@ internal sealed class MmfHashIndex : IDisposable
             DeadBytes = ReadInt64(buffer, MetaDeadBytes),
             AppliedOffset = ReadInt64(buffer, MetaAppliedOffset),
             LiveCount = (buffer[MetaFlags] & MetaFlagLiveCount) != 0 ? ReadInt64(buffer, MetaLiveCount) : 0,
+            OldCapacity = ReadInt64(buffer, MetaOldCapacity),
+            OldBucketOffset = ReadInt64(buffer, MetaOldBucketOffset),
+            MigrateCursor = ReadInt64(buffer, MetaMigrateCursor),
         };
 
         return true;
@@ -721,6 +769,9 @@ internal sealed class MmfHashIndex : IDisposable
         WriteInt64(buffer, MetaDeadBytes, _meta.DeadBytes);
         WriteInt64(buffer, MetaAppliedOffset, _persistedOffset);
         WriteInt64(buffer, MetaLiveCount, _meta.LiveCount);
+        WriteInt64(buffer, MetaOldCapacity, _meta.OldCapacity);
+        WriteInt64(buffer, MetaOldBucketOffset, _meta.OldBucketOffset);
+        WriteInt64(buffer, MetaMigrateCursor, _meta.MigrateCursor);
         WriteUInt32(buffer, MetaCrc, Crc32.Compute(buffer, 0, MetaCrc));
 
         _region.Write(slot, buffer, 0, buffer.Length);
@@ -800,8 +851,7 @@ internal sealed class MmfHashIndex : IDisposable
     /// <summary>把键节点从桶链摘除并统计死区</summary>
     private void UnlinkKeyNode(Int64 node, Byte[] key, Int64 hash)
     {
-        var bucket = (Int64)((UInt64)hash & (UInt64)(_meta.Capacity - 1));
-        var slot = _meta.BucketOffset + bucket * sizeof(Int64);
+        var slot = GetBucketSlot(hash);
         var current = _region.ReadInt64(slot);
         var previous = 0L;
 
@@ -861,11 +911,30 @@ internal sealed class MmfHashIndex : IDisposable
         _meta.LiveCount--;
     }
 
+    /// <summary>计算键当前所在桶槽的偏移</summary>
+    /// <param name="hash">键哈希</param>
+    /// <remarks>
+    /// 扩容采用分块迁移：旧桶 [0, 游标) 已并入新桶表，其余仍留在旧桶表。
+    /// 每个键只可能在其中一个表里，按「旧桶下标是否小于游标」即可确定该查哪张表。
+    /// </remarks>
+    private Int64 GetBucketSlot(Int64 hash)
+    {
+        if (_meta.OldCapacity > 0)
+        {
+            var oldBucket = (Int64)((UInt64)hash & (UInt64)(_meta.OldCapacity - 1));
+            if (oldBucket >= _meta.MigrateCursor)
+                return _meta.OldBucketOffset + oldBucket * sizeof(Int64);
+        }
+
+        var bucket = (Int64)((UInt64)hash & (UInt64)(_meta.Capacity - 1));
+
+        return _meta.BucketOffset + bucket * sizeof(Int64);
+    }
+
     /// <summary>查找键节点</summary>
     private Int64 FindKey(Byte[] key, Int64 hash)
     {
-        var bucket = (Int64)((UInt64)hash & (UInt64)(_meta.Capacity - 1));
-        var node = _region.ReadInt64(_meta.BucketOffset + bucket * sizeof(Int64));
+        var node = _region.ReadInt64(GetBucketSlot(hash));
 
         while (node != 0)
         {
@@ -956,8 +1025,7 @@ internal sealed class MmfHashIndex : IDisposable
 
         _region.EnsureCapacity(_writePosition);
 
-        var bucket = (Int64)((UInt64)hash & (UInt64)(_meta.Capacity - 1));
-        var slot = _meta.BucketOffset + bucket * sizeof(Int64);
+        var slot = GetBucketSlot(hash);
         var head = _region.ReadInt64(slot);
 
         // 键节点一次写出：逐字段写映射视图在批量装载时是主要开销
@@ -1035,9 +1103,11 @@ internal sealed class MmfHashIndex : IDisposable
     /// <summary>扩容：追加新桶数组并把键节点复制过去</summary>
     /// <param name="newCapacity">新桶数量</param>
     /// <remarks>
-    /// 只复制键节点（值链共享），旧键节点不修改，保证扩容中途崩溃时旧结构仍然可用。
+    /// 扩容分块迁移：先追加并清零新桶表，再把旧桶逐个并入新桶表，每次只迁移有限个节点。
+    /// 迁移期间两张桶表同时有效（旧桶 [0, 游标) 已迁空，其余键仍在旧表），查询按 <see cref="GetBucketSlot"/> 选表；
+    /// 中途崩溃时元数据仍一致，下次写入继续迁移。
     /// </remarks>
-    private void Rehash(Int64 newCapacity)
+    private void StartRehash(Int64 newCapacity)
     {
         var bucketBytes = newCapacity * sizeof(Int64);
         var bucketOffset = Align(_writePosition);
@@ -1045,35 +1115,61 @@ internal sealed class MmfHashIndex : IDisposable
         _meta.ArenaEnd = _writePosition;
 
         _region.EnsureCapacity(_writePosition);
+        ZeroRegion(bucketOffset, bucketBytes);
 
-        var oldCapacity = _meta.Capacity;
-        var oldBucketOffset = _meta.BucketOffset;
+        _meta.OldCapacity = _meta.Capacity;
+        _meta.OldBucketOffset = _meta.BucketOffset;
+        _meta.MigrateCursor = 0;
+        _meta.Capacity = newCapacity;
+        _meta.BucketOffset = bucketOffset;
 
-        // 原地重链：只改每个键节点的 NextKey 指针，不复制节点，避免 O(N) 拷贝与键数组分配。
-        // 新桶表先建在托管数组里、最后整块顺序写回，把每个节点的两次随机映射访问省掉。
-        var heads = new Int64[newCapacity];
-        for (var bucket = 0L; bucket < oldCapacity; bucket++)
+        // 新旧桶表都指向有效数据后才能落盘元数据；此后查询按游标在两表之间切换
+        SaveMeta();
+
+        MigrateBuckets(_rehashChunkNodes);
+    }
+
+    /// <summary>把旧桶表的前若干个桶并入新桶表</summary>
+    /// <param name="nodeBudget">本次最多迁移的键节点数</param>
+    private void MigrateBuckets(Int64 nodeBudget)
+    {
+        if (_meta.OldCapacity <= 0) return;
+
+        var moved = 0L;
+        while (_meta.MigrateCursor < _meta.OldCapacity && moved < nodeBudget)
         {
-            var node = _region.ReadInt64(oldBucketOffset + bucket * sizeof(Int64));
+            var slot = _meta.OldBucketOffset + _meta.MigrateCursor * sizeof(Int64);
+            var node = _region.ReadInt64(slot);
             while (node != 0)
             {
                 var next = _region.ReadInt64(node + KeyNextKey);
                 var hash = _region.ReadInt64(node + KeyHash);
 
-                var newBucket = (Int64)((UInt64)hash & (UInt64)(newCapacity - 1));
-                _region.WriteInt64(node + KeyNextKey, heads[newBucket]);
-                heads[newBucket] = node;
+                var bucket = (Int64)((UInt64)hash & (UInt64)(_meta.Capacity - 1));
+                var newSlot = _meta.BucketOffset + bucket * sizeof(Int64);
+                var head = _region.ReadInt64(newSlot);
 
+                _region.WriteInt64(node + KeyNextKey, head);
+                _region.WriteInt64(newSlot, node);
+
+                moved++;
                 node = next;
             }
+
+            _region.WriteInt64(slot, 0);
+            _meta.MigrateCursor++;
         }
 
-        WriteBucketArray(bucketOffset, heads);
+        if (_meta.MigrateCursor >= _meta.OldCapacity)
+        {
+            // 旧桶表整体变成垃圾，下一次压缩回收
+            _meta.DeadBytes += _meta.OldCapacity * sizeof(Int64);
+            _meta.OldCapacity = 0;
+            _meta.OldBucketOffset = 0;
+            _meta.MigrateCursor = 0;
+        }
 
-        _meta.Capacity = newCapacity;
-        _meta.BucketOffset = bucketOffset;
-        _meta.ArenaEnd = _writePosition;
-        if (oldBucketOffset > 0) _meta.DeadBytes += oldCapacity * sizeof(Int64);
+        SaveMeta();
     }
 
     #endregion
@@ -1157,3 +1253,4 @@ internal sealed class MmfHashIndex : IDisposable
 
     #endregion
 }
+

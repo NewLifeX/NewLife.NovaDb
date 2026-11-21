@@ -51,6 +51,59 @@ public class MmfHashIndexTests : IDisposable
     private static void AssertValues(MmfHashIndex index, Byte[] key, params Int32[] expected)
         => Assert.Equal(expected, ReadValues(index, key));
 
+    [Fact(DisplayName = "增量扩容跨多次写入完成，键值全程可读")]
+    public void IncrementalRehashKeepsAllKeys()
+    {
+        const Int32 count = 5000;
+
+        // 每次写入只迁移 1 个键节点，强制扩容迁移横跨大量批次
+        using (var index = MmfHashIndex.Open(_testFile, _codec, rehashChunk: 1))
+        {
+            for (var i = 1; i <= count; i++)
+            {
+                index.Apply([MmfHashChange.Add(Key(i), Payload(i))]);
+
+                // 迁移过程中随机抽查历史键，必须始终可读
+                if (i % 97 == 0)
+                {
+                    var probe = i * 31 % i + 1;
+                    Assert.True(index.GetFirstValue(Key(probe)) != 0, $"键 {probe} 在写入 {i} 后读不到");
+                }
+            }
+
+            for (var i = 1; i <= count; i++) Assert.True(index.GetFirstValue(Key(i)) != 0, $"键 {i} 读不到");
+            Assert.Equal(count, index.Enumerate().Count());
+        }
+
+        // 重新打开：迁移状态可继续，数据完整
+        using var reopened = MmfHashIndex.Open(_testFile, _codec);
+        for (var i = 1; i <= count; i++) Assert.True(reopened.GetFirstValue(Key(i)) != 0, $"重开后键 {i} 读不到");
+        Assert.Equal(count, reopened.Enumerate().Count());
+    }
+
+    [Fact(DisplayName = "增量扩容期间删除与重插仍正确")]
+    public void IncrementalRehashRemoveDuringMigration()
+    {
+        const Int32 count = 2000;
+
+        using (var index = MmfHashIndex.Open(_testFile, _codec, rehashChunk: 1))
+        {
+            for (var i = 1; i <= count; i++) index.Apply([MmfHashChange.Add(Key(i), Payload(i))]);
+
+            // 迁移可能仍在进行：删除偶数键
+            for (var i = 2; i <= count; i += 2) index.Apply([MmfHashChange.RemoveKey(Key(i))]);
+
+            for (var i = 1; i <= count; i++)
+            {
+                var found = index.GetFirstValue(Key(i)) != 0;
+                Assert.Equal(i % 2 == 1, found);
+            }
+        }
+
+        using var reopened = MmfHashIndex.Open(_testFile, _codec);
+        for (var i = 1; i <= count; i++) Assert.Equal(i % 2 == 1, reopened.GetFirstValue(Key(i)) != 0);
+    }
+
     [Fact(DisplayName = "新建索引可写入并读回")]
     public void AddAndRead()
     {
