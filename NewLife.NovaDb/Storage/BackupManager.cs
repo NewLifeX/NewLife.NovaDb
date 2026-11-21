@@ -161,7 +161,7 @@ public class BackupManager
         foreach (var file in Directory.GetFiles(dbPath))
         {
             var ext = Path.GetExtension(file).ToLowerInvariant();
-            if (ext is ".data" or ".idx" or ".wal" or ".db" or ".log" or ".binlog")
+            if (ext is ".data" or ".idx" or ".idxl" or ".wal" or ".db" or ".log" or ".binlog")
                 result.Add(file);
         }
 

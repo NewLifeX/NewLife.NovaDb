@@ -61,6 +61,11 @@ public class EmbeddedIntegrationTests : IDisposable
     /// <param name="indexName">索引名</param>
     private String GetSecondaryIdxFilePath(String tableName, String indexName) => Path.Combine(_dbPath, $"{tableName}_{indexName}.idx");
 
+    /// <summary>获取表二级索引的 .idxl 增量文件路径</summary>
+    /// <param name="tableName">表名</param>
+    /// <param name="indexName">索引名</param>
+    private String GetSecondaryIdxDeltaFilePath(String tableName, String indexName) => Path.Combine(_dbPath, $"{tableName}_{indexName}.idxl");
+
     /// <summary>获取表的 .wal 文件路径</summary>
     private String GetWalFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.wal");
 
@@ -520,9 +525,13 @@ public class EmbeddedIntegrationTests : IDisposable
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(3, rows);
 
-        // 插入后索引文件应增长
+        // 插入后基线不变，变更追加到增量文件
         var idxSizeAfterInsert = new FileInfo(idxFile).Length;
-        Assert.True(idxSizeAfterInsert > idxSizeEmpty, "插入数据后索引 .idx 文件大小应增长");
+        Assert.Equal(idxSizeEmpty, idxSizeAfterInsert);
+
+        var deltaFile = GetSecondaryIdxDeltaFilePath("emb_dml_idx_ins", "idx_ins_name");
+        Assert.True(File.Exists(deltaFile), "插入数据后应产生二级索引增量文件");
+        Assert.True(new FileInfo(deltaFile).Length > FileHeader.HeaderSize, "增量文件应包含记录");
 
         // 重新读取文件头，确认格式正确
         var idxHeaderAfter = FileHeader.Read(idxFile);
@@ -540,7 +549,7 @@ public class EmbeddedIntegrationTests : IDisposable
         Assert.Equal("Charlie", reader.GetString(0));
     }
 
-    [Fact(DisplayName = "嵌入式-带索引表删除数据索引收缩")]
+    [Fact(DisplayName = "嵌入式-带索引表删除数据后增量记录正确")]
     public void IndexedTableDeleteShrinks()
     {
         using var conn = CreateConnection("Full");
@@ -553,28 +562,31 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.ExecuteNonQuery();
 
         var idxFile = GetSecondaryIdxFilePath("emb_dml_idx_del", "idx_del_name");
+        var deltaFile = GetSecondaryIdxDeltaFilePath("emb_dml_idx_del", "idx_del_name");
 
         // 插入 2 行
         cmd.CommandText = "INSERT INTO emb_dml_idx_del VALUES (1, 'Alice', 1000), (2, 'Bob', 2000)";
         cmd.ExecuteNonQuery();
         var idxSizeAfter2 = new FileInfo(idxFile).Length;
+        var deltaSizeAfter2 = new FileInfo(deltaFile).Length;
 
-        // 再插入 2 行，索引文件应增长
+        // 再插入 2 行，增量文件应增长，基线保持不变
         cmd.CommandText = "INSERT INTO emb_dml_idx_del VALUES (3, 'Charlie', 3000), (4, 'David', 4000)";
         cmd.ExecuteNonQuery();
-        var idxSizeAfter4 = new FileInfo(idxFile).Length;
-        Assert.True(idxSizeAfter4 > idxSizeAfter2, "再次插入数据后索引文件应继续增长");
+        var deltaSizeAfter4 = new FileInfo(deltaFile).Length;
+        Assert.Equal(idxSizeAfter2, new FileInfo(idxFile).Length);
+        Assert.True(deltaSizeAfter4 > deltaSizeAfter2, "再次插入数据后增量文件应继续增长");
 
         // 查询验证数据完整
         cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_idx_del";
         Assert.Equal(4, Convert.ToInt32(cmd.ExecuteScalar()));
 
-        // 删除 2 行，索引文件应收缩
+        // 删除 2 行，增量继续记录删除动作
         cmd.CommandText = "DELETE FROM emb_dml_idx_del WHERE id >= 3";
         Assert.Equal(2, cmd.ExecuteNonQuery());
 
-        var idxSizeAfterDelete = new FileInfo(idxFile).Length;
-        Assert.True(idxSizeAfterDelete < idxSizeAfter4, "删除数据后索引文件大小应减少");
+        var deltaSizeAfterDelete = new FileInfo(deltaFile).Length;
+        Assert.True(deltaSizeAfterDelete > deltaSizeAfter4, "删除数据后增量文件应继续增长");
 
         // 验证数据一致性
         cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_idx_del";

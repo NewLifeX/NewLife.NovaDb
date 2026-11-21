@@ -195,14 +195,12 @@ public partial class NovaTable : IDisposable
             // 维护二级索引
             if (_secondaryIndexes.Count > 0)
             {
-                InsertIntoSecondaryIndexes(row, comparableKey);
+                var indexDeltas = new List<SecondaryIndexDeltaEntry>();
+                InsertIntoSecondaryIndexes(row, comparableKey, indexDeltas);
 
-                // 注册提交动作：事务提交时持久化索引文件
-                foreach (var idxName in _secondaryIndexes.Keys)
-                {
-                    var name = idxName;
-                    tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
-                }
+                // 注册提交动作：事务提交时只把增量追加到 .idxl，不重写整份基线
+                if (indexDeltas.Count > 0)
+                    tx.RegisterCommitAction(() => CommitSecondaryIndexDeltas(indexDeltas));
             }
 
             // 维护全文索引（内存驻留，P2）：提交时才更新，回滚时保持一致
@@ -339,11 +337,15 @@ public partial class NovaTable : IDisposable
 
             // 更新二级索引：先移除旧值，后面再插入新值
             Object?[]? oldRow = null;
+            List<SecondaryIndexDeltaEntry>? indexDeltas = null;
             if (_secondaryIndexes.Count > 0 || _fullTextIndexes.Count > 0)
             {
                 oldRow = DeserializeRow(visibleVersion.Payload!);
                 if (_secondaryIndexes.Count > 0)
-                    RemoveFromSecondaryIndexes(oldRow, comparableKey);
+                {
+                    indexDeltas = [];
+                    RemoveFromSecondaryIndexes(oldRow, comparableKey, indexDeltas);
+                }
             }
 
             // 标记旧版本为已删除
@@ -358,14 +360,12 @@ public partial class NovaTable : IDisposable
             // 维护二级索引：插入新值
             if (_secondaryIndexes.Count > 0)
             {
-                InsertIntoSecondaryIndexes(newRow, comparableKey);
+                if (indexDeltas == null) indexDeltas = [];
+                InsertIntoSecondaryIndexes(newRow, comparableKey, indexDeltas);
 
-                // 注册提交动作：事务提交时持久化索引文件
-                foreach (var idxName in _secondaryIndexes.Keys)
-                {
-                    var name = idxName;
-                    tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
-                }
+                // 注册提交动作：事务提交时把增量追加到 .idxl
+                if (indexDeltas.Count > 0)
+                    tx.RegisterCommitAction(() => CommitSecondaryIndexDeltas(indexDeltas));
             }
 
             // 维护全文索引（内存驻留，P2）：提交时先移除旧文档再插入新文档
@@ -470,14 +470,12 @@ public partial class NovaTable : IDisposable
             if (_secondaryIndexes.Count > 0)
             {
                 deletedRow = DeserializeRow(visibleVersion.Payload!);
-                RemoveFromSecondaryIndexes(deletedRow, comparableKey);
+                var indexDeltas = new List<SecondaryIndexDeltaEntry>();
+                RemoveFromSecondaryIndexes(deletedRow, comparableKey, indexDeltas);
 
-                // 注册提交动作：事务提交时持久化索引文件
-                foreach (var idxName in _secondaryIndexes.Keys)
-                {
-                    var name = idxName;
-                    tx.RegisterCommitAction(() => PersistSecondaryIndex(name));
-                }
+                // 注册提交动作：事务提交时把增量追加到 .idxl
+                if (indexDeltas.Count > 0)
+                    tx.RegisterCommitAction(() => CommitSecondaryIndexDeltas(indexDeltas));
             }
 
             // 标记为已删除
@@ -631,9 +629,15 @@ public partial class NovaTable : IDisposable
             _hotIndexManager.Clear();
             TruncateRowLog();
 
-            // 清空所有二级索引
-            foreach (var idx in _secondaryIndexes.Values)
-                idx.Clear();
+            // 清空所有二级索引，并删除基线/增量文件；行日志已清空，重启后从空表重建不会残留旧条目
+            var indexNames = new List<String>(_secondaryIndexes.Keys);
+            foreach (var name in indexNames)
+            {
+                _secondaryIndexes[name].Clear();
+                DeleteSecondaryIndexFile(name);
+                ResetSecondaryIndexDelta(name);
+                _secondaryIndexBaselineCounts[name] = 0;
+            }
         }
     }
 
@@ -692,9 +696,9 @@ public partial class NovaTable : IDisposable
                 }
             }
 
-            // 注册提交动作：事务提交时持久化索引文件
+            // 注册提交动作：事务提交时全量重写基线（新建索引时基线就是全量数据，顺带清空增量）
             var persistName = indexDef.IndexName;
-            tx.RegisterCommitAction(() => PersistSecondaryIndex(persistName));
+            tx.RegisterCommitAction(() => CompactSecondaryIndex(persistName));
         }
     }
 
@@ -707,8 +711,10 @@ public partial class NovaTable : IDisposable
             _secondaryIndexes.Remove(indexName);
         }
 
-        // 删除索引文件
+        // 删除索引文件与增量日志
         DeleteSecondaryIndexFile(indexName);
+        ResetSecondaryIndexDelta(indexName);
+        _secondaryIndexBaselineCounts.Remove(indexName);
     }
 
     /// <summary>通过二级索引查询匹配的主键列表</summary>
@@ -875,6 +881,16 @@ public partial class NovaTable : IDisposable
         return colOrdinals;
     }
 
+    /// <summary>获取索引键的编码类型（单列索引用列类型，组合索引编码为字符串）</summary>
+    /// <param name="indexDef">索引定义</param>
+    /// <returns>索引键数据类型</returns>
+    private DataType GetSecondaryIndexKeyType(IndexDefinition indexDef)
+    {
+        var colOrdinals = GetColumnOrdinals(indexDef);
+
+        return colOrdinals.Length == 1 ? _schema.Columns[colOrdinals[0]].DataType : DataType.String;
+    }
+
     /// <summary>构建索引键</summary>
     private static ComparableObject BuildIndexKey(Object?[] row, Int32[] colOrdinals)
     {
@@ -924,8 +940,11 @@ public partial class NovaTable : IDisposable
     }
 
     /// <summary>向所有二级索引插入条目</summary>
+    /// <param name="row">行数据</param>
+    /// <param name="pk">主键</param>
+    /// <param name="deltas">增量收集器，为空表示只维护内存索引（回滚路径）</param>
     /// <remarks>唯一性冲突必须在此前通过 <see cref="CheckUniqueIndexConflicts"/> 预检查，本方法不再抛出唯一性异常</remarks>
-    private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk)
+    private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null)
     {
         foreach (var kvp in _secondaryIndexes)
         {
@@ -947,11 +966,15 @@ public partial class NovaTable : IDisposable
             }
 
             pkList!.Add(pk);
+            deltas?.Add(new SecondaryIndexDeltaEntry(kvp.Key, true, indexKey.Value, pk.Value));
         }
     }
 
     /// <summary>从所有二级索引删除条目</summary>
-    private void RemoveFromSecondaryIndexes(Object?[] row, ComparableObject pk)
+    /// <param name="row">行数据</param>
+    /// <param name="pk">主键</param>
+    /// <param name="deltas">增量收集器，为空表示只维护内存索引（回滚路径）</param>
+    private void RemoveFromSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null)
     {
         foreach (var kvp in _secondaryIndexes)
         {
@@ -979,6 +1002,8 @@ public partial class NovaTable : IDisposable
 
                 if (pkList.Count == 0)
                     idx.Remove(indexKey);
+
+                deltas?.Add(new SecondaryIndexDeltaEntry(kvp.Key, false, indexKey.Value, pk.Value));
             }
         }
     }
@@ -996,15 +1021,29 @@ public partial class NovaTable : IDisposable
     /// <summary>比较两个索引键</summary>
     private static Int32 CompareKeys(ComparableObject a, ComparableObject b) => a.CompareTo(b);
 
-    /// <summary>恢复二级索引（优先 .idx 文件，缺失或损坏时全表重建）</summary>
+    /// <summary>恢复二级索引（优先 .idx 基线 + .idxl 增量回放，缺失或损坏时全表重建）</summary>
     /// <remarks>引擎启动加载已有表时调用，保证二级索引跨连接/重启可用</remarks>
     private void RestoreSecondaryIndexes()
     {
         foreach (var indexDef in _schema.Indexes)
         {
-            var idx = TryLoadSecondaryIndexFile(indexDef) ?? RebuildSecondaryIndex(indexDef);
+            var idx = TryLoadSecondaryIndexFile(indexDef);
             if (idx != null)
-                _secondaryIndexes[indexDef.IndexName] = idx;
+            {
+                _secondaryIndexBaselineCounts[indexDef.IndexName] = idx.Count;
+
+                // 基线之后还有增量时顺序回放补齐；增量损坏（含尾部截断）返回 -1，回退全表重建
+                if (ReplaySecondaryIndexDelta(indexDef, idx) >= 0)
+                {
+                    _secondaryIndexes[indexDef.IndexName] = idx;
+                    continue;
+                }
+            }
+
+            // 基线缺失、版本不符或增量损坏：以行日志为准重建，并丢弃已不可信的增量文件
+            _secondaryIndexes[indexDef.IndexName] = RebuildSecondaryIndex(indexDef);
+            ResetSecondaryIndexDelta(indexDef.IndexName);
+            _secondaryIndexBaselineCounts[indexDef.IndexName] = _secondaryIndexes[indexDef.IndexName].Count;
         }
     }
 
@@ -1017,10 +1056,7 @@ public partial class NovaTable : IDisposable
         if (!File.Exists(filePath)) return null;
 
         var pkCol = _schema.GetPrimaryKeyColumn()!;
-        var colOrdinals = GetColumnOrdinals(indexDef);
-        var indexKeyType = colOrdinals.Length == 1
-            ? _schema.Columns[colOrdinals[0]].DataType
-            : DataType.String;
+        var indexKeyType = GetSecondaryIndexKeyType(indexDef);
 
         try
         {
@@ -1035,10 +1071,13 @@ public partial class NovaTable : IDisposable
             var count = reader.ReadInt32();
             var idx = new SkipList<ComparableObject, List<ComparableObject>>();
 
+            // SpanReader.Position 相对构造时指定的起始偏移，解码时需加回文件头长度
+            const Int32 baseOffset = FileHeader.HeaderSize;
+
             for (var i = 0; i < count; i++)
             {
                 var keyLen = reader.ReadInt32();
-                var key = _codec.Decode(bytes, reader.Position, indexKeyType);
+                var key = _codec.Decode(bytes, baseOffset + reader.Position, indexKeyType);
                 reader.Advance(keyLen);
 
                 var pkCount = reader.ReadInt32();
@@ -1046,7 +1085,7 @@ public partial class NovaTable : IDisposable
                 for (var j = 0; j < pkCount; j++)
                 {
                     var pkLen = reader.ReadInt32();
-                    var pk = _codec.Decode(bytes, reader.Position, pkCol.DataType);
+                    var pk = _codec.Decode(bytes, baseOffset + reader.Position, pkCol.DataType);
                     reader.Advance(pkLen);
                     pkList.Add(new ComparableObject(pk!));
                 }
@@ -1114,13 +1153,10 @@ public partial class NovaTable : IDisposable
             if (!_secondaryIndexes.TryGetValue(indexName, out var idx)) return;
 
             var filePath = _fileManager.GetSecondaryIndexFilePath(indexName);
-            var colOrdinals = GetColumnOrdinals(idxDef);
             var pkCol = _schema.GetPrimaryKeyColumn()!;
 
-            // 确定索引键数据类型（单列索引用列类型，组合索引编码为字符串）
-            var indexKeyType = colOrdinals.Length == 1
-                ? _schema.Columns[colOrdinals[0]].DataType
-                : DataType.String;
+            // 索引键数据类型（单列索引用列类型，组合索引编码为字符串）
+            var indexKeyType = GetSecondaryIndexKeyType(idxDef);
 
             using var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.Read);
 
@@ -1236,9 +1272,19 @@ public partial class NovaTable : IDisposable
         if (_disposed)
             return;
 
-        _walWriter?.Dispose();
-        _dataPager?.Dispose();
-        _rowLogStream?.Dispose();
-        _disposed = true;
+        lock (_lock)
+        {
+            if (_disposed)
+                return;
+
+            // 关闭前把二级索引增量合并进基线，避免下次启动回放；失败时保留增量文件，下次启动仍可回放或重建
+            try { CompactSecondaryIndexesOnClose(); }
+            catch { }
+
+            _walWriter?.Dispose();
+            _dataPager?.Dispose();
+            _rowLogStream?.Dispose();
+            _disposed = true;
+        }
     }
 }

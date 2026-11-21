@@ -346,18 +346,18 @@ partial class SqlEngine
         SchemaPersister.Save(_dbPath, schema);
     }
 
-    /// <summary>判断文件名的尾部是否为表文件形态（data/idx/wal/rlog/schema，含分片与二级索引）</summary>
+    /// <summary>判断文件名的尾部是否为表文件形态（data/idx/idxl/wal/rlog/schema，含分片与二级索引）</summary>
     /// <param name="tail">去掉“表名”和分隔符后的尾部</param>
     /// <returns>是否属于表文件</returns>
     private static Boolean IsTableFileTail(String tail)
     {
-        if (tail is "data" or "idx" or "wal" or "rlog" or "schema") return true;
+        if (tail is "data" or "idx" or "idxl" or "wal" or "rlog" or "schema") return true;
 
-        // 分片或二级索引：{分片号|索引名}.{data|idx|wal}
+        // 分片或二级索引：{分片号|索引名}.{data|idx|idxl|wal}
         var dot = tail.LastIndexOf('.');
         if (dot <= 0) return false;
 
-        return tail.Substring(dot + 1) is "data" or "idx" or "wal";
+        return tail.Substring(dot + 1) is "data" or "idx" or "idxl" or "wal";
     }
 
     #endregion

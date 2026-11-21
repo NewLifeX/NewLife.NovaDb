@@ -115,6 +115,20 @@ public class TableFileManagerTests : IDisposable
         Assert.Throws<ArgumentException>(() => manager.GetSecondaryIndexFilePath("  "));
     }
 
+    [Fact(DisplayName = "测试二级索引增量文件路径生成")]
+    public void TestGetSecondaryIndexDeltaFilePath()
+    {
+        var manager = new TableFileManager(_testPath, "Products", _options);
+
+        var path1 = manager.GetSecondaryIndexDeltaFilePath("idx_name");
+        Assert.Equal(Path.Combine(_testPath, "Products_idx_name.idxl"), path1);
+
+        var path2 = manager.GetSecondaryIndexDeltaFilePath("idx_category", 2);
+        Assert.Equal(Path.Combine(_testPath, "Products_2_idx_category.idxl"), path2);
+
+        Assert.Throws<ArgumentException>(() => manager.GetSecondaryIndexDeltaFilePath(" "));
+    }
+
     [Fact(DisplayName = "测试 WAL 文件路径生成")]
     public void TestGetWalFilePath()
     {
@@ -226,6 +240,7 @@ public class TableFileManagerTests : IDisposable
         File.WriteAllText(manager.GetDataFilePath(0), "");
         File.WriteAllText(manager.GetPrimaryIndexFilePath(), "");
         File.WriteAllText(manager.GetSecondaryIndexFilePath("idx_test"), "");
+        File.WriteAllText(manager.GetSecondaryIndexDeltaFilePath("idx_test"), "");
         File.WriteAllText(manager.GetWalFilePath(), "");
         File.WriteAllText(manager.GetWalFilePath(0), "");
 
@@ -235,6 +250,7 @@ public class TableFileManagerTests : IDisposable
         Assert.False(File.Exists(manager.GetDataFilePath(0)));
         Assert.False(File.Exists(manager.GetPrimaryIndexFilePath()));
         Assert.False(File.Exists(manager.GetSecondaryIndexFilePath("idx_test")));
+        Assert.False(File.Exists(manager.GetSecondaryIndexDeltaFilePath("idx_test")));
         Assert.False(File.Exists(manager.GetWalFilePath()));
         Assert.False(File.Exists(manager.GetWalFilePath(0)));
     }

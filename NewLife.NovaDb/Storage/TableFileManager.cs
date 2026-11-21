@@ -8,6 +8,7 @@ namespace NewLife.NovaDb.Storage;
 /// 负责生成表相关文件的路径，基于新的平铺文件布局：
 /// - 数据文件：{TableName}.data 或 {TableName}_{ShardId}.data
 /// - 索引文件：{TableName}.idx（主键）或 {TableName}_{IndexName}.idx（二级索引）
+/// - 二级索引增量日志：{TableName}_{IndexName}.idxl（基线 .idx 之后的 Put/Delete 追加记录）
 /// - WAL 文件：{TableName}.wal 或 {TableName}_{ShardId}.wal
 /// 所有文件平铺在数据库目录下，无需为每表创建独立目录
 /// </remarks>
@@ -73,6 +74,23 @@ public class TableFileManager
         var fileName = shardId.HasValue
             ? $"{_tableName}_{shardId.Value}_{indexName}.idx"
             : $"{_tableName}_{indexName}.idx";
+
+        return Path.Combine(_databasePath, fileName);
+    }
+
+    /// <summary>获取二级索引增量日志文件路径</summary>
+    /// <remarks>增量日志只追加本次提交产生的 Put/Delete，避免每次提交重写整份 .idx 基线</remarks>
+    /// <param name="indexName">索引名称</param>
+    /// <param name="shardId">分片 ID（可选，默认 null 表示无分片）</param>
+    /// <returns>二级索引增量日志文件完整路径</returns>
+    public String GetSecondaryIndexDeltaFilePath(String indexName, Int32? shardId = null)
+    {
+        if (String.IsNullOrWhiteSpace(indexName))
+            throw new ArgumentException("Index name cannot be empty", nameof(indexName));
+
+        var fileName = shardId.HasValue
+            ? $"{_tableName}_{shardId.Value}_{indexName}.idxl"
+            : $"{_tableName}_{indexName}.idxl";
 
         return Path.Combine(_databasePath, fileName);
     }
@@ -177,6 +195,13 @@ public class TableFileManager
         // 删除索引文件（主键和二级索引）
         var indexPattern = $"{_tableName}*.idx";
         foreach (var file in Directory.GetFiles(_databasePath, indexPattern))
+        {
+            File.Delete(file);
+        }
+
+        // 删除二级索引增量日志。.idx 的匹配模式在部分平台上不会覆盖 .idxl，必须单独清理
+        var indexDeltaPattern = $"{_tableName}*.idxl";
+        foreach (var file in Directory.GetFiles(_databasePath, indexDeltaPattern))
         {
             File.Delete(file);
         }
