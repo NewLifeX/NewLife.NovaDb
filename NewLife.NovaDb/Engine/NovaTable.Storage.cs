@@ -87,6 +87,8 @@ public sealed class TableFileState
 public partial class NovaTable
 {
     private Int64 _lastStorageCheck;
+    private Int64 _lastIndexFlush;
+    private Boolean _indexDirty;
     private Int64 _rowLogObservedLength;
     private Int64 _externalFileLossCount;
     private readonly HashSet<String> _degradedIndexes = new(StringComparer.OrdinalIgnoreCase);
@@ -154,7 +156,31 @@ public partial class NovaTable
                 changed = true;
             }
 
+            // 读写操作都可能触发：停写后也要在间隔内把索引刷一次盘，避免崩溃后重建过长的尾部
+            FlushIndexesIfDue();
+
             return changed;
+        }
+    }
+
+    /// <summary>按配置间隔把索引刷到磁盘；间隔为 0 时每次提交都刷</summary>
+    /// <remarks>索引是行日志的派生数据，停写过久才需要落盘；崩溃时按行日志重建落后的尾部</remarks>
+    private void FlushIndexesIfDue()
+    {
+        var interval = _options.IndexFlushIntervalMs;
+        var now = Runtime.TickCount64;
+        if (interval > 0 && now - _lastIndexFlush < interval) return;
+
+        lock (_lock)
+        {
+            if (!_indexDirty) return;
+
+            _indexDirty = false;
+            _lastIndexFlush = now;
+
+            _primaryIndex.FlushMeta();
+
+            foreach (var idx in _secondaryIndexes.Values) idx.FlushMeta();
         }
     }
 

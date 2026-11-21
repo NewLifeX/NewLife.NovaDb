@@ -62,6 +62,9 @@ internal sealed class NovaPrimaryIndex : IDisposable
     /// <summary>已提交主键数量</summary>
     public Int64 KeyCount => _hash.KeyCount;
 
+    /// <summary>已提交存活行数（未被删除标记的版本数）</summary>
+    public Int64 LiveCount => _hash.LiveCount;
+
     /// <summary>主键数据类型</summary>
     public DataType PrimaryKeyType => _codec.Types[0];
 
@@ -201,6 +204,25 @@ internal sealed class NovaPrimaryIndex : IDisposable
         });
     }
 
+    /// <summary>扫描已提交的存活版本，只回调载荷位置，不解码主键与构造版本对象</summary>
+    /// <param name="from">下界主键值，null 表示不限</param>
+    /// <param name="includeFrom">是否包含下界</param>
+    /// <param name="to">上界主键值，null 表示不限</param>
+    /// <param name="includeTo">是否包含上界</param>
+    /// <param name="descending">是否降序</param>
+    /// <param name="maxRows">最大输出条数，0 表示不限</param>
+    /// <param name="onRow">回调（载荷偏移，载荷长度），返回 false 提前结束</param>
+    /// <remarks>全表扫描与范围查询不需要主键值时走本方法，省掉每行的键解码与版本对象分配</remarks>
+    public void ScanOffsets(Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Boolean descending, Int32 maxRows, Func<Int64, Int32, Boolean> onRow)
+    {
+        if (onRow == null) throw new ArgumentNullException(nameof(onRow));
+
+        var fromKey = from == null ? null : EncodeKey(from);
+        var toKey = to == null ? null : EncodeKey(to);
+
+        _ordered.Scan(fromKey, includeFrom, toKey, includeTo, descending, maxRows, entry => onRow(entry.DataOffset, entry.DataLength));
+    }
+
     /// <summary>批量应用已提交变更：写哈希索引、有序段，并给被替换版本打删除标记</summary>
     /// <param name="commits">提交项</param>
     /// <param name="appliedOffset">应用后的 rlog 偏移</param>
@@ -220,8 +242,8 @@ internal sealed class NovaPrimaryIndex : IDisposable
 
             if (commit.Replace != null && commit.Replace.IndexValueOffset > 0)
             {
-                // 旧版本打删除标记：哈希记录原地补丁，有序段追加墓碑
-                _hash.WriteValue(commit.Replace.IndexValueOffset, 8, EncodeUInt64(commit.TxId), 0, 8);
+                // 旧版本打删除标记：哈希记录原地补丁并递减存活计数，有序段追加墓碑
+                _hash.MarkValueDeleted(commit.Replace.IndexValueOffset, commit.TxId, 8);
                 orderedEntries.Add(new OrderedIndexEntry
                 {
                     Key = key,

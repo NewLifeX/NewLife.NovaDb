@@ -55,6 +55,18 @@ partial class SqlEngine
         var indexOnlyCount = TryExecuteIndexOnlyCount(stmt, plan, table, tx, schema);
         if (indexOnlyCount != null) return indexOnlyCount;
 
+        // 1.2 无条件的 COUNT(*)：直接数主键索引的存活条目，不反序列化整行
+        if (stmt.Where == null && IsIndexOnlyCount(stmt) && table.TryCountRows(tx, out var totalRows))
+        {
+            var fastCount = new SqlResult
+            {
+                ColumnNames = BuildColumnNames(stmt, schema),
+            };
+            // 与聚合路径保持一致：COUNT(*) 以 Int32 返回
+            fastCount.Rows.Add([(Int32)totalRows]);
+            return fastCount;
+        }
+
         // LIMIT 下推：无排序/分组/聚合且条件被访问路径完整覆盖时，只需取 offset+limit 行
         // 顺序扫描（主键/索引顺序）还能保证“边扫边停”的结果与排序后切片一致
         var maxRows = 0;

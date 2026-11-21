@@ -87,8 +87,8 @@ internal sealed class MmfOrderedIndex : IDisposable
     private const Int32 EntryHeaderSize = 44;
     private const Int32 EntryFlagHasPrefix = 1;
 
-    private const Int32 DefaultFlushEntries = 4096;
-    private const Int32 MaxRuns = 8;
+    private const Int32 DefaultFlushEntries = 16384;
+    private const Int32 MaxRuns = 16;
     #endregion
 
     #region 属性
@@ -219,22 +219,15 @@ internal sealed class MmfOrderedIndex : IDisposable
             Flush();
     }
 
-    /// <summary>设置已应用偏移（写缓冲非空时随下次落 run 生效）</summary>
+    /// <summary>设置已应用偏移（只推进内存值，随下次落 run 或关闭时一起持久化）</summary>
     /// <param name="appliedOffset">已应用的 rlog 偏移</param>
     public void SetAppliedOffset(Int64 appliedOffset)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(MmfOrderedIndex));
         if (_readOnly) return;
 
-        if (_buffer.Count > 0)
-        {
-            _pendingOffset = appliedOffset;
-            return;
-        }
-
+        _pendingOffset = appliedOffset;
         _meta.AppliedOffset = appliedOffset;
-        SaveMeta();
-        _region.Flush();
     }
 
     /// <summary>把写缓冲刷成一个 run</summary>
@@ -245,12 +238,8 @@ internal sealed class MmfOrderedIndex : IDisposable
 
         if (_buffer.Count == 0)
         {
-            if (_pendingOffset >= 0 && _pendingOffset != _meta.AppliedOffset)
-            {
-                _meta.AppliedOffset = _pendingOffset;
-                SaveMeta();
-                _region.Flush();
-            }
+            SaveMeta();
+            _region.Flush();
             return;
         }
 
@@ -475,6 +464,17 @@ internal sealed class MmfOrderedIndex : IDisposable
                 }
             }
 
+            if (hasChosen)
+            {
+                // 越过扫描方向的终点立即结束：范围扫描只走命中区间，不再遍历剩余数据
+                if (!descending)
+                {
+                    if (toKey != null && IsPastEnd(chosen, toKey, toPrefix, toHasPrefix, includeTo, false)) return;
+                }
+                else if (fromKey != null && IsPastEnd(chosen, fromKey, fromPrefix, fromHasPrefix, includeFrom, true))
+                    return;
+            }
+
             if (hasChosen && InRange(chosen, fromKey, fromPrefix, fromHasPrefix, toKey, toPrefix, toHasPrefix, includeFrom, includeTo))
             {
                 if (!visitor(chosen)) return;
@@ -531,6 +531,21 @@ internal sealed class MmfOrderedIndex : IDisposable
         }
 
         return true;
+    }
+
+    /// <summary>判断条目是否已越过扫描终点</summary>
+    /// <param name="entry">当前条目</param>
+    /// <param name="boundKey">边界键</param>
+    /// <param name="boundPrefix">边界键的可比较前缀</param>
+    /// <param name="boundHasPrefix">边界键是否有可比较前缀</param>
+    /// <param name="inclusive">边界是否包含</param>
+    /// <param name="descending">是否为降序扫描</param>
+    /// <returns>已越过终点返回 true</returns>
+    private Boolean IsPastEnd(in OrderedIndexEntry entry, Byte[] boundKey, Int64 boundPrefix, Boolean boundHasPrefix, Boolean inclusive, Boolean descending)
+    {
+        var cmp = _codec.Compare(entry.Key, 0, entry.Key.Length, entry.HasPrefix, entry.SortPrefix, boundKey, 0, boundKey.Length, boundHasPrefix, boundPrefix);
+
+        return descending ? cmp < 0 || (cmp == 0 && !inclusive) : cmp > 0 || (cmp == 0 && !inclusive);
     }
 
     /// <summary>获取探测键的可比较前缀</summary>

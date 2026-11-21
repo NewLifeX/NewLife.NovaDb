@@ -30,6 +30,13 @@ public class DbOptions
     /// <summary>页缓存大小（页数），默认 1024 页</summary>
     public Int32 PageCacheSize { get; set; } = 1024;
 
+    /// <summary>索引刷盘间隔（毫秒），默认 1000 毫秒；0 表示每次提交都刷盘</summary>
+    /// <remarks>
+    /// 索引是行日志的派生数据，崩溃时可按行日志重建，因此无需每次提交都强制刷盘。
+    /// 间隔越大写入吞吐越高，崩溃后需要重建的尾部越长。
+    /// </remarks>
+    public Int32 IndexFlushIntervalMs { get; set; } = 1000;
+
     /// <summary>表文件巡检间隔（毫秒），默认 200 毫秒；0 表示每次操作都检查</summary>
     /// <remarks>运维在运行期删除或移走表的索引/数据文件后，引擎按此间隔感知并降级</remarks>
     public Int32 FileWatchIntervalMs { get; set; } = 200;

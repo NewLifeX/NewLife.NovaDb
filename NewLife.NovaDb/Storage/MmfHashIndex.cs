@@ -78,7 +78,12 @@ internal sealed class MmfHashIndex : IDisposable
 {
     #region 常量
     private const UInt32 Magic = 0x58494831;
-    private const Byte FileVersion = 1;
+
+    // 版本 2 起元数据新增存活值计数，旧索引文件启动时按行日志重建一次
+    private const Byte FileVersion = 2;
+
+    /// <summary>元数据标志：存在存活值计数</summary>
+    private const Byte MetaFlagLiveCount = 2;
 
     private const Int32 MetaSlot0 = FileHeader.HeaderSize;
     private const Int32 MetaSlot1 = MetaSlot0 + MetaSize;
@@ -98,6 +103,7 @@ internal sealed class MmfHashIndex : IDisposable
     private const Int32 MetaValueCount = 48;
     private const Int32 MetaDeadBytes = 56;
     private const Int32 MetaAppliedOffset = 64;
+    private const Int32 MetaLiveCount = 72;
     private const Int32 MetaCrc = 152;
 
     private const Int32 KeyNextKey = 0;
@@ -113,6 +119,9 @@ internal sealed class MmfHashIndex : IDisposable
     private const Int32 ValueFlags = 12;
     private const Int32 ValueHeaderSize = 16;
 
+    /// <summary>值标志：已被标记删除（主键索引的旧版本）</summary>
+    private const Int32 ValueFlagDeleted = 1;
+
     private const Int32 DefaultCapacity = 1024;
     private const Int32 MinCapacity = 16;
     private const Int32 GrowNumerator = 3;
@@ -125,6 +134,7 @@ internal sealed class MmfHashIndex : IDisposable
     private MmfRegion _region;
     private HashMeta _meta;
     private Int64 _writePosition;
+    private Int64 _persistedOffset;
     private Byte[]? _keyBuffer;
     private Byte[]? _payloadBuffer;
     private Boolean _disposed;
@@ -140,6 +150,9 @@ internal sealed class MmfHashIndex : IDisposable
 
     /// <summary>已应用的 rlog 偏移</summary>
     public Int64 AppliedOffset => _meta.AppliedOffset;
+
+    /// <summary>存活值数量（未被标记删除的值）</summary>
+    public Int64 LiveCount => _meta.LiveCount;
 
     /// <summary>死字节数</summary>
     public Int64 DeadBytes => _meta.DeadBytes;
@@ -317,8 +330,10 @@ internal sealed class MmfHashIndex : IDisposable
 
         _meta.KeyCount = 0;
         _meta.ValueCount = 0;
+        _meta.LiveCount = 0;
         _meta.DeadBytes = 0;
         _meta.AppliedOffset = 0;
+        _persistedOffset = 0;
         _meta.ArenaEnd = _meta.BucketOffset + _meta.Capacity * sizeof(Int64);
         _writePosition = _meta.ArenaEnd;
 
@@ -356,9 +371,8 @@ internal sealed class MmfHashIndex : IDisposable
         {
             if (appliedOffset >= 0)
             {
+                // 只推进内存偏移；持久化偏移等到 Flush 时与节点一起落盘，避免每提交一次刷盘
                 _meta.AppliedOffset = appliedOffset;
-                SaveMeta();
-                _region.Flush();
             }
             return;
         }
@@ -434,8 +448,27 @@ internal sealed class MmfHashIndex : IDisposable
         return true;
     }
 
-    /// <summary>把映射内容刷到磁盘</summary>
-    public void Flush() => _region.Flush();
+    /// <summary>把映射内容刷到磁盘，并推进持久化的已应用偏移</summary>
+    /// <remarks>元数据中的偏移只在刷盘时前进：崩溃后偏移落后于行日志，启动时按行日志重建</remarks>
+    public void Flush()
+    {
+        if (_persistedOffset != _meta.AppliedOffset)
+        {
+            _persistedOffset = _meta.AppliedOffset;
+            SaveMeta();
+        }
+
+        _region.Flush();
+    }
+
+    /// <summary>只推进内存中的已应用偏移，不刷盘</summary>
+    /// <param name="appliedOffset">已应用的 rlog 偏移</param>
+    public void MarkApplied(Int64 appliedOffset)
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(MmfHashIndex));
+        if (_readOnly) throw new NovaException(ErrorCode.ReadOnlyViolation, "Cannot write index file in read-only mode: {0}", FilePath);
+        if (appliedOffset >= 0) _meta.AppliedOffset = appliedOffset;
+    }
 
     #endregion
 
@@ -559,6 +592,7 @@ internal sealed class MmfHashIndex : IDisposable
         public Int64 ValueCount;
         public Int64 DeadBytes;
         public Int64 AppliedOffset;
+        public Int64 LiveCount;
     }
 
     /// <summary>初始化新文件</summary>
@@ -592,8 +626,10 @@ internal sealed class MmfHashIndex : IDisposable
             ValueCount = 0,
             DeadBytes = 0,
             AppliedOffset = 0,
+            LiveCount = 0,
         };
         _writePosition = arenaEnd;
+        _persistedOffset = 0;
 
         SaveMeta();
         _region.Flush();
@@ -626,6 +662,7 @@ internal sealed class MmfHashIndex : IDisposable
             throw new NovaException(ErrorCode.FileCorrupted, "Hash index metadata is inconsistent: {0}", FilePath);
 
         _writePosition = _meta.ArenaEnd;
+        _persistedOffset = _meta.AppliedOffset;
     }
 
     /// <summary>读取一个元数据槽</summary>
@@ -655,6 +692,7 @@ internal sealed class MmfHashIndex : IDisposable
             ValueCount = ReadInt64(buffer, MetaValueCount),
             DeadBytes = ReadInt64(buffer, MetaDeadBytes),
             AppliedOffset = ReadInt64(buffer, MetaAppliedOffset),
+            LiveCount = (buffer[MetaFlags] & MetaFlagLiveCount) != 0 ? ReadInt64(buffer, MetaLiveCount) : 0,
         };
 
         return true;
@@ -670,7 +708,7 @@ internal sealed class MmfHashIndex : IDisposable
 
         WriteUInt32(buffer, MetaMagic, Magic);
         buffer[MetaVersion] = FileVersion;
-        buffer[MetaFlags] = (Byte)(_codec.HasSortPrefix ? 1 : 0);
+        buffer[MetaFlags] = (Byte)((_codec.HasSortPrefix ? 1 : 0) | MetaFlagLiveCount);
         buffer[MetaKeyParts] = (Byte)_codec.PartCount;
         buffer[MetaKeyType] = (Byte)_codec.Types[0];
         WriteInt64(buffer, MetaSequence, _meta.Sequence);
@@ -680,7 +718,8 @@ internal sealed class MmfHashIndex : IDisposable
         WriteInt64(buffer, MetaKeyCount, _meta.KeyCount);
         WriteInt64(buffer, MetaValueCount, _meta.ValueCount);
         WriteInt64(buffer, MetaDeadBytes, _meta.DeadBytes);
-        WriteInt64(buffer, MetaAppliedOffset, _meta.AppliedOffset);
+        WriteInt64(buffer, MetaAppliedOffset, _persistedOffset);
+        WriteInt64(buffer, MetaLiveCount, _meta.LiveCount);
         WriteUInt32(buffer, MetaCrc, Crc32.Compute(buffer, 0, MetaCrc));
 
         _region.Write(slot, buffer, 0, buffer.Length);
@@ -734,6 +773,7 @@ internal sealed class MmfHashIndex : IDisposable
                 var count = _region.ReadInt32(node + KeyValueCount) - 1;
                 _region.WriteInt32(node + KeyValueCount, count);
                 _meta.ValueCount--;
+                if ((_region.ReadInt32(current + ValueFlags) & ValueFlagDeleted) == 0) _meta.LiveCount--;
                 _meta.DeadBytes += Align(ValueHeaderSize + length);
 
                 if (count <= 0) UnlinkKeyNode(node, change.Key, hash: ComputeHash(change.Key));
@@ -789,9 +829,35 @@ internal sealed class MmfHashIndex : IDisposable
         var value = _region.ReadInt64(node + KeyValueHead);
         while (value != 0)
         {
+            if ((_region.ReadInt32(value + ValueFlags) & ValueFlagDeleted) == 0) _meta.LiveCount--;
+
             _meta.DeadBytes += Align(ValueHeaderSize + _region.ReadInt32(value + ValueLength));
             value = _region.ReadInt64(value + ValueNextValue);
         }
+    }
+
+    /// <summary>把值标记为已删除（幂等），并推进元数据中的存活计数</summary>
+    /// <param name="valueOffset">值节点偏移</param>
+    /// <param name="deletedTx">删除事务 ID</param>
+    /// <param name="deletedTxOffset">删除事务 ID 在负载内的偏移</param>
+    public void MarkValueDeleted(Int64 valueOffset, UInt64 deletedTx, Int32 deletedTxOffset)
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(MmfHashIndex));
+        if (_readOnly) throw new NovaException(ErrorCode.ReadOnlyViolation, "Cannot write index file in read-only mode: {0}", FilePath);
+        if (valueOffset <= 0) throw new ArgumentOutOfRangeException(nameof(valueOffset));
+
+        var flags = _region.ReadInt32(valueOffset + ValueFlags);
+        if ((flags & ValueFlagDeleted) != 0) return;
+
+        var length = _region.ReadInt32(valueOffset + ValueLength);
+        if (deletedTxOffset < 0 || deletedTxOffset + 8 > length) throw new ArgumentOutOfRangeException(nameof(deletedTxOffset));
+
+        var buffer = new Byte[8];
+        WriteInt64(buffer, 0, (Int64)deletedTx);
+        _region.Write(valueOffset + ValueHeaderSize + deletedTxOffset, buffer, 0, buffer.Length);
+        _region.WriteInt32(valueOffset + ValueFlags, flags | ValueFlagDeleted);
+
+        _meta.LiveCount--;
     }
 
     /// <summary>查找键节点</summary>
@@ -936,6 +1002,7 @@ internal sealed class MmfHashIndex : IDisposable
         _region.WriteInt64(keyNode + KeyValueTail, valueNode);
         _region.WriteInt32(keyNode + KeyValueCount, _region.ReadInt32(keyNode + KeyValueCount) + 1);
         _meta.ValueCount++;
+        _meta.LiveCount++;
     }
 
     /// <summary>扩容：追加新桶数组并把键节点复制过去</summary>

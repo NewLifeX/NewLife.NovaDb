@@ -152,9 +152,12 @@ internal sealed class NovaSecondaryIndex : IDisposable
     {
         if (_readOnly) return;
 
-        _hash.Apply([], appliedOffset);
-        _hash.Flush();
+        // 只推进内存偏移：增量 .idxl 已落盘，崩溃后按增量回放或全表重建
+        _hash.MarkApplied(appliedOffset);
     }
+
+    /// <summary>把哈希索引刷到磁盘（关闭、压缩或按间隔刷盘时调用）</summary>
+    public void FlushMeta() => _hash.Flush();
 
     /// <summary>清空索引</summary>
     public void Clear()

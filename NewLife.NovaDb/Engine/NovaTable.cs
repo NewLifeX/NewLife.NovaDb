@@ -543,17 +543,7 @@ public partial class NovaTable : IDisposable
         {
             RefreshStorage();
 
-            var result = new List<Object?[]>();
-            var count = 0;
-
-            foreach (var (_, version) in CollectVisibleVersions(tx, null, true, null, true, false))
-            {
-                if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
-
-                result.Add(DeserializeVersion(version, neededColumns));
-            }
-
-            return result;
+            return ScanRows(tx, null, true, null, true, false, 0, cancellationToken, neededColumns);
         }
     }
 
@@ -588,18 +578,61 @@ public partial class NovaTable : IDisposable
         {
             RefreshStorage();
 
-            var result = new List<Object?[]>();
-            var count = 0;
-            foreach (var (_, version) in CollectVisibleVersions(tx, from, includeFrom, to, includeTo, descending))
+            return ScanRows(tx, from, includeFrom, to, includeTo, descending, maxRows, cancellationToken, neededColumns);
+        }
+    }
+
+    /// <summary>扫描可见行并反序列化。无未提交写集时直接按载荷位置读取，省掉中间版本列表</summary>
+    private List<Object?[]> ScanRows(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Boolean descending, Int32 maxRows, CancellationToken cancellationToken, Boolean[]? neededColumns)
+    {
+        var result = new List<Object?[]>();
+        var count = 0;
+
+        if (_pendingIndex.Count == 0)
+        {
+            _primaryIndex.ScanOffsets(from, includeFrom, to, includeTo, descending, maxRows, (offset, length) =>
             {
                 if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
-                result.Add(DeserializeVersion(version, neededColumns));
+                result.Add(DeserializeAt(offset, length, neededColumns));
 
-                if (maxRows > 0 && result.Count >= maxRows) break;
-            }
+                return maxRows <= 0 || result.Count < maxRows;
+            });
 
             return result;
+        }
+
+        foreach (var (_, version) in CollectVisibleVersions(tx, from, includeFrom, to, includeTo, descending))
+        {
+            if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+            result.Add(DeserializeVersion(version, neededColumns));
+
+            if (maxRows > 0 && result.Count >= maxRows) break;
+        }
+
+        return result;
+    }
+
+    /// <summary>尝试快速统计可见行数：无未提交写集且无并发写事务时直接数主键索引的存活条目</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="count">可见行数</param>
+    /// <returns>可以精确统计时返回 true；存在未提交写入或并发事务时返回 false</returns>
+    public Boolean TryCountRows(Transaction tx, out Int64 count)
+    {
+        if (tx == null) throw new ArgumentNullException(nameof(tx));
+
+        lock (_lock)
+        {
+            RefreshStorage();
+
+            count = 0;
+            if (_pendingIndex.Count > 0) return false;
+            if (_txManager.HasOtherActiveTransactions(tx.TxId)) return false;
+
+            // 主键哈希字典维护了存活值计数：插入 +1、更新净 0、删除 -1，O(1) 取数
+            count = _primaryIndex.LiveCount;
+            return true;
         }
     }
 
@@ -612,27 +645,31 @@ public partial class NovaTable : IDisposable
     /// <returns>是否存在可见版本</returns>
     private Boolean TryGetVisibleVersion(Transaction tx, Object key, out RowVersion version)
     {
-        var comparableKey = new ComparableObject(key);
-        if (_pendingIndex.TryGetValue(comparableKey, out var versions) && versions != null)
+        // 无未提交写集时直接查磁盘索引，省掉包装对象与跳表查找
+        if (_pendingIndex.Count > 0)
         {
-            var deletedBySelf = false;
-            for (var i = versions.Count - 1; i >= 0; i--)
+            var comparableKey = new ComparableObject(key);
+            if (_pendingIndex.TryGetValue(comparableKey, out var versions) && versions != null)
             {
-                var item = versions[i];
-                if (item.IsVisible(_txManager, tx.TxId))
+                var deletedBySelf = false;
+                for (var i = versions.Count - 1; i >= 0; i--)
                 {
-                    version = item;
-                    return true;
+                    var item = versions[i];
+                    if (item.IsVisible(_txManager, tx.TxId))
+                    {
+                        version = item;
+                        return true;
+                    }
+
+                    if (item.CreatedByTx == tx.TxId && item.DeletedByTx == tx.TxId) deletedBySelf = true;
                 }
 
-                if (item.CreatedByTx == tx.TxId && item.DeletedByTx == tx.TxId) deletedBySelf = true;
-            }
-
-            // 本事务已删除，不能回落到磁盘索引里的旧版本
-            if (deletedBySelf)
-            {
-                version = null!;
-                return false;
+                // 本事务已删除，不能回落到磁盘索引里的旧版本
+                if (deletedBySelf)
+                {
+                    version = null!;
+                    return false;
+                }
             }
         }
 
@@ -701,7 +738,8 @@ public partial class NovaTable : IDisposable
             _rowLogStream?.Flush();
             FlushSecondaryIndexDeltas();
         });
-        tx.RegisterPostCommitAction(() => _primaryIndex.FlushMeta());
+        // 索引是派生数据：提交时只推进内存偏移，按间隔成批刷盘；崩溃时按行日志重建
+        tx.RegisterPostCommitAction(() => FlushIndexesIfDue());
     }
 
     /// <summary>提交事务的主键变更：写行日志 → 更新索引 → 清理写集</summary>
@@ -747,6 +785,7 @@ public partial class NovaTable : IDisposable
 
                 // 2) 应用主键索引，已应用偏移覆盖本批写入
                 _primaryIndex.Apply(commits, _rowLogLength);
+                _indexDirty = true;
 
                 // 3) 清理写集中本事务的版本
                 foreach (var commit in commits)
@@ -2007,6 +2046,28 @@ public partial class NovaTable : IDisposable
         {
             _rowStore.Read(version.DataOffset, buffer, version.DataLength);
             return DeserializeRow(buffer, 0, version.DataLength, neededColumns);
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(buffer);
+        }
+    }
+
+    /// <summary>按载荷位置读取并反序列化行数据</summary>
+    /// <param name="offset">载荷在行日志中的起始偏移</param>
+    /// <param name="length">载荷字节数</param>
+    /// <param name="neededColumns">需要反序列化的列掩码，null 表示全部列</param>
+    /// <returns>行数据</returns>
+    private Object?[] DeserializeAt(Int64 offset, Int32 length, Boolean[]? neededColumns)
+    {
+        if (_rowStore == null || offset <= 0 || length <= 0)
+            throw new NovaException(ErrorCode.FileCorrupted, "Row payload [{0},{1}) is missing", offset, length);
+
+        var buffer = ArrayPool<Byte>.Shared.Rent(length);
+        try
+        {
+            _rowStore.Read(offset, buffer, length);
+            return DeserializeRow(buffer, 0, length, neededColumns);
         }
         finally
         {

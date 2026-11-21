@@ -54,6 +54,7 @@ public class HotIndexManager
     private readonly Object _lock = new();
 #endif
     private DateTime _lastHeatCheck = DateTime.UtcNow;
+    private volatile Int32 _segmentCount;
 
     /// <summary>配置</summary>
     public HotSegmentConfig Config => _config;
@@ -85,6 +86,9 @@ public class HotIndexManager
         if (key == null)
             return;
 
+        // 没有热段时不做任何记录：点查热路径上避免包装对象与锁开销
+        if (_segmentCount == 0) return;
+
         lock (_lock)
         {
             var comparableKey = new ComparableObject(key);
@@ -110,6 +114,7 @@ public class HotIndexManager
             segment.IsHot = true;
             segment.LastAccessTime = DateTime.UtcNow;
             _hotSegments.Insert(comparableKey, segment);
+            _segmentCount = _hotSegments.Count;
         }
     }
 
@@ -124,7 +129,10 @@ public class HotIndexManager
         lock (_lock)
         {
             var comparableKey = new ComparableObject(minKey);
-            return _hotSegments.Remove(comparableKey);
+            var removed = _hotSegments.Remove(comparableKey);
+            if (removed) _segmentCount = _hotSegments.Count;
+
+            return removed;
         }
     }
 
@@ -153,6 +161,8 @@ public class HotIndexManager
             }
 
             _lastHeatCheck = now;
+            _segmentCount = _hotSegments.Count;
+
             return evictedSegments;
         }
     }
@@ -203,6 +213,7 @@ public class HotIndexManager
         lock (_lock)
         {
             _hotSegments.Clear();
+            _segmentCount = 0;
             _lastHeatCheck = DateTime.UtcNow;
         }
     }
