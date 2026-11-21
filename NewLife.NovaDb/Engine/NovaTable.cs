@@ -734,10 +734,11 @@ public partial class NovaTable : IDisposable
 
         // 顺序：先刷 WAL 与行日志，再刷二级索引增量，最后刷主键索引，保证索引的已应用偏移永远不超前
         // WAL 的 fsync 只在这里做一次：逐行写入时每次提交一行会让千行导入慢上百倍
+        // Full 模式强制行日志落盘——WAL 目前不参与恢复，只刷 WAL 并不能保证已提交数据不丢
         tx.RegisterPostCommitAction(() =>
         {
             _walWriter?.Commit();
-            _rowLogStream?.Flush();
+            _rowLogStream?.Flush(_options.WalMode == WalMode.Full);
             FlushSecondaryIndexDeltas();
         });
         // 索引是派生数据：提交时只推进内存偏移，按间隔成批刷盘；崩溃时按行日志重建
