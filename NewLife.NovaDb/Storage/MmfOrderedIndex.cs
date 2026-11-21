@@ -91,6 +91,7 @@ internal sealed class MmfOrderedIndex : IDisposable
     private const Int32 DefaultFlushEntries = 65536;
     private const Int32 MaxRuns = 12;
     private const Int32 MergeFanIn = 4;
+    private const Int32 MergeChunkEntries = 16384;
     private const Int64 MinCompactGarbage = 8L << 20;
     #endregion
 
@@ -98,6 +99,7 @@ internal sealed class MmfOrderedIndex : IDisposable
     private readonly IndexKeyCodec _codec;
     private readonly Boolean _readOnly;
     private readonly Int32 _flushEntries;
+    private readonly Int32 _mergeChunkEntries;
 
     private MmfRegion _region;
     private OrderedMeta _meta;
@@ -106,6 +108,7 @@ internal sealed class MmfOrderedIndex : IDisposable
     private readonly List<Int32> _freeSlots = [];
     private Int32 _runSlotCount;
     private readonly List<OrderedIndexEntry> _buffer = [];
+    private MergeJob? _mergeJob;
     private Byte[] _probeBuffer = new Byte[256];
     private Byte[] _entryBuffer = new Byte[EntryHeaderSize + 64];
     private readonly Byte[] _entryHeader = new Byte[EntryHeaderSize];
@@ -131,12 +134,13 @@ internal sealed class MmfOrderedIndex : IDisposable
     #endregion
 
     #region 构造
-    private MmfOrderedIndex(MmfRegion region, IndexKeyCodec codec, Boolean readOnly, Int32 flushEntries)
+    private MmfOrderedIndex(MmfRegion region, IndexKeyCodec codec, Boolean readOnly, Int32 flushEntries, Int32 mergeChunk = 0)
     {
         _region = region;
         _codec = codec;
         _readOnly = readOnly;
         _flushEntries = flushEntries > 0 ? flushEntries : DefaultFlushEntries;
+        _mergeChunkEntries = mergeChunk > 0 ? mergeChunk : MergeChunkEntries;
     }
 
     /// <summary>打开或创建有序段索引</summary>
@@ -145,7 +149,7 @@ internal sealed class MmfOrderedIndex : IDisposable
     /// <param name="readOnly">是否只读</param>
     /// <param name="flushEntries">写缓冲条目上限，达到即刷 run</param>
     /// <returns>索引实例</returns>
-    public static MmfOrderedIndex Open(String path, IndexKeyCodec codec, Boolean readOnly = false, Int32 flushEntries = 0)
+    public static MmfOrderedIndex Open(String path, IndexKeyCodec codec, Boolean readOnly = false, Int32 flushEntries = 0, Int32 mergeChunk = 0)
     {
         if (path == null) throw new ArgumentNullException(nameof(path));
         if (codec == null) throw new ArgumentNullException(nameof(codec));
@@ -164,7 +168,7 @@ internal sealed class MmfOrderedIndex : IDisposable
 
         try
         {
-            var index = new MmfOrderedIndex(region, codec, readOnly, flushEntries);
+            var index = new MmfOrderedIndex(region, codec, readOnly, flushEntries, mergeChunk);
             if (isNew)
                 index.Initialize();
             else
@@ -221,14 +225,15 @@ internal sealed class MmfOrderedIndex : IDisposable
 
         if (appliedOffset >= 0) _pendingOffset = appliedOffset;
 
-        if (_runSlotCount >= RunIndexCapacity - 1)
-        {
+        if (_buffer.Count >= _flushEntries)
+            Flush();
+
+        if (_mergeJob != null)
+            AdvanceMergeJob(_mergeChunkEntries);
+        else if (_runSlotCount >= RunIndexCapacity - 1)
             Compact();
-        }
         else if (_runs.Count >= MaxRuns)
             MergeRuns();
-        else if (_buffer.Count >= _flushEntries)
-            Flush();
     }
 
     /// <summary>设置已应用偏移（只推进内存值，随下次落 run 或关闭时一起持久化）</summary>
@@ -311,6 +316,7 @@ internal sealed class MmfOrderedIndex : IDisposable
         _runSlots.Clear();
         _freeSlots.Clear();
         _runSlotCount = 0;
+        AbortMergeJob();
         _pendingOffset = -1;
 
         _meta.RunCount = 0;
@@ -801,16 +807,113 @@ internal sealed class MmfOrderedIndex : IDisposable
         var picks = SelectMergeGroup();
         if (picks.Count < 2) return;
 
-        // 先写新 run 并登记到元数据，再把旧 run 标记失效：
-        // 任何崩溃点都能从元数据引用的 run 里读回全部条目，最坏只是重复合并
-        var merged = AppendMergedRun(picks);
+        StartMergeJob(picks);
+        AdvanceMergeJob(_mergeChunkEntries);
+    }
 
+    /// <summary>开始一次分块合并：预留输出区块并挂起源 run</summary>
+    /// <remarks>
+    /// 归并保持全部条目（含墓碑与旧版本），因此输出长度可以精确预算：
+    /// 条目区长度与偏移目录大小都等于各来源之和，先把整块预留进 <see cref="OrderedMeta.ArenaEnd"/>，
+    /// 后续 Flush 就不会覆盖尚未写完的输出。中途崩溃时这段输出只是垃圾空间，来源 run 仍在索引里。
+    /// </remarks>
+    private void StartMergeJob(List<RunInfo> picks)
+    {
+        var runOffset = Align(_meta.ArenaEnd);
+        var entriesOffset = runOffset + RunHeaderSize;
+
+        var entryCount = 0L;
+        var entriesLength = 0L;
+        var cursors = new List<Cursor>(picks.Count);
+        foreach (var run in picks)
+        {
+            entryCount += run.EntryCount;
+            entriesLength += run.EntriesLength;
+
+            var cursor = CreateRunCursor(run, null, true, false, 0, false, 0, false);
+            if (cursor != null) cursors.Add(cursor);
+        }
+
+        var directoryOffset = entriesOffset + entriesLength;
+        var end = directoryOffset + entryCount * sizeof(Int64);
+        _region.EnsureCapacity(end);
+
+        var header = new Byte[RunHeaderSize];
+        WriteUInt32(header, RunMagicOffset, RunMagic);
+        header[RunVersionOffset] = FileVersion;
+        WriteInt64(header, RunEntryCountOffset, entryCount);
+        WriteInt64(header, RunEntriesOffset, entriesOffset);
+        WriteInt64(header, RunEntriesLengthOffset, entriesLength);
+        _region.Write(runOffset, header, 0, header.Length);
+
+        _meta.ArenaEnd = end;
+
+        _mergeJob = new MergeJob
+        {
+            Sources = picks,
+            Cursors = cursors,
+            Directory = new List<Int64>((Int32)Math.Min(entryCount, 1 << 20)),
+            RunOffset = runOffset,
+            EntriesOffset = entriesOffset,
+            Position = entriesOffset,
+            EndOffset = end,
+        };
+    }
+
+    /// <summary>推进分块合并，写完时收尾</summary>
+    private void AdvanceMergeJob(Int32 budget)
+    {
+        var job = _mergeJob;
+        if (job == null) return;
+
+        for (var i = 0; i < budget; i++)
+        {
+            Cursor? best = null;
+            foreach (var cursor in job.Cursors)
+            {
+                if (!cursor.HasValue) continue;
+                if (best == null)
+                {
+                    best = cursor;
+                    continue;
+                }
+
+                var cmp = CompareCursor(cursor, best);
+                if (cmp < 0 || (cmp == 0 && cursor.CreatedTx < best.CreatedTx)) best = cursor;
+            }
+
+            if (best == null)
+            {
+                CompleteMergeJob(job);
+                return;
+            }
+
+            WriteCursorEntry(job.Position, best);
+            job.Directory.Add(job.Position);
+            job.Position += Align(EntryHeaderSize + best.KeyLength);
+
+            Advance(best);
+        }
+    }
+
+    /// <summary>收尾分块合并：写偏移目录、登记新 run、把来源 run 标记失效</summary>
+    private void CompleteMergeJob(MergeJob job)
+    {
+        var directoryOffset = job.Position;
+        for (var i = 0; i < job.Directory.Count; i++)
+        {
+            _region.WriteInt64(directoryOffset + (Int64)i * sizeof(Int64), job.Directory[i]);
+        }
+
+        // 条目与目录先落盘，再让元数据引用新 run；旧 run 最后才失效，任何崩溃点都能读回全部条目
+        _region.Flush(false);
+
+        var merged = new RunInfo(job.RunOffset, job.Directory.Count, job.EntriesOffset, directoryOffset - job.EntriesOffset, directoryOffset);
         AppendRunSlot(merged);
-        _meta.ArenaEnd = merged.EndOffset;
         SaveMeta();
         _region.Flush(false);
 
-        foreach (var pick in picks)
+        foreach (var pick in job.Sources)
         {
             var index = _runs.IndexOf(pick);
             if (index < 0) continue;
@@ -825,7 +928,7 @@ internal sealed class MmfOrderedIndex : IDisposable
         }
         _region.Flush(false);
 
-        foreach (var pick in picks)
+        foreach (var pick in job.Sources)
         {
             var index = _runs.IndexOf(pick);
             if (index < 0) continue;
@@ -834,7 +937,15 @@ internal sealed class MmfOrderedIndex : IDisposable
             _runSlots.RemoveAt(index);
         }
 
+        _mergeJob = null;
+
         if (ShouldCompact()) Compact();
+    }
+
+    /// <summary>放弃未完成的分块合并（截断或全量重写时调用），输出区块退化为垃圾空间</summary>
+    private void AbortMergeJob()
+    {
+        _mergeJob = null;
     }
 
     /// <summary>在 run 索引末尾登记一个 run，优先复用已失效的槽位</summary>
@@ -935,87 +1046,6 @@ internal sealed class MmfOrderedIndex : IDisposable
 
         return level;
     }
-
-    /// <summary>把选中的 run 归并后追加为单个新 run，返回新 run 信息</summary>
-    private RunInfo AppendMergedRun(List<RunInfo> sources)
-    {
-        // 第一遍：统计条目数与条目区长度
-        var entryCount = 0;
-        var entriesLength = 0L;
-        MergeRunEntries(sources, cursor =>
-        {
-            entryCount++;
-            entriesLength += Align(EntryHeaderSize + cursor.KeyLength);
-            return true;
-        });
-
-        var runOffset = Align(_meta.ArenaEnd);
-        var entriesOffset = runOffset + RunHeaderSize;
-        var directoryOffset = entriesOffset + entriesLength;
-        var runLength = RunHeaderSize + entriesLength + entryCount * sizeof(Int64);
-        var end = runOffset + runLength;
-
-        _region.EnsureCapacity(end);
-
-        // 先写 run 数据，再改 run 索引与元数据：崩溃时元数据仍指向旧 run
-        var header = new Byte[RunHeaderSize];
-        WriteUInt32(header, RunMagicOffset, RunMagic);
-        header[RunVersionOffset] = FileVersion;
-        WriteInt64(header, RunEntryCountOffset, entryCount);
-        WriteInt64(header, RunEntriesOffset, entriesOffset);
-        WriteInt64(header, RunEntriesLengthOffset, entriesLength);
-        _region.Write(runOffset, header, 0, header.Length);
-
-        // 第二遍：写条目与偏移目录
-        var position = entriesOffset;
-        var index = 0;
-        MergeRunEntries(sources, cursor =>
-        {
-            WriteCursorEntry(position, cursor);
-            _region.WriteInt64(directoryOffset + (Int64)index * sizeof(Int64), position);
-            position += Align(EntryHeaderSize + cursor.KeyLength);
-            index++;
-            return true;
-        });
-
-        _region.Flush(false);
-
-        return new RunInfo(runOffset, entryCount, entriesOffset, entriesLength, directoryOffset);
-    }
-
-    /// <summary>对指定 run 做升序归并，逐条回调（保留全部版本，包括删除标记）</summary>
-    private void MergeRunEntries(List<RunInfo> sources, Func<Cursor, Boolean> visitor)
-    {
-        var cursors = new List<Cursor>(sources.Count);
-        foreach (var run in sources)
-        {
-            var cursor = CreateRunCursor(run, null, true, false, 0, false, 0, false);
-            if (cursor != null) cursors.Add(cursor);
-        }
-
-        while (true)
-        {
-            Cursor? best = null;
-            foreach (var cursor in cursors)
-            {
-                if (!cursor.HasValue) continue;
-                if (best == null)
-                {
-                    best = cursor;
-                    continue;
-                }
-
-                var cmp = CompareCursor(cursor, best);
-                if (cmp < 0 || (cmp == 0 && cursor.CreatedTx < best.CreatedTx)) best = cursor;
-            }
-
-            if (best == null) break;
-            if (!visitor(best)) return;
-
-            Advance(best);
-        }
-    }
-
     /// <summary>把游标当前条目写入指定位置（键长取自游标，不写满容量）</summary>
     private void WriteCursorEntry(Int64 offset, Cursor cursor)
     {
@@ -1075,7 +1105,7 @@ internal sealed class MmfOrderedIndex : IDisposable
         {
             if (File.Exists(tempPath)) File.Delete(tempPath);
 
-            using (var target = Open(tempPath, _codec, readOnly: false, flushEntries: _flushEntries))
+            using (var target = Open(tempPath, _codec, readOnly: false, flushEntries: _flushEntries, mergeChunk: _mergeChunkEntries))
             {
                 target.RewriteSingleRun(this, _meta.AppliedOffset);
             }
@@ -1262,6 +1292,7 @@ internal sealed class MmfOrderedIndex : IDisposable
             throw new NovaException(ErrorCode.FileCorrupted, "Ordered index metadata is inconsistent: {0}", FilePath);
 
         _runs.Clear();
+        AbortMergeJob();
         _runSlots.Clear();
         _freeSlots.Clear();
         _runSlotCount = (Int32)_meta.RunCount;
@@ -1348,6 +1379,18 @@ internal sealed class MmfOrderedIndex : IDisposable
     #endregion
 
     #region 辅助
+    /// <summary>分块合并的进行中状态</summary>
+    private sealed class MergeJob
+    {
+        public List<RunInfo> Sources = [];
+        public List<Cursor> Cursors = [];
+        public List<Int64> Directory = [];
+        public Int64 RunOffset;
+        public Int64 EntriesOffset;
+        public Int64 Position;
+        public Int64 EndOffset;
+    }
+
     /// <summary>归并游标</summary>
     private sealed class Cursor
     {

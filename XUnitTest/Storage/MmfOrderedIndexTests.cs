@@ -189,6 +189,54 @@ public class MmfOrderedIndexTests : IDisposable
         Assert.Equal(new[] { 1, 2 }, ScanValues(reopened));
     }
 
+    [Fact(DisplayName = "分块合并跨多次批次推进后数据完整")]
+    public void ChunkedMergeCompletesAcrossBatches()
+    {
+        const Int32 count = 600;
+
+        // 每次合并只推进 5 条，确保一次合并要跨多个批次才写完
+        using (var index = MmfOrderedIndex.Open(_testFile, _codec, flushEntries: 4, mergeChunk: 5))
+        {
+            for (var i = 0; i < count; i += 4)
+            {
+                var batch = new List<OrderedIndexEntry>(4);
+                for (var j = 0; j < 4; j++) batch.Add(Entry(i + j, (UInt64)(i + j + 1)));
+                index.Add(batch);
+            }
+            index.Flush();
+
+            var values = ScanValues(index);
+            Assert.Equal(count, values.Count);
+            for (var i = 0; i < count; i++) Assert.Equal(i, values[i]);
+        }
+
+        using var reopened = MmfOrderedIndex.Open(_testFile, _codec);
+        var reread = ScanValues(reopened);
+        Assert.Equal(count, reread.Count);
+        for (var i = 0; i < count; i++) Assert.Equal(i, reread[i]);
+    }
+
+    [Fact(DisplayName = "分块合并中途截断不会留下可见条目")]
+    public void ChunkedMergeTruncateDiscardsPartialOutput()
+    {
+        using var index = MmfOrderedIndex.Open(_testFile, _codec, flushEntries: 4, mergeChunk: 3);
+
+        for (var i = 0; i < 200; i += 4)
+        {
+            var batch = new List<OrderedIndexEntry>(4);
+            for (var j = 0; j < 4; j++) batch.Add(Entry(i + j, (UInt64)(i + j + 1)));
+            index.Add(batch);
+        }
+
+        // 此时大概率有未完成的合并任务；截断必须丢弃它
+        index.Truncate();
+        Assert.Empty(ScanValues(index));
+
+        index.Add([Entry(7, 1)]);
+        index.Flush();
+        Assert.Equal(new[] { 7 }, ScanValues(index));
+    }
+
     [Fact(DisplayName = "多 run 归并时降序扫描")]
     public void MultiRunDescending()
     {
