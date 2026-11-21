@@ -18,4 +18,10 @@
     <ProjectReference Include="..\NewLife.NovaDb\NewLife.NovaDb.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- QueryBench 是同级独立项目，源码不能编译进 Benchmark -->
+    <Compile Remove="QueryBench\**" />
+    <None Remove="QueryBench\**" />
+  </ItemGroup>
+
 </Project>

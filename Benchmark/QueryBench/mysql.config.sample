@@ -1,0 +1,4 @@
+# 复制本文件到仓库 Bin/Benchmark/Config/mysql.config（Bin 已被 gitignore），填入真实密码后使用。
+# 也可用 --mysql "<连接串>" 或环境变量 QUERYBENCH_MYSQL 指定，优先级高于本文件。
+# 运行器会自动尝试创建 querybench 库；无权限时回退到 Database 指定的库。
+Server=localhost;Port=3306;Database=querybench;Uid=root;Pwd=your-password;AllowLoadLocalInfile=true
