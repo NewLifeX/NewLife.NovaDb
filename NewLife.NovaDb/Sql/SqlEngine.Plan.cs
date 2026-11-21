@@ -550,14 +550,17 @@ partial class SqlEngine
 
         if (table != null)
         {
-            // 命中行数优先用统计估算（行数/NDV），统计缺失或该列无统计时退回索引实际命中的候选行数
+            // 命中行数优先用统计估算（行数/NDV），统计缺失或该列无统计时用哈希字典的值链长度做 O(1) 估算；
+            // 真正的主键列表留到执行阶段再取，避免规划阶段白走一次值链
             var estimated = EstimateIndexMatches(stats, column.Name, keys);
             if (estimated.HasValue)
                 candidate.EstimatedRows = estimated.Value;
             else
             {
-                candidate.IndexMatches = LookupIndexMatches(table, candidate);
-                candidate.EstimatedRows = candidate.IndexMatches.Count;
+                var total = 0L;
+                foreach (var key in keys) total += table.CountIndexKey(index.IndexName, key);
+
+                candidate.EstimatedRows = total > Int32.MaxValue ? Int32.MaxValue : (Int32)total;
             }
 
             // 命中行占比过高时，随机回表比顺序全表扫描更慢，保留为候选过滤的保底阈值
