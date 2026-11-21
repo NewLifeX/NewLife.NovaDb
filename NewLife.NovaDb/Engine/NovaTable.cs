@@ -732,9 +732,11 @@ public partial class NovaTable : IDisposable
         tx.RegisterCommitAction(() => CommitPrimaryWrites(tx.TxId));
         tx.RegisterRollbackAction(() => DiscardPrimaryWrites(tx.TxId));
 
-        // 顺序：先刷行日志与二级索引增量，再刷主键索引，保证索引的已应用偏移永远不超前
+        // 顺序：先刷 WAL 与行日志，再刷二级索引增量，最后刷主键索引，保证索引的已应用偏移永远不超前
+        // WAL 的 fsync 只在这里做一次：逐行写入时每次提交一行会让千行导入慢上百倍
         tx.RegisterPostCommitAction(() =>
         {
+            _walWriter?.Commit();
             _rowLogStream?.Flush();
             FlushSecondaryIndexDeltas();
         });

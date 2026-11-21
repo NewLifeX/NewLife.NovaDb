@@ -18,6 +18,7 @@ public class WalWriter : IDisposable
 #endif
     private Boolean _disposed;
     private DateTime _lastFlush;
+    private Boolean _dirty;
 
     /// <summary>WAL 文件路径</summary>
     public String WalPath => _walPath;
@@ -102,10 +103,10 @@ public class WalWriter : IDisposable
                 _fileStream.Write(data, 0, data.Length);
 
             // 根据模式刷盘
+            // Full 模式把刷盘推迟到事务提交：逐行写入时每次 fsync 会让千行导入退化成每分钟几万行
             if (_mode == WalMode.Full)
             {
-                _fileStream.Flush(true);
-                _lastFlush = DateTime.UtcNow;
+                _dirty = true;
             }
             else if (_mode == WalMode.Normal)
             {
@@ -114,11 +115,36 @@ public class WalWriter : IDisposable
                 {
                     _fileStream.Flush(true);
                     _lastFlush = DateTime.UtcNow;
+                    _dirty = false;
                 }
+                else
+                    _dirty = true;
             }
             // WalMode.None 不刷盘
 
             return record.Lsn;
+        }
+    }
+
+    /// <summary>事务提交后刷盘：Full 模式每次提交一次 fsync，Normal 模式最多每秒一次</summary>
+    public void Commit()
+    {
+        lock (_lock)
+        {
+            if (_fileStream == null || !_dirty) return;
+
+            if (_mode == WalMode.Full)
+            {
+                _fileStream.Flush(true);
+                _lastFlush = DateTime.UtcNow;
+                _dirty = false;
+            }
+            else if (_mode == WalMode.Normal && (DateTime.UtcNow - _lastFlush).TotalSeconds >= 1)
+            {
+                _fileStream.Flush(true);
+                _lastFlush = DateTime.UtcNow;
+                _dirty = false;
+            }
         }
     }
 
