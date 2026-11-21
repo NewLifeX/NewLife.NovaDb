@@ -1,4 +1,4 @@
-﻿using NewLife;
+using NewLife;
 using NewLife.Log;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
@@ -37,25 +37,25 @@ public enum TableFileRole
 public sealed class TableFileState
 {
     /// <summary>表名</summary>
-    public String TableName { get; init; } = String.Empty;
+    public String TableName { get; set; } = String.Empty;
 
     /// <summary>文件名</summary>
-    public String FileName { get; init; } = String.Empty;
+    public String FileName { get; set; } = String.Empty;
 
     /// <summary>文件完整路径</summary>
-    public String FilePath { get; init; } = String.Empty;
+    public String FilePath { get; set; } = String.Empty;
 
     /// <summary>文件角色</summary>
-    public TableFileRole Role { get; init; }
+    public TableFileRole Role { get; set; }
 
     /// <summary>文件当前是否存在</summary>
-    public Boolean Exists { get; init; }
+    public Boolean Exists { get; set; }
 
     /// <summary>文件大小（字节），文件不存在时为 0</summary>
-    public Int64 Size { get; init; }
+    public Int64 Size { get; set; }
 
     /// <summary>是否处于降级状态（文件缺失，引擎已按缺失语义继续运行）</summary>
-    public Boolean Degraded { get; init; }
+    public Boolean Degraded { get; set; }
 
     /// <summary>文件角色名称（小写下划线形式，供系统表输出）</summary>
     public String RoleName => Role switch
