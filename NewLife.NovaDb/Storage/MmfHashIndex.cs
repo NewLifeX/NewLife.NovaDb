@@ -137,6 +137,7 @@ internal sealed class MmfHashIndex : IDisposable
     private Int64 _persistedOffset;
     private Byte[]? _keyBuffer;
     private Byte[]? _payloadBuffer;
+    private Byte[] _nodeBuffer = new Byte[128];
     private Boolean _disposed;
 
     /// <summary>索引文件路径</summary>
@@ -959,13 +960,19 @@ internal sealed class MmfHashIndex : IDisposable
         var slot = _meta.BucketOffset + bucket * sizeof(Int64);
         var head = _region.ReadInt64(slot);
 
-        _region.WriteInt64(node + KeyNextKey, head);
-        _region.WriteInt64(node + KeyHash, hash);
-        _region.WriteInt32(node + KeyLength, key.Length);
-        _region.WriteInt32(node + KeyValueCount, 0);
-        _region.WriteInt64(node + KeyValueHead, 0);
-        _region.WriteInt64(node + KeyValueTail, 0);
-        _region.Write(node + KeyHeaderSize, key, 0, key.Length);
+        // 键节点一次写出：逐字段写映射视图在批量装载时是主要开销
+        EnsureNodeBuffer((Int32)size);
+        var buffer = _nodeBuffer;
+        WriteInt64(buffer, KeyNextKey, head);
+        WriteInt64(buffer, KeyHash, hash);
+        WriteInt32(buffer, KeyLength, key.Length);
+        WriteInt32(buffer, KeyValueCount, 0);
+        WriteInt64(buffer, KeyValueHead, 0);
+        WriteInt64(buffer, KeyValueTail, 0);
+        Array.Copy(key, 0, buffer, KeyHeaderSize, key.Length);
+        ClearPadding(buffer, KeyHeaderSize + key.Length, (Int32)size);
+        _region.Write(node, buffer, 0, (Int32)size);
+
         _region.WriteInt64(slot, node);
 
         _meta.KeyCount++;
@@ -982,12 +989,32 @@ internal sealed class MmfHashIndex : IDisposable
 
         _region.EnsureCapacity(_writePosition);
 
-        _region.WriteInt64(node + ValueNextValue, 0);
-        _region.WriteInt32(node + ValueLength, payload.Length);
-        _region.WriteInt32(node + ValueFlags, 0);
-        _region.Write(node + ValueHeaderSize, payload, 0, payload.Length);
+        EnsureNodeBuffer((Int32)size);
+        var buffer = _nodeBuffer;
+        WriteInt64(buffer, ValueNextValue, 0);
+        WriteInt32(buffer, ValueLength, payload.Length);
+        WriteInt32(buffer, ValueFlags, 0);
+        Array.Copy(payload, 0, buffer, ValueHeaderSize, payload.Length);
+        ClearPadding(buffer, ValueHeaderSize + payload.Length, (Int32)size);
+        _region.Write(node, buffer, 0, (Int32)size);
 
         return node;
+    }
+
+    /// <summary>确保节点写缓冲足够大</summary>
+    private void EnsureNodeBuffer(Int32 length)
+    {
+        if (_nodeBuffer.Length >= length) return;
+
+        var capacity = _nodeBuffer.Length;
+        while (capacity < length) capacity *= 2;
+        _nodeBuffer = new Byte[capacity];
+    }
+
+    /// <summary>清零对齐区残留字节</summary>
+    private static void ClearPadding(Byte[] buffer, Int32 used, Int32 size)
+    {
+        if (size > used) Array.Clear(buffer, used, size - used);
     }
 
     /// <summary>把值节点挂到键节点链尾</summary>
@@ -1092,6 +1119,12 @@ internal sealed class MmfHashIndex : IDisposable
     private static void WriteInt64(Byte[] buffer, Int32 offset, Int64 value)
     {
         for (var i = 0; i < 8; i++) buffer[offset + i] = (Byte)(value >> (i * 8));
+    }
+
+    /// <summary>小端写入 Int32</summary>
+    private static void WriteInt32(Byte[] buffer, Int32 offset, Int32 value)
+    {
+        for (var i = 0; i < 4; i++) buffer[offset + i] = (Byte)(value >> (i * 8));
     }
 
     /// <summary>小端读取 UInt32</summary>

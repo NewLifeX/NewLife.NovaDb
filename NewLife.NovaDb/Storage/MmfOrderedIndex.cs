@@ -107,6 +107,8 @@ internal sealed class MmfOrderedIndex : IDisposable
     private Int32 _runSlotCount;
     private readonly List<OrderedIndexEntry> _buffer = [];
     private Byte[] _probeBuffer = new Byte[256];
+    private Byte[] _entryBuffer = new Byte[EntryHeaderSize + 64];
+    private readonly Byte[] _entryHeader = new Byte[EntryHeaderSize];
     private Int64 _pendingOffset = -1;
     private Boolean _bufferSorted = true;
     private Boolean _disposed;
@@ -639,7 +641,10 @@ internal sealed class MmfOrderedIndex : IDisposable
         var offset = _region.ReadInt64(run.DirectoryOffset + (Int64)position * sizeof(Int64));
         if (offset <= 0 || offset < run.EntriesOffset || offset >= run.EntriesOffset + run.EntriesLength) return false;
 
-        var keyLength = _region.ReadInt32(offset + EntryKeyLength);
+        // 固定头一次读入，避免逐字段访问映射视图
+        _region.Read(offset, _entryHeader, 0, EntryHeaderSize);
+
+        var keyLength = ReadInt32(_entryHeader, EntryKeyLength);
         if (keyLength < 0 || keyLength > 1 << 20) return false;
 
         cursor.EnsureKey(keyLength);
@@ -648,12 +653,12 @@ internal sealed class MmfOrderedIndex : IDisposable
         cursor.Position = position;
         cursor.Run = run;
         cursor.KeyLength = keyLength;
-        cursor.SortPrefix = _region.ReadInt64(offset + EntrySortPrefix);
-        cursor.HasPrefix = (_region.ReadInt32(offset + EntryFlags) & EntryFlagHasPrefix) != 0;
-        cursor.CreatedTx = (UInt64)_region.ReadInt64(offset + EntryCreatedTx);
-        cursor.DeletedTx = (UInt64)_region.ReadInt64(offset + EntryDeletedTx);
-        cursor.DataOffset = _region.ReadInt64(offset + EntryDataOffset);
-        cursor.DataLength = _region.ReadInt32(offset + EntryDataLength);
+        cursor.SortPrefix = ReadInt64(_entryHeader, EntrySortPrefix);
+        cursor.HasPrefix = (ReadInt32(_entryHeader, EntryFlags) & EntryFlagHasPrefix) != 0;
+        cursor.CreatedTx = (UInt64)ReadInt64(_entryHeader, EntryCreatedTx);
+        cursor.DeletedTx = (UInt64)ReadInt64(_entryHeader, EntryDeletedTx);
+        cursor.DataOffset = ReadInt64(_entryHeader, EntryDataOffset);
+        cursor.DataLength = ReadInt32(_entryHeader, EntryDataLength);
         cursor.HasValue = true;
 
         return true;
@@ -1013,14 +1018,34 @@ internal sealed class MmfOrderedIndex : IDisposable
     /// <summary>把游标当前条目写入指定位置（键长取自游标，不写满容量）</summary>
     private void WriteCursorEntry(Int64 offset, Cursor cursor)
     {
-        _region.WriteInt64(offset + EntrySortPrefix, cursor.SortPrefix);
-        _region.WriteInt64(offset + EntryCreatedTx, (Int64)cursor.CreatedTx);
-        _region.WriteInt64(offset + EntryDeletedTx, (Int64)cursor.DeletedTx);
-        _region.WriteInt64(offset + EntryDataOffset, cursor.DataOffset);
-        _region.WriteInt32(offset + EntryDataLength, cursor.DataLength);
-        _region.WriteInt32(offset + EntryFlags, cursor.HasPrefix ? EntryFlagHasPrefix : 0);
-        _region.WriteInt32(offset + EntryKeyLength, cursor.KeyLength);
-        _region.Write(offset + EntryHeaderSize, cursor.Key, 0, cursor.KeyLength);
+        var size = Align(EntryHeaderSize + cursor.KeyLength);
+        EnsureEntryBuffer((Int32)size);
+
+        var buffer = _entryBuffer;
+        WriteInt64(buffer, EntrySortPrefix, cursor.SortPrefix);
+        WriteInt64(buffer, EntryCreatedTx, (Int64)cursor.CreatedTx);
+        WriteInt64(buffer, EntryDeletedTx, (Int64)cursor.DeletedTx);
+        WriteInt64(buffer, EntryDataOffset, cursor.DataOffset);
+        WriteInt32(buffer, EntryDataLength, cursor.DataLength);
+        WriteInt32(buffer, EntryFlags, cursor.HasPrefix ? EntryFlagHasPrefix : 0);
+        WriteInt32(buffer, EntryKeyLength, cursor.KeyLength);
+        Array.Copy(cursor.Key, 0, buffer, EntryHeaderSize, cursor.KeyLength);
+
+        // 对齐区的残留字节清零，保证同一份数据重复写出结果一致
+        var used = EntryHeaderSize + cursor.KeyLength;
+        if (size > used) Array.Clear(buffer, used, (Int32)size - used);
+
+        _region.Write(offset, buffer, 0, (Int32)size);
+    }
+
+    /// <summary>确保条目写缓冲足够大</summary>
+    private void EnsureEntryBuffer(Int32 length)
+    {
+        if (_entryBuffer.Length >= length) return;
+
+        var capacity = _entryBuffer.Length;
+        while (capacity < length) capacity *= 2;
+        _entryBuffer = new Byte[capacity];
     }
     /// <summary>垃圾空间是否已过半（含最小阈值），需要全量重写回收</summary>
     private Boolean ShouldCompact()
@@ -1394,23 +1419,42 @@ internal sealed class MmfOrderedIndex : IDisposable
     /// <summary>写入一个条目</summary>
     private void WriteEntry(Int64 offset, in OrderedIndexEntry entry)
     {
-        _region.WriteInt64(offset + EntrySortPrefix, entry.SortPrefix);
-        _region.WriteInt64(offset + EntryCreatedTx, (Int64)entry.CreatedTx);
-        _region.WriteInt64(offset + EntryDeletedTx, (Int64)entry.DeletedTx);
-        _region.WriteInt64(offset + EntryDataOffset, entry.DataOffset);
-        _region.WriteInt32(offset + EntryDataLength, entry.DataLength);
-        _region.WriteInt32(offset + EntryFlags, entry.HasPrefix ? EntryFlagHasPrefix : 0);
-        _region.WriteInt32(offset + EntryKeyLength, entry.Key.Length);
-        _region.Write(offset + EntryHeaderSize, entry.Key, 0, entry.Key.Length);
+        var size = Align(EntryHeaderSize + entry.Key.Length);
+        EnsureEntryBuffer((Int32)size);
+
+        var buffer = _entryBuffer;
+        WriteInt64(buffer, EntrySortPrefix, entry.SortPrefix);
+        WriteInt64(buffer, EntryCreatedTx, (Int64)entry.CreatedTx);
+        WriteInt64(buffer, EntryDeletedTx, (Int64)entry.DeletedTx);
+        WriteInt64(buffer, EntryDataOffset, entry.DataOffset);
+        WriteInt32(buffer, EntryDataLength, entry.DataLength);
+        WriteInt32(buffer, EntryFlags, entry.HasPrefix ? EntryFlagHasPrefix : 0);
+        WriteInt32(buffer, EntryKeyLength, entry.Key.Length);
+        Array.Copy(entry.Key, 0, buffer, EntryHeaderSize, entry.Key.Length);
+
+        var used = EntryHeaderSize + entry.Key.Length;
+        if (size > used) Array.Clear(buffer, used, (Int32)size - used);
+
+        _region.Write(offset, buffer, 0, (Int32)size);
     }
 
     /// <summary>8 字节对齐</summary>
     private static Int64 Align(Int64 length) => (length + 7) & ~7L;
 
+    /// <summary>小端读取 Int32</summary>
+    private static Int32 ReadInt32(Byte[] buffer, Int32 offset) =>
+        buffer[offset] | (buffer[offset + 1] << 8) | (buffer[offset + 2] << 16) | (buffer[offset + 3] << 24);
+
     /// <summary>小端读取 Int64</summary>
     private static Int64 ReadInt64(Byte[] buffer, Int32 offset) =>
         buffer[offset] | ((Int64)buffer[offset + 1] << 8) | ((Int64)buffer[offset + 2] << 16) | ((Int64)buffer[offset + 3] << 24) |
         ((Int64)buffer[offset + 4] << 32) | ((Int64)buffer[offset + 5] << 40) | ((Int64)buffer[offset + 6] << 48) | ((Int64)buffer[offset + 7] << 56);
+
+    /// <summary>小端写入 Int32</summary>
+    private static void WriteInt32(Byte[] buffer, Int32 offset, Int32 value)
+    {
+        for (var i = 0; i < 4; i++) buffer[offset + i] = (Byte)(value >> (i * 8));
+    }
 
     /// <summary>小端写入 Int64</summary>
     private static void WriteInt64(Byte[] buffer, Int32 offset, Int64 value)
