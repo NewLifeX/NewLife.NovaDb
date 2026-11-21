@@ -25,20 +25,20 @@ A medium-to-large hybrid database implemented in **C#**, running on the **.NET p
 - **Dual Deployment Modes**:
   - **Embedded Mode**: Runs as a library like SQLite, with data stored in local folders, zero configuration
   - **Network Mode**: Standalone process + TCP protocol, network access like MySQL; supports cluster deployment and master-slave replication (one master, multiple slaves)
-- **Folder-as-Database**: Copy the folder to complete migration/backup, no dump/restore process needed. Each table has independent file groups (`.data`/`.idx`/`.wal`).
+- **Folder-as-Database**: Copy the folder to complete migration/backup, no dump/restore process needed. Each table has independent files (`.rlog` row log, `.hidx`/`.oidx` primary index, per-index `.hidx` secondary index, `.wal`), and any single index or data file can be deleted (Linux) or moved away (Windows) at runtime — the engine degrades by file role and keeps serving.
 - **Four-Engine Integration**:
-  - **Nova Engine** (General Relational): SkipList index + MVCC transactions (Read Committed), supports CRUD, SQL queries, JOIN
+  - **Nova Engine** (General Relational): MMF hash index + on-disk ordered runs + MVCC transactions (Read Committed), supports CRUD, SQL queries, JOIN
   - **Flux Engine** (Time-Series + MQ): Time-based sharding Append Only, supports TTL auto-cleanup, Redis Stream-style consumer groups + Pending + Ack; columnar block sealing with type-aware encoding (Delta/DeltaDelta/XOR/RLE/dictionary) plus LZ4 block compression, rollup pre-aggregation with automatic aggregate query routing, SESSION/STATE window grouping, and compression-ratio reporting via `_sys.flux_compression`
   - **KV Mode** (Key-Value Store): Independent Bitcask engine (in-memory index + on-disk values), supports TTL, multi-table isolation
   - **ADO.NET Provider**: Auto-recognizes embedded/network mode, native integration with XCode ORM
-- **Dynamic Hot-Cold Index Separation**: Hot data fully loaded into physical memory (SkipList nodes), cold data unloaded to MMF with only sparse directory retained. 10 million row table querying only the latest 10,000 rows uses < 20MB memory.
+- **On-Disk Indexes with On-Demand Paging**: Hash buckets, key nodes and value chains live inside memory-mapped index files; point lookups touch mapped pages only, and the managed heap keeps no whole-table index. Row payloads are read through a memory-mapped row log, so a 10-million-row table does not need to fit in memory.
 - **Pure Managed Code**: No native component dependencies (pure C#/.NET), easy to deploy across platforms and in restricted environments.
 
 ### Storage Engines
 
 | Engine | Data Structure | Use Cases |
 |--------|----------------|-----------|
-| **Nova Engine** | SkipList (Memory+MMF Hot-Cold Separation) | General CRUD, configuration tables, business orders, user data |
+| **Nova Engine** | MMF hash index + on-disk ordered runs | General CRUD, configuration tables, business orders, user data |
 | **Flux Engine** | Time-based Sharding (Append Only) | IoT sensors, log collection, internal message queues, audit logs |
 | **KV Mode** | Bitcask (In-Memory Index + On-Disk Values) | Distributed locks, caching, session storage, counters, configuration center |
 
@@ -560,7 +560,7 @@ NovaDb does not pursue full SQL92 standard compliance, but covers the 80% common
 | **Pure .NET Managed** | No native dependencies, deploy via xcopy, zero serialization overhead in same process with .NET applications |
 | **Embedded+Server Dual Mode** | Embedded for development/debugging like SQLite, standalone service for production like MySQL, same API |
 | **Folder-as-Database** | Copy folder to complete migration/backup, no dump/restore needed |
-| **Hot-Cold Index Separation** | 10M row table querying only hotspots uses < 20MB memory, cold data auto-unloaded to MMF |
+| **Removable Table Files** | Delete (Linux) or move away (Windows) any single index/data file at runtime; the engine degrades by file role and keeps serving |
 | **Four-Engine Integration** | Single component covers common SQLite + TDengine + Redis scenarios, reduces operational component count |
 | **NewLife Native Integration** | Direct adaptation with XCode ORM + ADO.NET, no third-party drivers needed |
 
