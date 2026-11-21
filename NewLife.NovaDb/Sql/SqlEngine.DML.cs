@@ -227,8 +227,10 @@ partial class SqlEngine
         return deleted;
     }
 
-    private SqlResult ExecuteUpdate(UpdateStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
+    private SqlResult ExecuteUpdate(UpdateStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
         var pkCol = schema.GetPrimaryKeyColumn()
@@ -240,12 +242,15 @@ partial class SqlEngine
         // 只复用主键访问路径：主键索引按版本维护，候选集与全表扫描完全一致
         var plan = BuildTableAccessPlan(table, stmt.TableName, null, schema, stmt.Where, parameters, allowSecondaryIndex: false);
         var allRows = plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange
-            ? FetchPlanRows(plan, table, effectiveTx, 0)
-            : table.GetAll(effectiveTx);
+            ? FetchPlanRows(plan, table, effectiveTx, 0, cancellationToken)
+            : table.GetAll(effectiveTx, cancellationToken);
         var affectedRows = 0;
 
-        foreach (var row in allRows)
+        for (var i = 0; i < allRows.Count; i++)
         {
+            if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+            var row = allRows[i];
             if (stmt.Where != null && !EvaluateCondition(stmt.Where, row, schema, parameters))
                 continue;
 
@@ -272,8 +277,10 @@ partial class SqlEngine
         return new SqlResult { AffectedRows = affectedRows };
     }
 
-    private SqlResult ExecuteDelete(DeleteStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null)
+    private SqlResult ExecuteDelete(DeleteStatement stmt, Dictionary<String, Object?>? parameters, Transaction? tx = null, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var table = GetTable(stmt.TableName);
         var schema = GetSchema(stmt.TableName);
         var pkCol = schema.GetPrimaryKeyColumn()
@@ -285,12 +292,15 @@ partial class SqlEngine
         // 只复用主键访问路径：主键索引按版本维护，候选集与全表扫描完全一致
         var plan = BuildTableAccessPlan(table, stmt.TableName, null, schema, stmt.Where, parameters, allowSecondaryIndex: false);
         var allRows = plan.Kind is TableAccessKind.PrimaryKeyLookup or TableAccessKind.PrimaryKeyRange
-            ? FetchPlanRows(plan, table, effectiveTx, 0)
-            : table.GetAll(effectiveTx);
+            ? FetchPlanRows(plan, table, effectiveTx, 0, cancellationToken)
+            : table.GetAll(effectiveTx, cancellationToken);
         var affectedRows = 0;
 
-        foreach (var row in allRows)
+        for (var i = 0; i < allRows.Count; i++)
         {
+            if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+            var row = allRows[i];
             if (stmt.Where != null && !EvaluateCondition(stmt.Where, row, schema, parameters))
                 continue;
 

@@ -222,16 +222,22 @@ partial class SqlEngine
     /// <param name="table">表实例</param>
     /// <param name="tx">事务</param>
     /// <param name="maxRows">最大行数，0 表示不限制</param>
+    /// <param name="cancellationToken">取消令牌</param>
     /// <returns>候选行列表</returns>
-    private List<Object?[]> FetchPlanRows(TableAccessPlan plan, NovaTable table, Transaction tx, Int32 maxRows)
+    private List<Object?[]> FetchPlanRows(TableAccessPlan plan, NovaTable table, Transaction tx, Int32 maxRows, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         switch (plan.Kind)
         {
             case TableAccessKind.PrimaryKeyLookup:
                 {
                     var rows = new List<Object?[]>(plan.Keys.Count);
+                    var count = 0;
                     foreach (var key in plan.Keys)
                     {
+                        if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
                         var row = table.Get(tx, key);
                         if (row != null) rows.Add(row);
                         if (maxRows > 0 && rows.Count >= maxRows) break;
@@ -243,14 +249,17 @@ partial class SqlEngine
                 return table.GetRange(tx,
                     plan.HasLower ? plan.Lower : null, !plan.HasLower || plan.LowerInclusive,
                     plan.HasUpper ? plan.Upper : null, !plan.HasUpper || plan.UpperInclusive,
-                    maxRows);
+                    maxRows, cancellationToken);
 
             case TableAccessKind.IndexLookup:
                 {
                     var pks = plan.IndexMatches ?? LookupIndexMatches(table, plan);
                     var rows = new List<Object?[]>(pks.Count);
+                    var count = 0;
                     foreach (var pk in pks)
                     {
+                        if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
                         var row = table.Get(tx, pk);
                         if (row != null) rows.Add(row);
                         if (maxRows > 0 && rows.Count >= maxRows) break;
@@ -260,7 +269,7 @@ partial class SqlEngine
 
             default:
                 // 全表扫描：LIMIT 下推时同样只反序列化需要的行
-                return maxRows > 0 ? table.GetRange(tx, null, true, null, true, maxRows) : table.GetAll(tx);
+                return maxRows > 0 ? table.GetRange(tx, null, true, null, true, maxRows, cancellationToken) : table.GetAll(tx, cancellationToken);
         }
     }
 

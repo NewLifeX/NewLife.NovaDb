@@ -398,6 +398,12 @@ JOIN 的左右表仍为全表取数后嵌套循环连接；JOIN 侧索引下推�
 - 数据版本/行数变化超过 20%（下限 64 次写入）或表结构变化后统计自动失效，优化器回退 `RowCount` 粗估。
 - `_sys.stats` 暴露统计明细，`information_schema.statistics.CARDINALITY` 使用真实 NDV，`EXPLAIN` 的 `rows` 列为统计估算值。
 
+### 9.6 协作式查询取消
+
+`SqlEngine.Execute` 增加 `CancellationToken` 重载（原签名等价 `CancellationToken.None`），令牌传到 `NovaTable.GetAll/GetRange`、WHERE 过滤、GROUP BY、聚合、JOIN 嵌套循环与投影。
+大表扫描每 1024 行检查一次令牌，取消时抛 `OperationCanceledException`；已读行不影响数据，自动事务沿 `using` 回滚，引擎与连接保持可用。
+`NovaCommand.CommandTimeout` 改为协作式：`CancellationTokenSource(CommandTimeout)` 把令牌传入引擎，超时抛 `NovaException(ErrorCode.Timeout)`，命令与连接可继续使用。
+
 ## 10. 设计决策
 
 ### D1: SQL 子集策略

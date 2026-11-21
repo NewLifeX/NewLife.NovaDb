@@ -8,8 +8,10 @@ partial class SqlEngine
 {
     #region SELECT 执行
 
-    private SqlResult ExecuteSelect(SelectStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteSelect(SelectStatement stmt, Dictionary<String, Object?>? parameters, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // 无表的 SELECT（如 SELECT 1）
         if (stmt.TableName == null)
         {
@@ -31,7 +33,7 @@ partial class SqlEngine
         // JOIN 查询
         if (stmt.HasJoin)
         {
-            return ExecuteSelectWithJoin(stmt, parameters);
+            return ExecuteSelectWithJoin(stmt, parameters, cancellationToken);
         }
 
         var table = GetTable(stmt.TableName);
@@ -52,29 +54,30 @@ partial class SqlEngine
             maxRows = (stmt.OffsetValue ?? 0) + stmt.Limit.Value;
 
         // 2. 取候选行
-        var rows = FetchPlanRows(plan, table, tx, maxRows);
+        var rows = FetchPlanRows(plan, table, tx, maxRows, cancellationToken);
 
         // 3. WHERE 过滤（索引只缩小候选集，语义仍以条件复核为准）
         if (stmt.Where != null)
         {
-            rows = rows.Where(row => EvaluateCondition(stmt.Where, row, schema, parameters)).ToList();
+            rows = FilterRows(rows, stmt.Where, schema, parameters, cancellationToken);
         }
 
         // 4. GROUP BY
         if (stmt.GroupBy != null && stmt.GroupBy.Count > 0)
         {
-            return ExecuteGroupBy(stmt, rows, schema, parameters);
+            return ExecuteGroupBy(stmt, rows, schema, parameters, cancellationToken);
         }
 
         // 5. 检查是否有聚合函数（无 GROUP BY）
         if (HasAggregateFunction(stmt))
         {
-            return ExecuteAggregate(stmt, rows, schema, parameters);
+            return ExecuteAggregate(stmt, rows, schema, parameters, cancellationToken);
         }
 
         // 6. ORDER BY
         if (stmt.OrderBy != null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             rows = ApplyOrderBy(rows, stmt.OrderBy, schema);
         }
 
@@ -89,7 +92,28 @@ partial class SqlEngine
         }
 
         // 8. 投影
-        return BuildSelectResult(stmt, rows, schema, parameters);
+        return BuildSelectResult(stmt, rows, schema, parameters, cancellationToken);
+    }
+
+    /// <summary>逐行过滤候选行，每 1024 行检查一次取消令牌</summary>
+    /// <param name="rows">候选行</param>
+    /// <param name="condition">过滤条件</param>
+    /// <param name="schema">表架构</param>
+    /// <param name="parameters">参数字典</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>满足条件的行列表（保持原有顺序）</returns>
+    private List<Object?[]> FilterRows(List<Object?[]> rows, SqlExpression condition, TableSchema schema, Dictionary<String, Object?>? parameters, CancellationToken cancellationToken)
+    {
+        var filtered = new List<Object?[]>(rows.Count);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+            var row = rows[i];
+            if (EvaluateCondition(condition, row, schema, parameters)) filtered.Add(row);
+        }
+
+        return filtered;
     }
 
     #region 系统表查询
@@ -625,8 +649,10 @@ partial class SqlEngine
         return result;
     }
 
-    private SqlResult ExecuteSelectWithJoin(SelectStatement stmt, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteSelectWithJoin(SelectStatement stmt, Dictionary<String, Object?>? parameters, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         using var tx = _txManager.BeginTransaction();
 
         // 构建合并 Schema：左表 + 所有 JOIN 右表
@@ -634,7 +660,7 @@ partial class SqlEngine
         var leftTable = GetTable(stmt.TableName!);
         var leftAlias = stmt.TableAlias ?? stmt.TableName!;
 
-        var leftRows = leftTable.GetAll(tx);
+        var leftRows = leftTable.GetAll(tx, cancellationToken);
 
         // 表别名 → Schema 的映射
         var aliasSchemas = new Dictionary<String, TableSchema>(StringComparer.OrdinalIgnoreCase)
@@ -651,6 +677,9 @@ partial class SqlEngine
         // 合并行数据：当前结果集
         var currentRows = leftRows.Select(r => r.ToArray() as Object?[]).ToList();
 
+        // 嵌套循环累计步数，用于按间隔检查取消
+        var joinSteps = 0;
+
         // 依次处理每个 JOIN
         for (var joinIdx = 0; joinIdx < stmt.Joins!.Count; joinIdx++)
         {
@@ -658,7 +687,7 @@ partial class SqlEngine
             var rightSchema = GetSchema(join.TableName);
             var rightTable = GetTable(join.TableName);
             var rightAlias = join.Alias ?? join.TableName;
-            var rightRows = rightTable.GetAll(tx);
+            var rightRows = rightTable.GetAll(tx, cancellationToken);
 
             aliasSchemas[rightAlias] = rightSchema;
             aliasSchemas[join.TableName] = rightSchema;
@@ -670,12 +699,16 @@ partial class SqlEngine
             // Nested Loop Join
             var joinedRows = new List<Object?[]>();
 
+            var leftCount = 0;
             foreach (var leftRow in currentRows)
             {
                 var matched = false;
 
                 foreach (var rightRow in rightRows)
                 {
+                    // 每 1024 次内层循环检查一次取消，避免超大连接长时间不可中断
+                    if ((++joinSteps & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
                     // 合并为一行
                     var combined = new Object?[leftRow.Length + rightRow.Length];
                     Array.Copy(leftRow, 0, combined, 0, leftRow.Length);
@@ -688,6 +721,8 @@ partial class SqlEngine
                         matched = true;
                     }
                 }
+
+                if ((++leftCount & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
 
                 // LEFT JOIN：左行无匹配时补 NULL
                 if (!matched && join.Type == JoinType.Left)
@@ -708,6 +743,8 @@ partial class SqlEngine
                     var hasMatch = false;
                     foreach (var leftRow in currentRows)
                     {
+                        if ((++joinSteps & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
                         var combined = new Object?[leftRow.Length + rightRow.Length];
                         Array.Copy(leftRow, 0, combined, 0, leftRow.Length);
                         Array.Copy(rightRow, 0, combined, leftRow.Length, rightRow.Length);
@@ -734,12 +771,21 @@ partial class SqlEngine
         // WHERE 过滤
         if (stmt.Where != null)
         {
-            currentRows = currentRows.Where(row => EvaluateJoinCondition(stmt.Where, row, mergedColumns, parameters)).ToList();
+            var filtered = new List<Object?[]>(currentRows.Count);
+            for (var i = 0; i < currentRows.Count; i++)
+            {
+                if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+                var row = currentRows[i];
+                if (EvaluateJoinCondition(stmt.Where, row, mergedColumns, parameters)) filtered.Add(row);
+            }
+            currentRows = filtered;
         }
 
         // ORDER BY
         if (stmt.OrderBy != null)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             currentRows = ApplyJoinOrderBy(currentRows, stmt.OrderBy, mergedColumns);
         }
 
@@ -750,10 +796,10 @@ partial class SqlEngine
             currentRows = currentRows.Take(stmt.Limit.Value).ToList();
 
         // 投影
-        return BuildJoinSelectResult(stmt, currentRows, mergedColumns, parameters);
+        return BuildJoinSelectResult(stmt, currentRows, mergedColumns, parameters, cancellationToken);
     }
 
-    private SqlResult ExecuteGroupBy(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteGroupBy(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters, CancellationToken cancellationToken = default)
     {
         // 窗口分组状态（F17）：SESSION_WINDOW / STATE_WINDOW 需要按行序推进
         var states = CreateWindowStates(stmt);
@@ -761,8 +807,11 @@ partial class SqlEngine
         // 按 GROUP BY 列与窗口函数分组
         var groups = new Dictionary<String, List<Object?[]>>();
         var windowKeys = new Dictionary<String, Object?[]>();
-        foreach (var row in rows)
+        for (var i = 0; i < rows.Count; i++)
         {
+            if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+            var row = rows[i];
             var key = BuildGroupByKey(stmt, row, schema, parameters, states, out var keys);
             if (!groups.TryGetValue(key, out var group))
             {
@@ -784,13 +833,18 @@ partial class SqlEngine
             });
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         // 构建结果
         var result = new SqlResult();
         var colNames = BuildColumnNames(stmt, schema);
         result.ColumnNames = colNames;
 
+        var groupIndex = 0;
         foreach (var group in filteredGroups)
         {
+            if ((groupIndex++ & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
             var representative = group.Value[0];
             var outputRow = new Object?[stmt.Columns.Count];
             var keys = windowKeys.TryGetValue(group.Key, out var k) ? k : null;
@@ -990,8 +1044,10 @@ partial class SqlEngine
 
     #endregion
 
-    private SqlResult ExecuteAggregate(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
+    private SqlResult ExecuteAggregate(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var result = new SqlResult();
         var colNames = BuildColumnNames(stmt, schema);
         result.ColumnNames = colNames;
@@ -1030,7 +1086,7 @@ partial class SqlEngine
         public Int64 Ordinal { get; set; }
     }
 
-    private SqlResult BuildSelectResult(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters)
+    private SqlResult BuildSelectResult(SelectStatement stmt, List<Object?[]> rows, TableSchema schema, Dictionary<String, Object?>? parameters, CancellationToken cancellationToken = default)
     {
         var result = new SqlResult();
 
@@ -1043,13 +1099,16 @@ partial class SqlEngine
         {
             result.ColumnNames = BuildColumnNames(stmt, schema);
 
-            foreach (var row in rows)
+            for (var i = 0; i < rows.Count; i++)
             {
+                if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+                var row = rows[i];
                 var outputRow = new Object?[stmt.Columns.Count];
-                for (var i = 0; i < stmt.Columns.Count; i++)
+                for (var j = 0; j < stmt.Columns.Count; j++)
                 {
-                    var col = stmt.Columns[i];
-                    outputRow[i] = EvaluateExpression(col.Expression, row, schema, parameters);
+                    var col = stmt.Columns[j];
+                    outputRow[j] = EvaluateExpression(col.Expression, row, schema, parameters);
                 }
                 result.Rows.Add(outputRow);
             }

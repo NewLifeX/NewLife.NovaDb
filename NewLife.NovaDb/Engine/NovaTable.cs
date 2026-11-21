@@ -44,6 +44,10 @@ public partial class NovaTable : IDisposable
     // 默认分片 ID
     private const Int32 DefaultShardId = 0;
 
+    // 取消检查间隔：扫描大表时每 N 行检查一次取消令牌，兼顾响应速度与检查开销
+    private const Int32 CancellationCheckInterval = 1024;
+    private const Int32 CancellationCheckMask = CancellationCheckInterval - 1;
+
     // 二级索引文件格式版本。2 起索引键中的字符串统一大写，与 SQL 大小写不敏感比较语义一致
     private const Byte SecondaryIndexFileVersion = 2;
 
@@ -539,7 +543,13 @@ public partial class NovaTable : IDisposable
     /// <summary>获取所有可见行</summary>
     /// <param name="tx">事务</param>
     /// <returns>行数据列表</returns>
-    public List<Object?[]> GetAll(Transaction tx)
+    public List<Object?[]> GetAll(Transaction tx) => GetAll(tx, CancellationToken.None);
+
+    /// <summary>获取所有可见行，支持协作式取消</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
+    /// <returns>行数据列表</returns>
+    public List<Object?[]> GetAll(Transaction tx, CancellationToken cancellationToken)
     {
         if (tx == null)
             throw new ArgumentNullException(nameof(tx));
@@ -549,8 +559,11 @@ public partial class NovaTable : IDisposable
             var result = new List<Object?[]>();
             var allEntries = _primaryIndex.GetAll();
 
+            var count = 0;
             foreach (var entry in allEntries)
             {
+                if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
                 var versions = entry.Value;
                 foreach (var ver in versions)
                 {
@@ -576,6 +589,18 @@ public partial class NovaTable : IDisposable
     /// <param name="maxRows">最大返回行数，0 表示不限制</param>
     /// <returns>按主键升序排列的行数据列表</returns>
     public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows = 0)
+        => GetRange(tx, from, includeFrom, to, includeTo, maxRows, CancellationToken.None);
+
+    /// <summary>按主键范围获取可见行，只反序列化范围内的行，支持协作式取消</summary>
+    /// <param name="tx">事务</param>
+    /// <param name="from">下界主键值，null 表示不限</param>
+    /// <param name="includeFrom">是否包含下界</param>
+    /// <param name="to">上界主键值，null 表示不限</param>
+    /// <param name="includeTo">是否包含上界</param>
+    /// <param name="maxRows">最大返回行数，0 表示不限制</param>
+    /// <param name="cancellationToken">取消令牌，每 <see cref="CancellationCheckInterval"/> 行检查一次</param>
+    /// <returns>按主键升序排列的行数据列表</returns>
+    public List<Object?[]> GetRange(Transaction tx, Object? from, Boolean includeFrom, Object? to, Boolean includeTo, Int32 maxRows, CancellationToken cancellationToken)
     {
         if (tx == null)
             throw new ArgumentNullException(nameof(tx));
@@ -587,13 +612,18 @@ public partial class NovaTable : IDisposable
 
             while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 // 先按 maxRows 截取索引条目；索引条目不一定有当前事务可见版本，截断可能少取行，此时退回不限量扫描
                 var entries = _primaryIndex.GetRange(fromKey, includeFrom, toKey, includeTo, maxRows);
                 var result = new List<Object?[]>();
                 var lost = false;
 
+                var count = 0;
                 foreach (var entry in entries)
                 {
+                    if ((++count & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
                     var visible = false;
                     foreach (var ver in entry.Value)
                     {

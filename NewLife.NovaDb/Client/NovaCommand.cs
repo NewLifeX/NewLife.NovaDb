@@ -75,7 +75,7 @@ public class NovaCommand : DbCommand
                 return handled;
 
             var engineTx = (DbTransaction as NovaTransaction)?.EngineTx ?? conn.SessionTransaction;
-            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx));
+            var result = ExecuteWithTimeout(token => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx, token));
             return result.AffectedRows;
         }
 
@@ -102,7 +102,7 @@ public class NovaCommand : DbCommand
                 return null;
 
             var engineTx = (DbTransaction as NovaTransaction)?.EngineTx ?? conn.SessionTransaction;
-            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx));
+            var result = ExecuteWithTimeout(token => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx, token));
             return result.GetScalar();
         }
 
@@ -139,7 +139,7 @@ public class NovaCommand : DbCommand
                 return reader;
 
             var engineTx = (DbTransaction as NovaTransaction)?.EngineTx ?? conn.SessionTransaction;
-            var result = ExecuteWithTimeout(() => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx));
+            var result = ExecuteWithTimeout(token => conn.SqlEngine.Execute(_commandText, BuildParameters(), engineTx, token));
             if (result.IsQuery && result.ColumnNames != null)
             {
                 reader.SetColumns(result.ColumnNames);
@@ -170,36 +170,28 @@ public class NovaCommand : DbCommand
 
     #region 辅助
 
-    /// <summary>带超时和取消支持的执行包装</summary>
+    /// <summary>带协作式超时和取消支持的执行包装</summary>
+    /// <remarks>超时通过取消令牌传入引擎，扫描循环内按行检查，可及时中断并保证连接/引擎继续可用</remarks>
     /// <typeparam name="T">返回类型</typeparam>
-    /// <param name="action">执行动作</param>
+    /// <param name="action">执行动作，接收取消令牌</param>
     /// <returns>执行结果</returns>
-    private T ExecuteWithTimeout<T>(Func<T> action)
+    private T ExecuteWithTimeout<T>(Func<CancellationToken, T> action)
     {
         // CommandTimeout 为 0 表示不超时
-        if (CommandTimeout <= 0) return action();
+        if (CommandTimeout <= 0) return action(CancellationToken.None);
 
-        _cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(CommandTimeout));
+        _cts = cts;
         try
         {
-            var task = Task.Run(action, _cts.Token);
-            if (task.Wait(TimeSpan.FromSeconds(CommandTimeout)))
-                return task.Result;
-
-            _cts.Cancel();
+            return action(cts.Token);
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
             throw new NovaException(ErrorCode.Timeout, "Command execution timed out after {0} seconds", CommandTimeout);
-        }
-        catch (AggregateException ex) when (ex.InnerException is OperationCanceledException)
-        {
-            throw new NovaException(ErrorCode.Timeout, L.T("Command execution was cancelled"));
-        }
-        catch (OperationCanceledException)
-        {
-            throw new NovaException(ErrorCode.Timeout, L.T("Command execution was cancelled"));
         }
         finally
         {
-            _cts.Dispose();
             _cts = null;
         }
     }

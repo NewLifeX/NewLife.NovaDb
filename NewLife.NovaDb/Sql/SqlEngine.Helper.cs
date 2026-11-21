@@ -118,7 +118,7 @@ partial class SqlEngine
     /// <summary>构建 JOIN 查询的结果投影</summary>
     private SqlResult BuildJoinSelectResult(SelectStatement stmt, List<Object?[]> rows,
         List<(String Alias, String Column, Int32 TableIndex, Int32 ColIndex)> columns,
-        Dictionary<String, Object?>? parameters)
+        Dictionary<String, Object?>? parameters, CancellationToken cancellationToken = default)
     {
         var result = new SqlResult();
 
@@ -142,13 +142,16 @@ partial class SqlEngine
             }
             result.ColumnNames = colNames;
 
-            foreach (var row in rows)
+            for (var i = 0; i < rows.Count; i++)
             {
+                if ((i & CancellationCheckMask) == 0) cancellationToken.ThrowIfCancellationRequested();
+
+                var row = rows[i];
                 var outputRow = new Object?[stmt.Columns.Count];
-                for (var i = 0; i < stmt.Columns.Count; i++)
+                for (var j = 0; j < stmt.Columns.Count; j++)
                 {
-                    var col = stmt.Columns[i];
-                    outputRow[i] = EvaluateJoinExpression(col.Expression, row, columns, parameters);
+                    var col = stmt.Columns[j];
+                    outputRow[j] = EvaluateJoinExpression(col.Expression, row, columns, parameters);
                 }
                 result.Rows.Add(outputRow);
             }

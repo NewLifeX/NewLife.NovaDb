@@ -23,6 +23,12 @@ public partial class SqlEngine : IDisposable
     private Boolean _disposed;
     private Int32 _lastAffectedRows;
 
+    /// <summary>取消检查间隔：逐行循环每 N 行检查一次取消令牌</summary>
+    private const Int32 CancellationCheckInterval = 1024;
+
+    /// <summary>取消检查掩码，用于取模判断</summary>
+    private const Int32 CancellationCheckMask = CancellationCheckInterval - 1;
+
     /// <summary>SQL 跟踪写文件同步锁（仅诊断用）</summary>
     private static readonly Object TraceSync = new();
 
@@ -246,8 +252,20 @@ public partial class SqlEngine : IDisposable
     /// <param name="tx">外部事务。为空时使用 SQL 会话事务或自动提交</param>
     /// <returns>执行结果</returns>
     public SqlResult Execute(String sql, Dictionary<String, Object?>? parameters = null, Transaction? tx = null)
+        => Execute(sql, parameters, tx, CancellationToken.None);
+
+    /// <summary>执行 SQL 语句并返回结果，支持协作式取消</summary>
+    /// <param name="sql">SQL 文本</param>
+    /// <param name="parameters">参数字典</param>
+    /// <param name="tx">外部事务。为空时使用 SQL 会话事务或自动提交</param>
+    /// <param name="cancellationToken">取消令牌。扫描大表时每 1024 行检查一次，取消后抛 <see cref="OperationCanceledException"/></param>
+    /// <returns>执行结果</returns>
+    public SqlResult Execute(String sql, Dictionary<String, Object?>? parameters, Transaction? tx, CancellationToken cancellationToken)
     {
         if (sql == null) throw new ArgumentNullException(nameof(sql));
+
+        // 预取消的令牌直接失败，不做无谓扫描
+        cancellationToken.ThrowIfCancellationRequested();
 
         var sw = Stopwatch.StartNew();
 
@@ -285,7 +303,7 @@ public partial class SqlEngine : IDisposable
                 throw ParseError(sql, ex);
             }
 
-            result = ExecuteOne(stmt, sql, parameters, tx);
+            result = ExecuteOne(stmt, sql, parameters, tx, cancellationToken);
 
             // 多语句支持：分号分隔的后续语句顺序执行，返回最后一条语句结果（MySQL 语义）
             statementIndex++;
@@ -327,8 +345,9 @@ public partial class SqlEngine : IDisposable
     /// <param name="sql">原始 SQL 文本</param>
     /// <param name="parameters">参数字典</param>
     /// <param name="tx">外部事务</param>
+    /// <param name="cancellationToken">取消令牌</param>
     /// <returns>执行结果</returns>
-    private SqlResult ExecuteOne(SqlStatement stmt, String sql, Dictionary<String, Object?>? parameters, Transaction? tx)
+    private SqlResult ExecuteOne(SqlStatement stmt, String sql, Dictionary<String, Object?>? parameters, Transaction? tx, CancellationToken cancellationToken)
     {
         // 事务控制语句
         if (stmt is TransactionStatement transactionStmt)
@@ -371,11 +390,11 @@ public partial class SqlEngine : IDisposable
             ReplaceStatement replace => TrackInsert(ExecuteReplace(replace, parameters, tx), sql),
             UpsertStatement upsert => TrackInsert(ExecuteUpsert(upsert, parameters, tx), sql),
             MergeStatement merge => TrackInsert(ExecuteMerge(merge, parameters, tx), sql),
-            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters, tx), sql),
-            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters, tx), sql),
+            UpdateStatement update => TrackUpdate(ExecuteUpdate(update, parameters, tx, cancellationToken), sql),
+            DeleteStatement delete => TrackDelete(ExecuteDelete(delete, parameters, tx, cancellationToken), sql),
 
             // 查询语句
-            SelectStatement select => TrackQuery(ExecuteSelect(select, parameters)),
+            SelectStatement select => TrackQuery(ExecuteSelect(select, parameters, cancellationToken)),
 
             // 查询计划
             ExplainStatement explain => ExecuteExplain(explain, parameters),
