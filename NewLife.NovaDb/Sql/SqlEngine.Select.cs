@@ -755,8 +755,40 @@ partial class SqlEngine
 
         var maxLength = col.Length > 0 && col.DataType is DataType.String or DataType.Binary ? (Int64?)col.Length : null;
 
-        return (DataTypeNames.GetName(col.DataType).ToLowerInvariant(), DataTypeNames.Format(col.DataType, col.Length), precision, scale, maxLength);
+        // DATA_TYPE 走 MySQL 基础类型名，供 ORM/客户端按标准映射；COLUMN_TYPE 保持 Nova 规范名（XCode 的 NovaDb 提供者按规范名解析）
+        return (ToMySqlDataTypeName(col.DataType), ToMySqlColumnType(col), precision, scale, maxLength);
     }
+
+    /// <summary>把列类型映射为 MySQL 的 COLUMN_TYPE（含长度/精度）</summary>
+    /// <param name="col">列定义</param>
+    /// <returns>MySQL 列类型名</returns>
+    private static String ToMySqlColumnType(ColumnDefinition col)
+    {
+        var name = ToMySqlDataTypeName(col.DataType);
+        if (col.DataType is DataType.String or DataType.Binary && col.Length > 0) return $"{name}({col.Length})";
+        if (col.DataType is DataType.Decimal) return "decimal(18,4)";
+        if (col.DataType is DataType.Boolean) return "tinyint(1)";
+
+        return name;
+    }
+
+    /// <summary>把列类型映射为 MySQL 的 DATA_TYPE 基础名</summary>
+    /// <param name="type">列类型</param>
+    /// <returns>MySQL 基础类型名</returns>
+    private static String ToMySqlDataTypeName(DataType type) => type switch
+    {
+        DataType.Boolean => "tinyint",
+        DataType.Int32 => "int",
+        DataType.Int64 => "bigint",
+        DataType.Double => "double",
+        DataType.Decimal => "decimal",
+        DataType.String => "varchar",
+        DataType.Binary => "blob",
+        DataType.DateTime => "datetime",
+        DataType.GeoPoint => "varchar",
+        DataType.Vector => "longtext",
+        _ => DataTypeNames.GetName(type).ToLowerInvariant(),
+    };
 
     #endregion
 

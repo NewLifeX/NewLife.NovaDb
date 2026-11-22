@@ -114,7 +114,7 @@ public class ColumnLengthTests : IDisposable
         Assert.Equal("bool", TypeOf("flag"));
     }
 
-    [Fact(DisplayName = "information_schema 与 SHOW COLUMNS 类型名一致")]
+    [Fact(DisplayName = "information_schema 使用 MySQL 兼容类型名")]
     public void InformationSchema_MatchesShowColumns()
     {
         _engine.Execute("CREATE TABLE t_info (id BIGINT PRIMARY KEY, name STRING(20))");
@@ -123,10 +123,12 @@ public class ColumnLengthTests : IDisposable
         var dataType = Scalar(_engine.Execute("SELECT data_type FROM information_schema.columns WHERE table_name = 't_info' AND column_name = 'name'"));
         var maxLength = _engine.Execute("SELECT character_maximum_length FROM information_schema.columns WHERE table_name = 't_info' AND column_name = 'name'").Rows[0][0];
 
-        Assert.Equal("string(20)", type);
-        Assert.Equal("string", dataType);
+        // information_schema 面向 MySQL 客户端与 ORM，输出 MySQL 类型名；SHOW COLUMNS 保持 Nova 规范名
+        Assert.Equal("varchar(20)", type);
+        Assert.Equal("varchar", dataType);
         Assert.Equal(20L, Convert.ToInt64(maxLength));
 
+        Assert.Equal("string(20)", Convert.ToString(_engine.Execute("SHOW COLUMNS FROM t_info").Rows.First(r => Convert.ToString(r[0]) == "name")[1]));
         Assert.Equal("bigint", Scalar(_engine.Execute("SELECT column_type FROM information_schema.columns WHERE table_name = 't_info' AND column_name = 'id'")));
     }
 
