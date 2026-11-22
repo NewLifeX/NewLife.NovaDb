@@ -148,6 +148,7 @@ internal sealed class MmfOrderedIndex : IDisposable
     /// <param name="codec">键编解码器</param>
     /// <param name="readOnly">是否只读</param>
     /// <param name="flushEntries">写缓冲条目上限，达到即刷 run</param>
+    /// <param name="mergeChunk">每次合并推进的条目数上限，0 表示使用默认值</param>
     /// <returns>索引实例</returns>
     public static MmfOrderedIndex Open(String path, IndexKeyCodec codec, Boolean readOnly = false, Int32 flushEntries = 0, Int32 mergeChunk = 0)
     {

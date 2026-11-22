@@ -85,23 +85,6 @@ public class EmbeddedIntegrationTests : IDisposable
     /// <summary>获取表的 .wal 文件路径</summary>
     private String GetWalFilePath(String tableName) => Path.Combine(_dbPath, $"{tableName}.wal");
 
-    /// <summary>统计 WAL 文件记录数</summary>
-    /// <param name="filePath">WAL 文件路径</param>
-    private static Int32 CountWalRecords(String filePath)
-    {
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var count = 0;
-        var lenBuf = new Byte[4];
-        while (fs.Read(lenBuf, 0, 4) == 4)
-        {
-            var recordLen = BitConverter.ToInt32(lenBuf, 0);
-            if (recordLen <= 0 || fs.Position + recordLen > fs.Length) break;
-            fs.Seek(recordLen, SeekOrigin.Current);
-            count++;
-        }
-        return count;
-    }
-
     #region 基础测试
 
     [Fact(DisplayName = "嵌入式-打开连接创建数据库文件")]
@@ -351,7 +334,6 @@ public class EmbeddedIntegrationTests : IDisposable
     [Fact(DisplayName = "嵌入式-插入单行")]
     public void InsertSingleRow()
     {
-        // 使用 Full 模式确保 WAL 每次写入立即刷盘，便于通过 FileInfo.Length 验证
         using var conn = CreateConnection("Full");
         using var cmd = conn.CreateCommand();
 
@@ -362,49 +344,43 @@ public class EmbeddedIntegrationTests : IDisposable
         var dataFile = GetDataFilePath("emb_dml_ins1");
         AssertRowLogHeader(dataFile);
 
-        // 记录插入前 .wal 文件大小
+        // 行日志本身即重做日志：不再另外产生 .wal 文件
         var walFile = GetWalFilePath("emb_dml_ins1");
-        var walSizeBefore = File.Exists(walFile) ? new FileInfo(walFile).Length : 0;
+        var sizeBefore = new FileInfo(dataFile).Length;
 
         cmd.CommandText = "INSERT INTO emb_dml_ins1 VALUES (1, 'Alice', 25)";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(1, rows);
 
-        // 默认 WAL 模式为 Normal，插入后 .wal 文件应存在且大小增长
-        Assert.True(File.Exists(walFile), ".wal 文件应在插入后存在");
-        var walSizeAfter = new FileInfo(walFile).Length;
-        Assert.True(walSizeAfter > walSizeBefore, "插入数据后 .wal 文件大小应增长");
+        Assert.False(File.Exists(walFile), "表引擎不再产生 .wal 文件");
+        Assert.True(new FileInfo(dataFile).Length > sizeBefore, "插入数据后行日志应增长");
 
-        // 验证 .wal 文件包含 1 条 WAL 记录
-        var walRecordCount = CountWalRecords(walFile);
-        Assert.Equal(1, walRecordCount);
+        // 验证数据可读
+        cmd.CommandText = "SELECT name FROM emb_dml_ins1 WHERE id = 1";
+        Assert.Equal("Alice", Convert.ToString(cmd.ExecuteScalar()));
     }
 
     [Fact(DisplayName = "嵌入式-插入多行")]
     public void InsertMultipleRows()
     {
-        // 使用 Full 模式确保 WAL 每次写入立即刷盘
         using var conn = CreateConnection("Full");
         using var cmd = conn.CreateCommand();
 
         cmd.CommandText = "CREATE TABLE emb_dml_ins2 (id INT PRIMARY KEY, name VARCHAR, age INT)";
         cmd.ExecuteNonQuery();
 
-        var walFile = GetWalFilePath("emb_dml_ins2");
-        var walSizeBefore = File.Exists(walFile) ? new FileInfo(walFile).Length : 0;
+        var dataFile = GetDataFilePath("emb_dml_ins2");
+        var sizeBefore = new FileInfo(dataFile).Length;
 
         cmd.CommandText = "INSERT INTO emb_dml_ins2 VALUES (1, 'Alice', 25), (2, 'Bob', 30), (3, 'Charlie', 35)";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(3, rows);
 
-        // 多行插入后 .wal 文件大小应增长
-        Assert.True(File.Exists(walFile), ".wal 文件应在插入后存在");
-        var walSizeAfter = new FileInfo(walFile).Length;
-        Assert.True(walSizeAfter > walSizeBefore, "插入多行后 .wal 文件大小应增长");
+        Assert.False(File.Exists(GetWalFilePath("emb_dml_ins2")), "表引擎不再产生 .wal 文件");
+        Assert.True(new FileInfo(dataFile).Length > sizeBefore, "插入多行后行日志应增长");
 
-        // 验证 .wal 文件包含 3 条 WAL 记录（每行一条）
-        var walRecordCount = CountWalRecords(walFile);
-        Assert.Equal(3, walRecordCount);
+        cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_ins2";
+        Assert.Equal(3, Convert.ToInt32(cmd.ExecuteScalar()));
     }
 
     [Fact(DisplayName = "嵌入式-带列名插入")]
@@ -440,20 +416,16 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "INSERT INTO emb_dml_upd VALUES (1, 'Alice', 25), (2, 'Bob', 30)";
         cmd.ExecuteNonQuery();
 
-        // 记录更新前 .wal 文件大小和记录数
-        var walFile = GetWalFilePath("emb_dml_upd");
-        var walSizeBeforeUpdate = new FileInfo(walFile).Length;
-        var walCountBeforeUpdate = CountWalRecords(walFile);
+        var dataFile = GetDataFilePath("emb_dml_upd");
+        var sizeBeforeUpdate = new FileInfo(dataFile).Length;
 
         cmd.CommandText = "UPDATE emb_dml_upd SET name = 'Alice Smith', age = 26 WHERE id = 1";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(1, rows);
 
-        // 更新后 .wal 文件大小应增长，记录数应增加
-        var walSizeAfterUpdate = new FileInfo(walFile).Length;
-        Assert.True(walSizeAfterUpdate > walSizeBeforeUpdate, "更新数据后 .wal 文件大小应增长");
-        var walCountAfterUpdate = CountWalRecords(walFile);
-        Assert.True(walCountAfterUpdate > walCountBeforeUpdate, "更新数据后 .wal 记录数应增加");
+        // 更新以追加新版本的方式落行日志
+        Assert.True(new FileInfo(dataFile).Length > sizeBeforeUpdate, "更新数据后行日志应增长");
+        Assert.False(File.Exists(GetWalFilePath("emb_dml_upd")), "表引擎不再产生 .wal 文件");
 
         // 验证更新结果
         cmd.CommandText = "SELECT name, age FROM emb_dml_upd WHERE id = 1";
@@ -476,20 +448,16 @@ public class EmbeddedIntegrationTests : IDisposable
         cmd.CommandText = "INSERT INTO emb_dml_del VALUES (1, 'Alice', 25), (2, 'Bob', 30), (3, 'Charlie', 35)";
         cmd.ExecuteNonQuery();
 
-        // 记录删除前 .wal 文件大小和记录数
-        var walFile = GetWalFilePath("emb_dml_del");
-        var walSizeBeforeDelete = new FileInfo(walFile).Length;
-        var walCountBeforeDelete = CountWalRecords(walFile);
+        var dataFile = GetDataFilePath("emb_dml_del");
+        var sizeBeforeDelete = new FileInfo(dataFile).Length;
 
         cmd.CommandText = "DELETE FROM emb_dml_del WHERE age >= 30";
         var rows = cmd.ExecuteNonQuery();
         Assert.Equal(2, rows);
 
-        // 删除后 .wal 文件大小应增长，记录数应增加
-        var walSizeAfterDelete = new FileInfo(walFile).Length;
-        Assert.True(walSizeAfterDelete > walSizeBeforeDelete, "删除数据后 .wal 文件大小应增长");
-        var walCountAfterDelete = CountWalRecords(walFile);
-        Assert.True(walCountAfterDelete > walCountBeforeDelete, "删除数据后 .wal 记录数应增加");
+        // 删除以追加墓碑的方式落行日志
+        Assert.True(new FileInfo(dataFile).Length > sizeBeforeDelete, "删除数据后行日志应增长");
+        Assert.False(File.Exists(GetWalFilePath("emb_dml_del")), "表引擎不再产生 .wal 文件");
 
         // 验证只剩一条
         cmd.CommandText = "SELECT COUNT(*) FROM emb_dml_del";
@@ -1244,10 +1212,10 @@ public class EmbeddedIntegrationTests : IDisposable
 
     #endregion
 
-    #region WAL 模式文件测试
+    #region 落盘档位测试
 
-    [Fact(DisplayName = "嵌入式-WalMode=Full时WAL文件存在")]
-    public void WalModeFull_WalFileExists()
+    [Fact(DisplayName = "嵌入式-WalMode=Full时提交即落盘")]
+    public void WalModeFull_DurableOnCommit()
     {
         using var conn = CreateConnection("Full");
         using var cmd = conn.CreateCommand();
@@ -1259,26 +1227,20 @@ public class EmbeddedIntegrationTests : IDisposable
         var dataFile = GetDataFilePath("emb_wal_full");
         AssertRowLogHeader(dataFile);
 
-        // Full 模式下 .wal 文件应在建表后立即存在
-        var walFile = GetWalFilePath("emb_wal_full");
-        Assert.True(File.Exists(walFile), "WalMode=Full 时 .wal 文件应在建表后存在");
-
         cmd.CommandText = "INSERT INTO emb_wal_full VALUES (1, 'Alice')";
         cmd.ExecuteNonQuery();
 
-        // 插入后 .wal 文件应有内容，且记录数为 1
-        var walSize = new FileInfo(walFile).Length;
-        Assert.True(walSize > 0, "WalMode=Full 时插入数据后 .wal 文件应有内容");
-        Assert.Equal(1, CountWalRecords(walFile));
+        // 行日志就是重做日志：Full 模式提交即落盘，没有额外的 .wal
+        Assert.True(new FileInfo(dataFile).Length > 0, "WalMode=Full 时插入数据后行日志应有内容");
+        Assert.False(File.Exists(GetWalFilePath("emb_wal_full")), "表引擎不再产生 .wal 文件");
     }
 
-    [Fact(DisplayName = "嵌入式-WalMode=Normal时WAL文件存在")]
-    public void WalModeNormal_WalFileExists()
+    [Fact(DisplayName = "嵌入式-WalMode=Normal时提交后不产生额外日志")]
+    public void WalModeNormal_NoExtraLog()
     {
         var walFile = GetWalFilePath("emb_wal_normal");
         var dataFile = GetDataFilePath("emb_wal_normal");
 
-        // Normal 模式下操作完成后验证 WAL 文件存在
         using (var conn = CreateConnection("Normal"))
         {
             using var cmd = conn.CreateCommand();
@@ -1286,15 +1248,13 @@ public class EmbeddedIntegrationTests : IDisposable
             cmd.CommandText = "CREATE TABLE emb_wal_normal (id INT PRIMARY KEY, name VARCHAR)";
             cmd.ExecuteNonQuery();
 
-            // Normal 模式下 .wal 文件应在建表后存在
-            Assert.True(File.Exists(walFile), "WalMode=Normal 时 .wal 文件应在建表后存在");
-
             cmd.CommandText = "INSERT INTO emb_wal_normal VALUES (1, 'Alice')";
             cmd.ExecuteNonQuery();
         }
 
-        // 连接关闭后验证行日志文件头
+        // 连接关闭后验证行日志文件头，且不存在 .wal
         AssertRowLogHeader(dataFile);
+        Assert.False(File.Exists(walFile), "WalMode=Normal 时不应产生 .wal 文件");
     }
 
     [Fact(DisplayName = "嵌入式-WalMode=None时无WAL文件")]
@@ -1321,8 +1281,8 @@ public class EmbeddedIntegrationTests : IDisposable
         AssertRowLogHeader(dataFile);
     }
 
-    [Fact(DisplayName = "嵌入式-WAL文件随DML操作持续增长")]
-    public void WalFileGrowsWithDmlOperations()
+    [Fact(DisplayName = "嵌入式-行日志随DML操作持续增长")]
+    public void RowLogGrowsWithDmlOperations()
     {
         using var conn = CreateConnection("Full");
         using var cmd = conn.CreateCommand();
@@ -1334,29 +1294,29 @@ public class EmbeddedIntegrationTests : IDisposable
         var dataFile = GetDataFilePath("emb_wal_grow");
         AssertRowLogHeader(dataFile);
 
-        var walFile = GetWalFilePath("emb_wal_grow");
-        var sizeAfterCreate = File.Exists(walFile) ? new FileInfo(walFile).Length : 0;
+        var sizeAfterCreate = new FileInfo(dataFile).Length;
 
         // INSERT 2 行
         cmd.CommandText = "INSERT INTO emb_wal_grow VALUES (1, 'Alice', 25), (2, 'Bob', 30)";
         cmd.ExecuteNonQuery();
-        var sizeAfterInsert = new FileInfo(walFile).Length;
-        Assert.True(sizeAfterInsert > sizeAfterCreate, "INSERT 后 .wal 文件应增长");
-        Assert.Equal(2, CountWalRecords(walFile));
+        var sizeAfterInsert = new FileInfo(dataFile).Length;
+        Assert.True(sizeAfterInsert > sizeAfterCreate, "INSERT 后行日志应增长");
 
         // UPDATE 1 行
         cmd.CommandText = "UPDATE emb_wal_grow SET name = 'Alice Smith' WHERE id = 1";
         cmd.ExecuteNonQuery();
-        var sizeAfterUpdate = new FileInfo(walFile).Length;
-        Assert.True(sizeAfterUpdate > sizeAfterInsert, "UPDATE 后 .wal 文件应继续增长");
-        Assert.Equal(3, CountWalRecords(walFile));
+        var sizeAfterUpdate = new FileInfo(dataFile).Length;
+        Assert.True(sizeAfterUpdate > sizeAfterInsert, "UPDATE 后行日志应继续增长");
 
         // DELETE 1 行
         cmd.CommandText = "DELETE FROM emb_wal_grow WHERE id = 2";
         cmd.ExecuteNonQuery();
-        var sizeAfterDelete = new FileInfo(walFile).Length;
-        Assert.True(sizeAfterDelete > sizeAfterUpdate, "DELETE 后 .wal 文件应继续增长");
-        Assert.Equal(4, CountWalRecords(walFile));
+        var sizeAfterDelete = new FileInfo(dataFile).Length;
+        Assert.True(sizeAfterDelete > sizeAfterUpdate, "DELETE 后行日志应继续增长");
+
+        // 数据仍然正确
+        cmd.CommandText = "SELECT COUNT(*) FROM emb_wal_grow";
+        Assert.Equal(1, Convert.ToInt32(cmd.ExecuteScalar()));
     }
 
     #endregion

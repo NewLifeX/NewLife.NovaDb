@@ -251,24 +251,30 @@ public class NovaTableTests : IDisposable
         Assert.Throws<NovaException>(() => table.Insert(tx, row));
     }
 
-    [Fact(DisplayName = "测试 WAL 模式")]
+    [Fact(DisplayName = "Full 模式提交后数据落盘且无 WAL 文件")]
     public void TestWalMode()
     {
         var schema = CreateTestSchema();
         var options = new DbOptions { Path = _testDir, WalMode = WalMode.Full };
         var txManager = new TransactionManager();
 
-        using var table = new NovaTable(schema, _testDir, options, txManager);
-        using var tx = txManager.BeginTransaction();
+        using (var table = new NovaTable(schema, _testDir, options, txManager))
+        {
+            using var tx = txManager.BeginTransaction();
+            table.Insert(tx, new Object?[] { 1, "Alice", 25 });
+            tx.Commit();
+        }
 
-        var row = new Object?[] { 1, "Alice", 25 };
-        table.Insert(tx, row);
+        // 行日志本身就是重做日志：不再额外产生 .wal 文件
+        Assert.False(File.Exists(Path.Combine(_testDir, "users.wal")));
+        Assert.True(File.Exists(Path.Combine(_testDir, "users.rlog")));
 
-        tx.Commit();
-
-        // 验证 WAL 文件存在（平铺在数据库目录下）
-        var walPath = Path.Combine(_testDir, "users.wal");
-        Assert.True(File.Exists(walPath));
+        // 重新打开后数据完整
+        using var reopened = new NovaTable(schema, _testDir, options, new TransactionManager());
+        using var readTx = new TransactionManager().BeginTransaction();
+        var rows = reopened.GetAll(readTx, System.Threading.CancellationToken.None);
+        Assert.Single(rows);
+        Assert.Equal("Alice", rows[0][1]);
     }
 
     [Fact(DisplayName = "测试冷热分离索引管理器集成")]

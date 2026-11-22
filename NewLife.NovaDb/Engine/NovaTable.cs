@@ -17,7 +17,6 @@ public partial class NovaTable : IDisposable
     private readonly String _dbPath;
     private readonly DbOptions _options;
     private readonly TransactionManager _txManager;
-    private readonly WalWriter? _walWriter;
     private readonly IDataCodec _codec;
     private readonly TableFileManager _fileManager;
 
@@ -124,14 +123,6 @@ public partial class NovaTable : IDisposable
         // 使用 TableFileManager 生成文件路径（表文件平铺在数据库目录下）
         _fileManager = new TableFileManager(_dbPath, schema.TableName, _options);
 
-        // 初始化 WAL
-        if (_options.WalMode != WalMode.None)
-        {
-            var walPath = _fileManager.GetWalFilePath();
-            _walWriter = new WalWriter(walPath, _options.WalMode);
-            _walWriter.Open();
-        }
-
         // 初始化冷热分离索引管理器
         _hotIndexManager = new HotIndexManager(new HotSegmentConfig());
 
@@ -223,18 +214,6 @@ public partial class NovaTable : IDisposable
                 DataVersion++;
                 OnDataChanged?.Invoke(changedPk);
             });
-
-            // 记录 WAL（如果启用）
-            if (_walWriter != null)
-            {
-                var record = new WalRecord
-                {
-                    RecordType = WalRecordType.UpdatePage,
-                    TxId = tx.TxId,
-                    PageId = 0,
-                };
-                _walWriter.Write(record, payload);
-            }
 
             // 注册回滚动作
             tx.RegisterRollbackAction(() =>
@@ -379,18 +358,6 @@ public partial class NovaTable : IDisposable
                 OnDataChanged?.Invoke(changedPk);
             });
 
-            // 记录 WAL
-            if (_walWriter != null)
-            {
-                var record = new WalRecord
-                {
-                    RecordType = WalRecordType.UpdatePage,
-                    TxId = tx.TxId,
-                    PageId = 0,
-                };
-                _walWriter.Write(record, payload);
-            }
-
             // 注册回滚动作
             var rollbackOldRow = oldRow;
             tx.RegisterRollbackAction(() =>
@@ -488,18 +455,6 @@ public partial class NovaTable : IDisposable
                 DataVersion++;
                 OnDataChanged?.Invoke(changedPk);
             });
-
-            // 记录 WAL
-            if (_walWriter != null)
-            {
-                var record = new WalRecord
-                {
-                    RecordType = WalRecordType.UpdatePage,
-                    TxId = tx.TxId,
-                    PageId = 0,
-                };
-                _walWriter.Write(record);
-            }
 
             // 注册回滚动作
             var rollbackDeletedRow = deletedRow;
@@ -732,12 +687,11 @@ public partial class NovaTable : IDisposable
         tx.RegisterCommitAction(() => CommitPrimaryWrites(tx.TxId));
         tx.RegisterRollbackAction(() => DiscardPrimaryWrites(tx.TxId));
 
-        // 顺序：先刷 WAL 与行日志，再刷二级索引增量，最后刷主键索引，保证索引的已应用偏移永远不超前
-        // WAL 的 fsync 只在这里做一次：逐行写入时每次提交一行会让千行导入慢上百倍
-        // Full 模式强制行日志落盘——WAL 目前不参与恢复，只刷 WAL 并不能保证已提交数据不丢
+        // 顺序：先刷行日志，再刷二级索引增量，最后刷主键索引，保证索引的已应用偏移永远不超前
+        // 提交时只做一次 flush：逐行写入时每次提交一行会让千行导入慢上百倍
+        // Full 模式强制行日志 fsync，保证已提交数据在断电后不丢
         tx.RegisterPostCommitAction(() =>
         {
-            _walWriter?.Commit();
             _rowLogStream?.Flush(_options.WalMode == WalMode.Full);
             FlushSecondaryIndexDeltas();
         });
@@ -1746,6 +1700,7 @@ public partial class NovaTable : IDisposable
     /// <param name="row">行数据</param>
     /// <param name="pk">主键</param>
     /// <param name="deltas">增量收集器，为空表示只维护内存索引（回滚路径）</param>
+    /// <param name="skipRow">需要跳过的旧行（更新时索引键未变化，无需重复维护）</param>
     /// <remarks>唯一性冲突必须在此前通过 <see cref="CheckUniqueIndexConflicts"/> 预检查，本方法不再抛出唯一性异常</remarks>
     private void InsertIntoSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null, Object?[]? skipRow = null)
     {
@@ -1778,6 +1733,7 @@ public partial class NovaTable : IDisposable
     /// <param name="row">行数据</param>
     /// <param name="pk">主键</param>
     /// <param name="deltas">增量收集器，为空表示只维护内存索引（回滚路径）</param>
+    /// <param name="keepRow">需要保留的新行（更新时索引键未变化，无需重复维护）</param>
     private void RemoveFromSecondaryIndexes(Object?[] row, ComparableObject pk, List<SecondaryIndexDeltaEntry>? deltas = null, Object?[]? keepRow = null)
     {
         foreach (var kvp in _secondaryIndexes)
@@ -2197,8 +2153,6 @@ public partial class NovaTable : IDisposable
             // 关闭前把二级索引增量合并进基线，避免下次启动回放；失败时保留增量文件，下次启动仍可回放或重建
             try { CompactSecondaryIndexesOnClose(); }
             catch { }
-
-            _walWriter?.Dispose();
 
             foreach (var idx in _secondaryIndexes.Values)
             {

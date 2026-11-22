@@ -188,6 +188,7 @@ internal sealed class MmfHashIndex : IDisposable
     /// <param name="path">文件路径</param>
     /// <param name="codec">键编解码器</param>
     /// <param name="readOnly">是否只读</param>
+    /// <param name="rehashChunk">每次迁移的节点数上限，0 表示使用默认值</param>
     /// <returns>索引实例</returns>
     public static MmfHashIndex Open(String path, IndexKeyCodec codec, Boolean readOnly = false, Int32 rehashChunk = 0)
     {
@@ -598,6 +599,7 @@ internal sealed class MmfHashIndex : IDisposable
     /// <summary>创建一个空的哈希索引文件</summary>
     /// <param name="path">文件路径</param>
     /// <param name="codec">键编解码器</param>
+    /// <param name="rehashChunk">每次迁移的节点数上限，0 表示使用默认值</param>
     /// <returns>索引实例</returns>
     public static MmfHashIndex Build(String path, IndexKeyCodec codec, Int32 rehashChunk = 0)
     {

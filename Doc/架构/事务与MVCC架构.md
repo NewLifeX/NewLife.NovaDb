@@ -214,8 +214,8 @@ public void Insert(Object primaryKey, Byte[] payload, Transaction tx)
         Payload = payload
     };
     
-    // 2. 写入 WAL
-    _walWriter.WriteInsert(tx.TxId, primaryKey, payload);
+    // 2. 追加到行日志（行日志即重做日志，不再单独写 WAL）
+    _rowLog.Append(tx.TxId, primaryKey, payload);
     
     // 3. 添加到版本链
     _versionChain.Add(primaryKey, rowVersion);
@@ -248,8 +248,8 @@ public void Update(Object primaryKey, Byte[] newPayload, Transaction tx)
         Payload = newPayload
     };
     
-    // 4. 写入 WAL
-    _walWriter.WriteUpdate(tx.TxId, primaryKey, oldVersion.Payload, newPayload);
+    // 4. 追加新版本载荷到行日志
+    _rowLog.Append(tx.TxId, primaryKey, newPayload);
     
     // 5. 添加新版本到版本链
     _versionChain.Add(primaryKey, newVersion);
@@ -278,8 +278,8 @@ public void Delete(Object primaryKey, Transaction tx)
     // 2. 标记为已删除
     rowVersion.DeletedByTx = tx.TxId;
     
-    // 3. 写入 WAL
-    _walWriter.WriteDelete(tx.TxId, primaryKey);
+    // 3. 追加墓碑到行日志
+    _rowLog.AppendDelete(tx.TxId, primaryKey);
     
     // 4. 注册回滚动作
     tx.RegisterRollback(() => rowVersion.DeletedByTx = null);

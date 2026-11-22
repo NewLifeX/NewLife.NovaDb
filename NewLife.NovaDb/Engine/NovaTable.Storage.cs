@@ -1,4 +1,4 @@
-using NewLife;
+﻿using NewLife;
 using NewLife.Log;
 using NewLife.NovaDb.Core;
 using NewLife.NovaDb.Storage;
@@ -28,9 +28,6 @@ public enum TableFileRole
 
     /// <summary>表结构（{表}.schema）</summary>
     Schema,
-
-    /// <summary>预写日志（.wal）</summary>
-    Wal,
 }
 
 /// <summary>表文件状态快照</summary>
@@ -67,7 +64,6 @@ public sealed class TableFileState
         TableFileRole.IndexBaseline => "index_baseline",
         TableFileRole.IndexDelta => "index_delta",
         TableFileRole.Schema => "schema",
-        TableFileRole.Wal => "wal",
         _ => "unknown",
     };
 }
@@ -79,7 +75,6 @@ public sealed class TableFileState
 /// <item>行数据 .rlog 缺失：视为空表，重建空日志并重置主键与二级索引，继续服务。</item>
 /// <item>主键索引 .hidx/.oidx 缺失：立即按行日志整表重建，重建期间阻塞该表访问。</item>
 /// <item>二级索引 .hidx 缺失：注销该索引，查询回退全表扫描；重启后自动重建。</item>
-/// <item>WAL 缺失：重建 WAL 文件；已提交数据在行日志中不受影响。</item>
 /// </list>
 /// 文件句柄统一带 <see cref="FileShare.Delete"/>，Windows 上即使存在映射视图也能把文件改名移走。
 /// 只读模式不做任何降级动作，避免修改磁盘。
@@ -150,12 +145,6 @@ public partial class NovaTable
                 }
             }
 
-            if (_walWriter != null && IsFileMissing(_fileManager.GetWalFilePath()))
-            {
-                ReopenWal();
-                changed = true;
-            }
-
             // 读写操作都可能触发：停写后也要在间隔内把索引刷一次盘，避免崩溃后重建过长的尾部
             FlushIndexesIfDue();
 
@@ -221,9 +210,6 @@ public partial class NovaTable
             }
 
             Add(SchemaPersister.GetSchemaFilePath(_dbPath, _schema.TableName), TableFileRole.Schema);
-
-            if (_options.WalMode != WalMode.None)
-                Add(_fileManager.GetWalFilePath(), TableFileRole.Wal);
 
             return list;
         }
@@ -360,23 +346,6 @@ public partial class NovaTable
         _secondaryIndexBaselineCounts.Remove(indexName);
 
         _degradedIndexes.Add(indexName);
-
-        Interlocked.Increment(ref _externalFileLossCount);
-    }
-
-    /// <summary>WAL 文件缺失时重新打开</summary>
-    private void ReopenWal()
-    {
-        XTrace.WriteLine("[NovaDb] WAL of table '{0}' disappeared, recreating it", _schema.TableName);
-
-        try
-        {
-            _walWriter!.Reopen();
-        }
-        catch (Exception ex)
-        {
-            XTrace.WriteLine("[NovaDb] Failed to reopen WAL of table '{0}': {1}", _schema.TableName, ex.Message);
-        }
 
         Interlocked.Increment(ref _externalFileLossCount);
     }

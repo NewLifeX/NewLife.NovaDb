@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using NewLife.NovaDb.Client;
@@ -55,6 +55,8 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
 
     private String DataFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.rlog");
     private String WalFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.wal");
+
+    private String RowLogFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.rlog");
     private String IdxFile(String tableName) => Path.Combine(RelationalDbFixture.DbPath, $"{tableName}.idx");
 
     #endregion
@@ -155,20 +157,19 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
 
     #region DML 测试
 
-    [Fact(DisplayName = "关系型集成-INSERT后WAL文件增长")]
-    public void DML_Insert_WalFileGrows()
+    [Fact(DisplayName = "关系型集成-INSERT后行日志增长")]
+    public void DML_Insert_RowLogGrows()
     {
         using var conn = OpenConnection("Full");
         conn.ExecuteNonQuery("CREATE TABLE rel_dml_ins (id INT PRIMARY KEY, name STRING(50), age INT)");
 
-        var walFile = WalFile("rel_dml_ins");
-        var sizeBefore = File.Exists(walFile) ? new FileInfo(walFile).Length : 0L;
-
+        var dataFile = RowLogFile("rel_dml_ins");
+        var sizeBefore = File.Exists(dataFile) ? new FileInfo(dataFile).Length : 0L;
         var rows = conn.ExecuteNonQuery("INSERT INTO rel_dml_ins VALUES (1, 'Alice', 25)");
         Assert.Equal(1, rows);
 
-        Assert.True(File.Exists(walFile), "INSERT 后 .wal 文件应存在");
-        Assert.True(new FileInfo(walFile).Length > sizeBefore, "INSERT 后 .wal 文件大小应增长");
+        Assert.True(new FileInfo(dataFile).Length > sizeBefore, "INSERT 后行日志应增长");
+        Assert.False(File.Exists(WalFile("rel_dml_ins")), "表引擎不再产生 .wal 文件");
     }
 
     [Fact(DisplayName = "关系型集成-INSERT批量并SELECT验证")]
@@ -190,20 +191,20 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         Assert.Equal("Bob", Convert.ToString(cmd.ExecuteScalar()));
     }
 
-    [Fact(DisplayName = "关系型集成-UPDATE后WAL增长且数据已更新")]
-    public void DML_Update_WalGrows_DataUpdated()
+    [Fact(DisplayName = "关系型集成-UPDATE后行日志增长且数据已更新")]
+    public void DML_Update_RowLogGrows_DataUpdated()
     {
         using var conn = OpenConnection("Full");
         conn.ExecuteNonQuery("CREATE TABLE rel_dml_upd (id INT PRIMARY KEY, name STRING(50), age INT)");
         conn.ExecuteNonQuery("INSERT INTO rel_dml_upd VALUES (1, 'Alice', 25), (2, 'Bob', 30)");
 
-        var walFile = WalFile("rel_dml_upd");
-        var walSizeBefore = new FileInfo(walFile).Length;
+        var dataFile = RowLogFile("rel_dml_upd");
+        var sizeBefore = new FileInfo(dataFile).Length;
 
         var rows = conn.ExecuteNonQuery("UPDATE rel_dml_upd SET name = 'Alice Smith', age = 26 WHERE id = 1");
         Assert.Equal(1, rows);
 
-        Assert.True(new FileInfo(walFile).Length > walSizeBefore, "UPDATE 后 .wal 文件应增长");
+        Assert.True(new FileInfo(dataFile).Length > sizeBefore, "UPDATE 后行日志应增长");
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT name, age FROM rel_dml_upd WHERE id = 1";
@@ -213,20 +214,20 @@ public class RelationalIntegrationTests : IClassFixture<RelationalDbFixture>
         Assert.Equal(26, reader.GetInt32(1));
     }
 
-    [Fact(DisplayName = "关系型集成-DELETE后WAL增长且行消失")]
-    public void DML_Delete_WalGrows_RowDisappears()
+    [Fact(DisplayName = "关系型集成-DELETE后行日志增长且行消失")]
+    public void DML_Delete_RowLogGrows_RowDisappears()
     {
         using var conn = OpenConnection("Full");
         conn.ExecuteNonQuery("CREATE TABLE rel_dml_del (id INT PRIMARY KEY, name STRING(50), age INT)");
         conn.ExecuteNonQuery("INSERT INTO rel_dml_del VALUES (1, 'Alice', 25), (2, 'Bob', 30), (3, 'Charlie', 35)");
 
-        var walFile = WalFile("rel_dml_del");
-        var walSizeBefore = new FileInfo(walFile).Length;
+        var dataFile = RowLogFile("rel_dml_del");
+        var sizeBefore = new FileInfo(dataFile).Length;
 
         var rows = conn.ExecuteNonQuery("DELETE FROM rel_dml_del WHERE age >= 30");
         Assert.Equal(2, rows);
 
-        Assert.True(new FileInfo(walFile).Length > walSizeBefore, "DELETE 后 .wal 文件应增长");
+        Assert.True(new FileInfo(dataFile).Length > sizeBefore, "DELETE 后行日志应增长");
 
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM rel_dml_del";
